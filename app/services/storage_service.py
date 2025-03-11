@@ -46,7 +46,11 @@ class MemoryStorage:
         self, metadata: Dict[str, Any] = None
     ) -> Conversation:
         """Crea una nueva conversación"""
-        conversation = Conversation(metadata=metadata or {})
+        # Asegurarse de que metadata sea un diccionario válido
+        if metadata is None:
+            metadata = {}
+
+        conversation = Conversation(metadata=metadata)
 
         # Añadir mensaje del sistema para guiar al modelo
         system_message = Message.system(settings.SYSTEM_PROMPT)

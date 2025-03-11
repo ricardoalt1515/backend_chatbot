@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Body
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from app.models.conversation import (
     Conversation,
@@ -17,11 +17,14 @@ router = APIRouter()
 
 
 @router.post("/start", response_model=ConversationResponse)
-async def start_conversation(data: ConversationCreate = Body(default={})):
+async def start_conversation(
+    data: ConversationCreate = Body(default=ConversationCreate()),
+):
     """Inicia una nueva conversación"""
     try:
-        # Crear nueva conversación
-        conversation = await storage_service.create_conversation(data.metadata)
+        # Crear nueva conversación - asegurarnos de que metadata existe y es un dict
+        metadata = data.metadata if hasattr(data, "metadata") else {}
+        conversation = await storage_service.create_conversation(metadata)
 
         # Añadir mensaje inicial del bot (bienvenida)
         welcome_message = Message.assistant(

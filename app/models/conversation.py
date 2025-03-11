@@ -11,7 +11,7 @@ class Conversation(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     messages: List[Message] = []
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def add_message(self, message: Message) -> None:
         """Añade un mensaje a la conversación y actualiza la fecha de actualización"""
@@ -32,7 +32,7 @@ class Conversation(BaseModel):
 
 
 class ConversationCreate(BaseModel):
-    metadata: Optional[Dict[str, Any]] = {}
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class ConversationResponse(BaseModel):
