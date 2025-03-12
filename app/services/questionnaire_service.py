@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import random
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 
 from app.models.conversation import Conversation, QuestionnaireState
 from app.config import settings
@@ -11,15 +11,41 @@ logger = logging.getLogger("hydrous-backend")
 
 
 class QuestionnaireService:
-    """Servicio para manejar el cuestionario y sus respuestas"""
+    """Servicio mejorado para manejar el cuestionario y sus respuestas de forma conversacional"""
 
     def __init__(self):
         self.questionnaire_data = self._load_questionnaire_data()
+        # Frases de transición para hacer más fluido el cuestionario
+        self.transitions = [
+            "Entendido. Ahora",
+            "Perfecto. A continuación,",
+            "Gracias por esa información.",
+            "Excelente. Sigamos con",
+            "Muy bien.",
+            "Comprendo.",
+            "Esa información es útil.",
+            "Avancemos con",
+            "Continuemos.",
+            "Ahora necesitaría saber",
+        ]
+        # Frases para solicitar clarificación
+        self.clarification_phrases = [
+            "No estoy seguro de haber entendido tu respuesta. ¿Podrías por favor",
+            "Disculpa, pero necesito una respuesta más clara. ¿Podrías",
+            "Para asegurarme de registrar correctamente tu respuesta, ¿podrías",
+            "Necesito un poco más de claridad en tu respuesta. ¿Te importaría",
+        ]
+        # Frases para confirmación
+        self.confirmation_phrases = [
+            "He registrado que",
+            "Entiendo que",
+            "He anotado que",
+            "Perfecto, he guardado que",
+        ]
 
     def _load_questionnaire_data(self) -> Dict[str, Any]:
         """Carga los datos del cuestionario desde un archivo JSON"""
         try:
-            # En producción esto se cargaría desde un archivo
             questionnaire_path = os.path.join(
                 os.path.dirname(__file__), "../data/questionnaire.json"
             )
@@ -45,7 +71,7 @@ class QuestionnaireService:
                 "Industrial_Textil": [
                     {
                         "id": "nombre_empresa",
-                        "text": "Nombre usuario/cliente/nombre de la empresa",
+                        "text": "¿Cuál es el nombre de tu empresa o cómo prefieres que te llame?",
                         "type": "text",
                         "required": True,
                     }
@@ -71,7 +97,17 @@ class QuestionnaireService:
     def get_introduction(self) -> Tuple[str, str]:
         """Obtiene el texto de introducción del cuestionario"""
         intro = self.questionnaire_data.get("introduction", {})
-        return intro.get("text", ""), intro.get("explanation", "")
+        text = intro.get("text", "")
+        explanation = intro.get("explanation", "")
+
+        # Asegurar que la introducción es conversacional
+        if not text:
+            text = "¡Hola! Soy el Diseñador de Soluciones de Agua con IA de Hydrous, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales."
+
+        if not explanation:
+            explanation = "Para desarrollar la mejor solución para tus instalaciones, te haré algunas preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada."
+
+        return text, explanation
 
     def get_next_question(self, state: QuestionnaireState) -> Optional[Dict[str, Any]]:
         """Obtiene la siguiente pregunta basada en el estado actual"""
@@ -91,11 +127,11 @@ class QuestionnaireService:
         if not state.subsector:
             return {
                 "id": "subsector_selection",
-                "text": f"¿Cuál es el giro específico de tu Empresa dentro del sector {state.sector}?",
+                "text": f"Dentro del sector {state.sector}, ¿cuál es el giro específico de tu empresa?",
                 "type": "multiple_choice",
                 "options": self.get_subsectors(state.sector),
                 "required": True,
-                "explanation": "Cada subsector tiene características específicas que influyen en el diseño de la solución.",
+                "explanation": "Cada subsector tiene características específicas que influyen en el diseño de la solución óptima para tus necesidades.",
             }
 
         # Obtener las preguntas para este sector/subsector
@@ -110,50 +146,149 @@ class QuestionnaireService:
         # Determinar la siguiente pregunta no contestada
         for q in questions:
             if q["id"] not in state.answers:
+                # Enriquecer la pregunta con un hecho relevante
                 fact = self.get_random_fact(state.sector, state.subsector)
 
-                # Añadir un hecho relevante a la explicación si existe
-                if fact and q.get("explanation"):
-                    q["explanation"] = (
-                        f"{q['explanation']}\n\n*Dato interesante: {fact}*"
-                    )
+                # Hacer una copia para no modificar el original
+                enriched_question = q.copy()
 
-                return q
+                # Mejorar el texto de la pregunta para hacerlo más conversacional
+                enriched_question["text"] = self._make_question_conversational(
+                    q["text"], q["id"]
+                )
+
+                # Añadir un hecho relevante a la explicación si existe
+                if fact and enriched_question.get("explanation"):
+                    enriched_question["explanation"] = (
+                        f"{enriched_question['explanation']}\n\n*Dato interesante: {fact}*"
+                    )
+                elif fact:
+                    enriched_question["explanation"] = f"*Dato interesante: {fact}*"
+
+                return enriched_question
 
         # Si llegamos aquí, es que todas las preguntas han sido respondidas
         return None
 
+    def _make_question_conversational(
+        self, question_text: str, question_id: str
+    ) -> str:
+        """Hace que la pregunta suene más conversacional según su tipo"""
+
+        # Si la pregunta ya tiene forma de pregunta, la dejamos como está
+        if question_text.strip().endswith("?"):
+            return question_text
+
+        # Patrones comunes para convertir a formato de pregunta
+        if "nombre" in question_id.lower():
+            return f"¿Cuál es {question_text}?"
+        elif "ubicacion" in question_id.lower():
+            return f"¿Cuál es tu {question_text}?"
+        elif "costo" in question_id.lower() or "precio" in question_id.lower():
+            return f"¿Podrías indicarme {question_text}?"
+        elif "cantidad" in question_id.lower() or "volumen" in question_id.lower():
+            return f"¿Cuál es la {question_text}?"
+        elif "objetivo" in question_id.lower():
+            return f"¿Cuál es {question_text}?"
+
+        # Si no hay un patrón específico, simplemente añadimos "¿Cuál es...?"
+        return f"¿Podrías proporcionarnos información sobre {question_text}?"
+
     def process_answer(
         self, conversation: Conversation, question_id: str, answer: Any
-    ) -> None:
-        """Procesa una respuesta y actualiza el estado del cuestionario"""
-        # Guardar la respuesta
+    ) -> Union[bool, str]:
+        """
+        Procesa una respuesta y actualiza el estado del cuestionario.
+        Devuelve True si la respuesta fue procesada correctamente,
+        o un mensaje de error si la respuesta no pudo ser procesada.
+        """
+        # Si es una pregunta de selección, intentar procesar la respuesta como índice o texto
+        current_question = self._get_question_by_id(
+            conversation.questionnaire_state, question_id
+        )
+
+        if not current_question:
+            logger.warning(f"No se encontró la pregunta con ID {question_id}")
+            return "No pude encontrar la pregunta correspondiente. Por favor, intenta nuevamente."
+
+        # Procesar respuesta según el tipo de pregunta
+        if current_question["type"] in ["multiple_choice", "multiple_select"]:
+            processed_answer = self._process_selection_answer(
+                answer, current_question, conversation.questionnaire_state
+            )
+
+            if processed_answer is None:
+                options_text = "\n".join(
+                    [
+                        f"{i+1}. {opt}"
+                        for i, opt in enumerate(current_question["options"])
+                    ]
+                )
+                return f"No pude entender tu selección. Por favor, indica el número o el nombre exacto de una de estas opciones:\n{options_text}"
+
+            answer = processed_answer
+
+        # Guardar la respuesta procesada
         conversation.questionnaire_state.answers[question_id] = answer
 
         # Si es una respuesta al sector o subsector, actualizar esos campos
         if question_id == "sector_selection":
-            sector_index = int(answer) - 1 if answer.isdigit() else 0
-            sectors = self.get_sectors()
-            if 0 <= sector_index < len(sectors):
-                conversation.questionnaire_state.sector = sectors[sector_index]
+            if isinstance(answer, int) or (
+                isinstance(answer, str) and answer.isdigit()
+            ):
+                sector_index = int(answer) - 1
+                sectors = self.get_sectors()
+                if 0 <= sector_index < len(sectors):
+                    conversation.questionnaire_state.sector = sectors[sector_index]
+                else:
+                    return "El número seleccionado no corresponde a ningún sector disponible."
             else:
                 # Si se proporcionó el nombre en lugar del índice
-                if answer in sectors:
+                if answer in self.get_sectors():
                     conversation.questionnaire_state.sector = answer
+                else:
+                    # Buscar coincidencia parcial en sectores
+                    matches = [
+                        s for s in self.get_sectors() if answer.lower() in s.lower()
+                    ]
+                    if len(matches) == 1:
+                        conversation.questionnaire_state.sector = matches[0]
+                    elif len(matches) > 1:
+                        return f"Tu respuesta podría referirse a varios sectores: {', '.join(matches)}. ¿Podrías ser más específico?"
+                    else:
+                        return "No reconocí ese sector. Por favor, selecciona uno de los sectores disponibles."
+
         elif question_id == "subsector_selection":
             if conversation.questionnaire_state.sector:
-                subsector_index = int(answer) - 1 if answer.isdigit() else 0
-                subsectors = self.get_subsectors(
-                    conversation.questionnaire_state.sector
-                )
-                if 0 <= subsector_index < len(subsectors):
-                    conversation.questionnaire_state.subsector = subsectors[
-                        subsector_index
-                    ]
+                if isinstance(answer, int) or (
+                    isinstance(answer, str) and answer.isdigit()
+                ):
+                    subsector_index = int(answer) - 1
+                    subsectors = self.get_subsectors(
+                        conversation.questionnaire_state.sector
+                    )
+                    if 0 <= subsector_index < len(subsectors):
+                        conversation.questionnaire_state.subsector = subsectors[
+                            subsector_index
+                        ]
+                    else:
+                        return "El número seleccionado no corresponde a ningún subsector disponible."
                 else:
                     # Si se proporcionó el nombre en lugar del índice
+                    subsectors = self.get_subsectors(
+                        conversation.questionnaire_state.sector
+                    )
                     if answer in subsectors:
                         conversation.questionnaire_state.subsector = answer
+                    else:
+                        # Buscar coincidencia parcial en subsectores
+                        matches = [s for s in subsectors if answer.lower() in s.lower()]
+                        if len(matches) == 1:
+                            conversation.questionnaire_state.subsector = matches[0]
+                        elif len(matches) > 1:
+                            return f"Tu respuesta podría referirse a varios subsectores: {', '.join(matches)}. ¿Podrías ser más específico?"
+                        else:
+                            return "No reconocí ese subsector. Por favor, selecciona uno de los subsectores disponibles."
 
         # Actualizar el ID de la pregunta actual
         next_question = self.get_next_question(conversation.questionnaire_state)
@@ -164,6 +299,145 @@ class QuestionnaireService:
         # Verificar si hemos completado el cuestionario
         if next_question is None:
             conversation.questionnaire_state.completed = True
+
+        return True
+
+    def _process_selection_answer(
+        self, answer: Any, question: Dict[str, Any], state: QuestionnaireState
+    ) -> Any:
+        """
+        Procesa una respuesta para preguntas de selección.
+        Maneja tanto respuestas numéricas como texto.
+        """
+        options = question.get("options", [])
+        if not options:
+            return answer
+
+        # Si es respuesta numérica
+        if isinstance(answer, int) or (isinstance(answer, str) and answer.isdigit()):
+            index = int(answer) - 1  # Ajustamos al índice base-0
+            if 0 <= index < len(options):
+                if question["type"] == "multiple_choice":
+                    return options[index]  # Devolvemos el texto de la opción
+                else:
+                    return [options[index]]  # Para multiple_select devolvemos una lista
+            return None
+
+        # Si es una respuesta de texto para multiple_select (valores separados por coma)
+        if (
+            question["type"] == "multiple_select"
+            and isinstance(answer, str)
+            and "," in answer
+        ):
+            indices = []
+            selected_options = []
+
+            for part in answer.split(","):
+                part = part.strip()
+                if part.isdigit():
+                    index = int(part) - 1
+                    if 0 <= index < len(options):
+                        selected_options.append(options[index])
+                else:
+                    # Buscar coincidencia por texto
+                    matches = [opt for opt in options if part.lower() in opt.lower()]
+                    selected_options.extend(matches)
+
+            return selected_options if selected_options else None
+
+        # Si es respuesta de texto, buscar coincidencia
+        if isinstance(answer, str):
+            # Primero buscar coincidencia exacta
+            if answer in options:
+                return answer
+
+            # Luego buscar coincidencia parcial
+            matches = [opt for opt in options if answer.lower() in opt.lower()]
+            if len(matches) == 1:
+                return matches[0]
+
+        return None
+
+    def _get_question_by_id(
+        self, state: QuestionnaireState, question_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Obtiene los datos de una pregunta por su ID"""
+        if question_id == "sector_selection":
+            return {
+                "id": "sector_selection",
+                "text": "¿En qué sector opera tu empresa?",
+                "type": "multiple_choice",
+                "options": self.get_sectors(),
+                "required": True,
+            }
+
+        if question_id == "subsector_selection" and state.sector:
+            return {
+                "id": "subsector_selection",
+                "text": f"¿Cuál es el giro específico de tu empresa dentro del sector {state.sector}?",
+                "type": "multiple_choice",
+                "options": self.get_subsectors(state.sector),
+                "required": True,
+            }
+
+        # Buscar en las preguntas específicas del sector/subsector
+        if state.sector and state.subsector:
+            question_key = f"{state.sector}_{state.subsector}"
+            questions = self.questionnaire_data.get("questions", {}).get(
+                question_key, []
+            )
+
+            for q in questions:
+                if q["id"] == question_id:
+                    return q
+
+        return None
+
+    def get_random_transition(self) -> str:
+        """Devuelve una frase de transición aleatoria para hacer más fluido el cuestionario"""
+        return random.choice(self.transitions)
+
+    def get_clarification_phrase(self) -> str:
+        """Devuelve una frase de solicitud de clarificación aleatoria"""
+        return random.choice(self.clarification_phrases)
+
+    def get_confirmation_phrase(self) -> str:
+        """Devuelve una frase de confirmación aleatoria"""
+        return random.choice(self.confirmation_phrases)
+
+    def format_question_with_transition(
+        self, question: Dict[str, Any], previous_answer: Optional[str] = None
+    ) -> str:
+        """
+        Formatea una pregunta con una transición natural basada en la respuesta anterior.
+        Hace que el cuestionario se sienta como una conversación.
+        """
+        transition = self.get_random_transition()
+
+        # Si hay una respuesta anterior, confirmarla primero
+        confirmation = ""
+        if previous_answer:
+            confirmation = f"{self.get_confirmation_phrase()} {previous_answer}. "
+
+        result = f"{confirmation}{transition} {question['text']}"
+
+        # Añadir explicación si existe
+        if question.get("explanation"):
+            result += f"\n\n*{question['explanation']}*"
+
+        # Formatear opciones para preguntas de selección
+        if question["type"] == "multiple_choice" and "options" in question:
+            result += "\n\n"
+            for i, option in enumerate(question["options"], 1):
+                result += f"{i}. {option}\n"
+
+        elif question["type"] == "multiple_select" and "options" in question:
+            result += "\n\n"
+            for i, option in enumerate(question["options"], 1):
+                result += f"{i}. {option}\n"
+            result += "\nPuedes seleccionar varias opciones separando los números con comas (ej: 1,3,4)."
+
+        return result
 
     def is_questionnaire_complete(self, conversation: Conversation) -> bool:
         """Verifica si el cuestionario está completo"""
@@ -183,7 +457,9 @@ class QuestionnaireService:
         objectives = []
         if "objetivo_principal" in answers:
             obj_principal = answers["objetivo_principal"]
-            if obj_principal.isdigit():
+            if isinstance(obj_principal, int) or (
+                isinstance(obj_principal, str) and obj_principal.isdigit()
+            ):
                 obj_index = int(obj_principal) - 1
                 options = self._get_options_for_question(
                     "objetivo_principal", sector, subsector
@@ -199,7 +475,7 @@ class QuestionnaireService:
             reuse = answers["objetivo_reuso"]
             if isinstance(reuse, list):
                 for r in reuse:
-                    if r.isdigit():
+                    if isinstance(r, int) or (isinstance(r, str) and r.isdigit()):
                         r_index = int(r) - 1
                         options = self._get_options_for_question(
                             "objetivo_reuso", sector, subsector
@@ -208,7 +484,7 @@ class QuestionnaireService:
                             reuse_objectives.append(options[r_index])
                     else:
                         reuse_objectives.append(r)
-            elif reuse.isdigit():
+            elif isinstance(reuse, int) or (isinstance(reuse, str) and reuse.isdigit()):
                 r_index = int(reuse) - 1
                 options = self._get_options_for_question(
                     "objetivo_reuso", sector, subsector
@@ -338,44 +614,43 @@ class QuestionnaireService:
                 for tech in details["tecnologias"]:
                     technologies.append(f"{tech} ({stage})")
 
-        # Formatear resumen
+        # Formatear resumen con un tono más conversacional
         summary = f"""
-¡Gracias por completar el cuestionario! Basándonos en tus respuestas, hemos preparado una propuesta preliminar para tu proyecto de tratamiento de aguas residuales.
+¡Excelente! Basándome en toda la información que me has proporcionado, he preparado una propuesta preliminar personalizada para tu proyecto de tratamiento de aguas residuales.
 
-**RESUMEN DE LA PROPUESTA**
+## RESUMEN DE TU PROPUESTA PERSONALIZADA
 
 **Cliente:** {client_info['name']}
 **Ubicación:** {client_info['location']}
-**Sector:** {client_info['sector']} - {client_info['subsector']}
+**Industria:** {client_info['sector']} - {client_info['subsector']}
 
-**OBJETIVOS DEL PROYECTO**
+**OBJETIVOS IDENTIFICADOS**
 {"- " + "- ".join(project_details['objectives']) if project_details['objectives'] else "No especificados"}
 
-**OBJETIVOS DE REÚSO**
+**OBJETIVOS DE REÚSO DEL AGUA**
 {"- " + "- ".join(project_details['reuse_objectives']) if project_details['reuse_objectives'] else "No especificados"}
 
-**TRATAMIENTO RECOMENDADO**
+**SOLUCIÓN RECOMENDADA**
+He diseñado un sistema integral de tratamiento que incluye:
 - Pretratamiento: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
 - Tratamiento primario: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
 - Tratamiento secundario: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
 - Tratamiento terciario: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
 
-**ESTIMACIÓN DE COSTOS**
-- CAPEX total estimado: ${costs['capex']['total']:,.2f} USD
-- OPEX anual estimado: ${costs['opex']['total_anual']:,.2f} USD/año
-- OPEX mensual estimado: ${costs['opex']['total_mensual']:,.2f} USD/mes
-
-**ANÁLISIS DE RETORNO DE INVERSIÓN**
+**BENEFICIOS ECONÓMICOS**
+- Inversión inicial aproximada: ${costs['capex']['total']:,.2f} USD
+- Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
 - Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
-- Periodo de recuperación estimado: {roi['periodo_recuperacion']:.1f} años
+- Retorno de inversión en aproximadamente {roi['periodo_recuperacion']:.1f} años
 - ROI a 5 años: {roi['roi_5_anos']:.1f}%
 
 **BENEFICIO AMBIENTAL**
-- Reducción de la carga contaminante al medio ambiente
-- Optimización en el uso de recursos hídricos
-- Cumplimiento de normativas ambientales vigentes
+- Reducción significativa de la huella hídrica de tu empresa
+- Optimización en el consumo de recursos naturales
+- Cumplimiento de normativas ambientales 
+- Contribución a las metas de sostenibilidad corporativa
 
-¿Te gustaría recibir una propuesta detallada por correo electrónico o tienes alguna pregunta específica sobre estas recomendaciones?
+¿Te gustaría recibir la propuesta técnica detallada por correo electrónico? ¿O prefieres que profundicemos en algún aspecto específico de esta solución?
 """
         return summary
 

@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import httpx
 
 from app.config import settings
@@ -47,7 +47,16 @@ class AIService:
             self.api_key = None
             self.model = None
             self.api_url = None
-
+            
+        # Patrones para detectar intención de interrupción del cuestionario
+        self.interruption_patterns = [
+            r"(?:cancelar|salir|terminar|detener|parar|abandonar).*(?:cuestionario|formulario|preguntas)",
+            r"(?:no|ya no).*(?:quiero|deseo|me interesa).*(?:seguir|continuar|responder)",
+            r"(?:quiero|necesito).*(?:hablar|consultar).*(?:otra cosa|otro tema)",
+            r"(?:cambia|cambiemos).*(?:tema|asunto)",
+            r"(?:volvamos|volver).*(?:después|luego)",
+        ]
+        
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
@@ -61,6 +70,10 @@ class AIService:
         Returns:
             str: Respuesta generada para el usuario
         """
+        # Comprobar si el usuario quiere interrumpir el cuestionario
+        if conversation.is_questionnaire_active() and self._is_interruption_intent(user_message):
+            return await self._handle_questionnaire_interruption(conversation)
+            
         # Si el cuestionario está activo, procesarlo como parte del cuestionario
         if conversation.is_questionnaire_active():
             return await self._handle_questionnaire_flow(conversation, user_message)
@@ -94,12 +107,12 @@ class AIService:
         messages_for_ai.append({"role": "user", "content": user_message})
 
         return await self.generate_response(messages_for_ai)
-
+        
     async def _handle_questionnaire_flow(
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Maneja el flujo del cuestionario
+        Maneja el flujo del cuestionario de manera más conversacional
 
         Args:
             conversation: Objeto de conversación actual
@@ -108,12 +121,21 @@ class AIService:
         Returns:
             str: Siguiente pregunta o resumen final
         """
-        # Procesar respuesta a la pregunta anterior si existe
+        # Obtener información de la pregunta actual
         previous_question_id = conversation.questionnaire_state.current_question_id
-        if previous_question_id:
-            questionnaire_service.process_answer(
-                conversation, previous_question_id, user_message
-            )
+        
+        if not previous_question_id:
+            # Si por alguna razón no hay pregunta actual pero el cuestionario está activo
+            return self._handle_questionnaire_error(conversation)
+            
+        # Procesar la respuesta del usuario
+        process_result = questionnaire_service.process_answer(
+            conversation, previous_question_id, user_message
+        )
+        
+        # Si el procesamiento falló, solicitar clarificación
+        if process_result is not True:
+            return f"{questionnaire_service.get_clarification_phrase()} responder de nuevo? {process_result}"
 
         # Obtener siguiente pregunta
         next_question = questionnaire_service.get_next_question(
@@ -131,11 +153,84 @@ class AIService:
 
         # Actualizar la pregunta actual y devolver la siguiente pregunta formateada
         conversation.questionnaire_state.current_question_id = next_question["id"]
-        return self._format_question(next_question)
+        
+        # Formatear la siguiente pregunta con transición suave
+        return questionnaire_service.format_question_with_transition(
+            next_question, user_message
+        )
+        
+    def _is_interruption_intent(self, user_message: str) -> bool:
+        """
+        Determina si el mensaje del usuario indica intención de interrumpir el cuestionario
 
+        Args:
+            user_message: Mensaje del usuario
+
+        Returns:
+            bool: True si se detecta intención de interrumpir
+        """
+        user_message = user_message.lower()
+        
+        # Verificar patrones de interrupción
+        for pattern in self.interruption_patterns:
+            if re.search(pattern, user_message):
+                return True
+                
+        return False
+        
+    async def _handle_questionnaire_interruption(self, conversation: Conversation) -> str:
+        """
+        Maneja una interrupción del cuestionario por parte del usuario
+
+        Args:
+            conversation: Objeto de conversación actual
+
+        Returns:
+            str: Mensaje de respuesta sobre la interrupción
+        """
+        # Guardar el estado para posible reanudación
+        conversation.questionnaire_state.active = False
+        
+        return (
+            "Entiendo que prefieres pausar el cuestionario por ahora. No hay problema. "
+            "He guardado tu progreso y podemos continuar en otro momento si lo deseas. "
+            "¿En qué más puedo ayudarte respecto a nuestras soluciones de reciclaje de agua?"
+        )
+        
+    def _handle_questionnaire_error(self, conversation: Conversation) -> str:
+        """
+        Maneja errores en el flujo del cuestionario
+
+        Args:
+            conversation: Objeto de conversación actual
+
+        Returns:
+            str: Mensaje de respuesta sobre el error
+        """
+        # Reiniciar el estado del cuestionario
+        next_question = questionnaire_service.get_next_question(
+            conversation.questionnaire_state
+        )
+        
+        if next_question:
+            conversation.questionnaire_state.current_question_id = next_question["id"]
+            return (
+                "Parece que hubo un pequeño problema técnico con nuestro cuestionario. "
+                "Vamos a retomarlo desde aquí:\n\n" + self._format_question(next_question)
+            )
+        else:
+            # Si no hay pregunta siguiente, terminar el cuestionario
+            conversation.questionnaire_state.active = False
+            return (
+                "Parece que hubo un problema con el cuestionario. "
+                "¿Te gustaría reiniciarlo o prefieres que conversemos de otra forma sobre "
+                "nuestras soluciones de tratamiento de agua?"
+            )
+            
     def _should_start_questionnaire(self, user_message: str) -> bool:
         """
-        Determina si el mensaje del usuario debería iniciar el cuestionario
+        Determina si el mensaje del usuario debería iniciar el cuestionario.
+        Detecta intenciones relacionadas con evaluación, soluciones personalizadas o cuestionario.
 
         Args:
             user_message: Mensaje del usuario
@@ -147,16 +242,9 @@ class AIService:
 
         # Palabras clave que indican interés en soluciones de agua, tratamiento o cuestionario
         keywords = [
-            "solución",
-            "tratamiento",
-            "agua",
-            "aguas residuales",
-            "reciclaje",
-            "cuestionario",
-            "comenzar",
-            "evaluar",
-            "proyecto",
-            "propuesta",
+            "solución", "tratamiento", "agua", "aguas residuales", "reciclaje",
+            "cuestionario", "comenzar", "evaluar", "proyecto", "propuesta",
+            "personalizado", "diseño", "sistema", "ayuda", "necesito"
         ]
 
         # Patrones que indican interés específico
@@ -165,6 +253,8 @@ class AIService:
             r"(?:tratar|reciclar|reutilizar).*agua",
             r"(?:iniciar|comenzar|empezar|hacer).*(?:cuestionario|evaluación|diagnóstico)",
             r"(?:proyecto|propuesta).*(?:agua|tratamiento|reciclaje)",
+            r"(?:diseñar|crear|implementar).*(?:sistema|solución).*agua",
+            r"(?:ayuda|ayúdame).*(?:elegir|seleccionar|encontrar).*(?:sistema|solución)",
         ]
 
         # Verificar palabras clave
@@ -175,7 +265,7 @@ class AIService:
 
         # Decidir basado en umbral y patrones
         return keyword_count >= 2 or pattern_match
-
+        
     def _format_question(self, question: Dict[str, Any]) -> str:
         """
         Formatea una pregunta para presentarla al usuario
@@ -201,17 +291,17 @@ class AIService:
             for i, option in enumerate(question["options"], 1):
                 result += f"{i}. {option}\n"
             result += (
-                "\nPor favor, responde con el número de la opción que corresponda."
+                "\nPor favor, responde con el número o el nombre de la opción que corresponda."
             )
 
         elif question["type"] == "multiple_select" and "options" in question:
             result += "\n\n"
             for i, option in enumerate(question["options"], 1):
                 result += f"{i}. {option}\n"
-            result += "\nPuedes seleccionar varias opciones separando los números con comas (ej: 1,3,4)."
+            result += "\nPuedes seleccionar varias opciones separando los números con comas (ej: 1,3,4) o escribiendo sus nombres."
 
         return result
-
+        
     async def generate_response(
         self,
         messages: List[Dict[str, Any]],
@@ -238,115 +328,4 @@ class AIService:
             async with httpx.AsyncClient() as client:
                 headers = {
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}",
-                }
-
-                payload = {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens or 1024,
-                }
-
-                response = await client.post(
-                    self.api_url, json=payload, headers=headers, timeout=30.0
-                )
-
-                if response.status_code != 200:
-                    logger.error(
-                        f"Error en la API de {self.provider}: {response.status_code} - {response.text}"
-                    )
-                    return self._get_fallback_response(messages)
-
-                response_data = response.json()
-                return response_data["choices"][0]["message"]["content"]
-
-        except Exception as e:
-            logger.error(f"Error al generar respuesta con {self.provider}: {str(e)}")
-            return self._get_fallback_response(messages)
-
-    def _get_fallback_response(self, messages: List[Dict[str, Any]]) -> str:
-        """
-        Genera una respuesta de fallback cuando no podemos conectar con la API
-
-        Args:
-            messages: Lista de mensajes para intentar determinar una respuesta contextual
-
-        Returns:
-            str: Texto de respuesta pre-configurada
-        """
-        # Intentar obtener el último mensaje del usuario
-        last_user_message = ""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                last_user_message = msg.get("content", "").lower()
-                break
-
-        # Respuestas pre-configuradas según palabras clave
-        if (
-            "hola" in last_user_message
-            or "saludos" in last_user_message
-            or not last_user_message
-        ):
-            return (
-                "¡Hola! Soy el asistente virtual de Hydrous especializado en soluciones de reciclaje de agua. "
-                "¿En qué puedo ayudarte hoy?"
-            )
-
-        elif any(
-            word in last_user_message
-            for word in ["filtro", "filtración", "purificación"]
-        ):
-            return (
-                "Nuestros sistemas de filtración avanzada eliminan contaminantes, sedimentos y patógenos "
-                "del agua. Utilizamos tecnología de membranas, carbón activado y filtros biológicos para "
-                "adaptarnos a diferentes necesidades. ¿Te gustaría más información sobre algún sistema específico?"
-            )
-
-        elif any(
-            word in last_user_message for word in ["aguas grises", "duchas", "lavadora"]
-        ):
-            return (
-                "Nuestros sistemas de tratamiento de aguas grises reciclan el agua de duchas, lavabos y lavadoras "
-                "para su reutilización en inodoros, riego o limpieza. Son modulares y se adaptan a diferentes "
-                "espacios. ¿Necesitas información para un proyecto residencial o comercial?"
-            )
-
-        elif any(
-            word in last_user_message for word in ["lluvia", "pluvial", "captación"]
-        ):
-            return (
-                "Los sistemas de captación de agua de lluvia de Hydrous incluyen filtración, almacenamiento "
-                "y distribución. Pueden integrarse con otros sistemas de tratamiento para maximizar la "
-                "eficiencia hídrica. ¿Te interesa una instalación doméstica o industrial?"
-            )
-
-        elif (
-            "precio" in last_user_message
-            or "costo" in last_user_message
-            or "valor" in last_user_message
-        ):
-            return (
-                "Los precios varían según el tipo de sistema y las necesidades específicas de tu proyecto. "
-                "Podemos programar una consulta con nuestros especialistas para evaluar tus requerimientos "
-                "y ofrecerte un presupuesto personalizado. ¿Te gustaría que un representante te contacte?"
-            )
-
-        else:
-            return (
-                "Gracias por tu pregunta. Para brindarte la información más precisa sobre nuestras "
-                "soluciones de reciclaje de agua, te recomendaría hablar directamente con uno de nuestros "
-                "especialistas. ¿Te gustaría que programemos una consulta personalizada?"
-            )
-
-
-# Clase extendida del servicio de IA (se utilizará en lugar de la estándar)
-class AIWithQuestionnaireService(AIService):
-    """Versión del servicio de IA con funcionalidad de cuestionario integrada"""
-
-    def __init__(self):
-        super().__init__()
-
-
-# Instancia global del servicio
-ai_service = AIWithQuestionnaireService()
+                    "Authorization": f"Bearer {self.
