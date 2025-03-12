@@ -7,6 +7,7 @@ import random
 from app.config import settings
 from app.models.conversation import Conversation, QuestionnaireState
 from app.services.questionnaire_service import questionnaire_service
+from app.models import message
 
 logger = logging.getLogger("hydrous-backend")
 
@@ -62,39 +63,147 @@ class AIService:
         Returns:
             str: Respuesta generada para el usuario
         """
-        # Si el cuestionario está activo, procesarlo como parte del cuestionario
-        if conversation.is_questionnaire_active():
-            return await self._handle_questionnaire_flow(conversation, user_message)
-
         # Verificar si el mensaje del usuario debe iniciar el cuestionario
+        should_start = False
         if (
-            hasattr(settings, "ENABLE_QUESTIONNAIRE")
-            and settings.ENABLE_QUESTIONNAIRE
-            and self._should_start_questionnaire(user_message)
+            not conversation.is_questionnaire_active()
+            and not conversation.is_questionnaire_completed()
         ):
-            conversation.start_questionnaire()
-            intro_text, explanation = questionnaire_service.get_introduction()
-            next_question = questionnaire_service.get_next_question(
-                conversation.questionnaire_state
-            )
+            should_start = self._should_start_questionnaire(user_message)
+            if should_start:
+                conversation.start_questionnaire()
+                # No añadimos ningun mensaje especial, dejamos que el modelo la Maneje
 
-            # Combinar introducción con primera pregunta
-            response = f"{intro_text}\n\n{explanation}\n\n"
-            if next_question:
-                response += self._format_question(next_question)
-                conversation.questionnaire_state.current_question_id = next_question[
-                    "id"
-                ]
+            # Preparar mensajes para el modelo de IA
+            messages_for_ai = [
+                {"role": "system", "content": settings.SYSTEM_PROMPT_WITH_QUESTIONNAIRE}
+            ]
+
+            # Añadir contexto adicional con el estado del cuestionario
+            if (
+                conversation.is_questionnaire_active()
+                or conversation.is_questionnaire_completed()
+            ):
+                questionnaire_context = self._generate_questionnaire_context(
+                    conversation
+                )
+                messages_for_ai.append(
+                    {"role": "system", "content": questionnaire_context}
+                )
+
+            # añadir historial de mensajes
+            for msg in conversation.messages:
+                if msg.role != "system":  # Excluimos los mensajes de sistema originales
+                    messages_for_ai.append({"role": msg.role, "content": msg.content})
+
+            # añadir el mensaje actual del usuario
+            messages_for_ai.append({"role": "user", "content": user_message})
+
+            # Si acabamos de iniciar el cuestionario, podemos añadir una pista para el modelo
+            if should_start:
+                messages_for_ai.append(
+                    {
+                        "role": "system",
+                        "content": "El usuario ha mostrado interes en soluciones de agua. Inicia el proceso de cuestionario con el saludo estandar y la primera pregunta sobre el sector.",
+                    }
+                )
+            # Generar respuesta con el modelo de IA
+            response = await self.generate_response(messages_for_ai)
+
+            # Procesar la respuest para actualizar el estado del cuestionario si es necesario
+            self._update_questionnaire_state_from_response(conversation, response)
 
             return response
 
-        # Si no es parte del cuestionario, procesar normalmente con el modelo de IA
-        messages_for_ai = [
-            {"role": msg.role, "content": msg.content} for msg in conversation.messages
-        ]
-        messages_for_ai.append({"role": "user", "content": user_message})
+        def _generate_questionnaire_context(self, conversation: Conversation) -> str:
+            """
+            Genera un contexto informativo sobre el estado actual del cuestionario
 
-        return await self.generate_response(messages_for_ai)
+            Args:
+                conversation: Objeto de conversacion actual
+            Returns:
+                str: Contexto para el modelo de IA
+            """
+            state = conversation.questionnaire_state
+            context = "INFORMACION DEL ESTADO DEL CUESTIONARIO:\n"
+
+            if state.sector:
+                context += f"Sector seleccionado: {state.sector}\n"
+
+            if state.subsector:
+                context += f"Subsector seleccionado: {state.subsector}\n"
+    
+            if state.current_question_id:
+                context += f"ID de la pregunta actual: {state.current_question_id}\n"
+    
+            if state.answers:
+                context += "Respuestas proporcionadas hasta ahora:\n"
+                for q_id, answer in state.answers.items():
+                    context += f"- Pregunta '{q_id}': {answer}\n"
+
+            if state.completed:
+                context += "El cuestionario ha sido completado. Debes proporcionar una propuesta final.\n"
+            elif state.active:
+                context += "El cuestionario esta activo. Debes seguir haciendo las preguntas en orden.\n"
+
+                # Determinar cual deberia ser la siguiente pregunta
+                if not state.sector:
+                    context += f"La siguiente pregunta debe ser sobre el subsector dentro de {state.sector}.\n"
+                elif not state.subsector:
+                    context += f"La siguiente pregunta debe ser sobre el subsector especifico dentro de {state.sector}.\n"
+                else:
+                    # Determinar la proxima pregunta basada en las anteriores
+                    question_key = f"{state.sector}_{state.subsecotr}"
+                    questions = questionnaire_service.questionnaire_data.get("questions", {}).get(question_key, [])
+
+                    if questions:
+                        # Encontrar la primera pregunta no respondida
+                        for question in questions:
+                            if question["id"] not in state.answers:
+                                context += f"La siguiente pregunta debe ser: {question['text']}\n"
+                                if question.get("type") == "multiple_choice" and "options" in question:
+                                    context += "Las opciones son:\n"
+                                    for i, option in enumerate(question["options"], 1):
+                                        context += f"{i}. {option}\n"
+                                break
+        return context
+
+    def _update_questionnaire_state_from_response(
+        self, conversation: Conversation, response: str
+    ) -> None:
+        """
+        Actualiza el estado del cuestionario basado en la respuesta del modelo
+        
+        Args:
+            conversation: Objeto de conversación actual
+            response: Respuesta generada por el modelo
+        
+        """
+        # Este modelo implementa una logica simplificada para detectar cuando
+        # el cuestionario ha sido completado basado en la respuesta generada
+        
+        # Si ya esta completado, no hacemos nada
+        if conversation.is_questionnaire_completed():
+            return
+        
+        # Si el cuestionario esta activo, intentamos procesar la respuesta
+        if conversation.is_questionnaire_active():
+            # Buscar frases que indiquen que se ha completado
+            completion_phrases = [
+                "propuesta personalizada",
+                "resumen de la propuesta",
+                "gracias por completar el cuestionario",
+                "basado en sus respuestas",
+                "basandonos en tus resouestas",
+                "hemos preparado una propuesta",
+                "analisis economico",
+                "retorno de inversion",
+                "proximos pasos",
+            ]
+            
+            # Si encontramos indicadores de que el cuestionario ha terminado
+            if any(phrase in response.lower() for phrase in completion_phrases):
+                conversation.complete_questionnaire()
 
     async def _handle_questionnaire_flow(
         self, conversation: Conversation, user_message: str
