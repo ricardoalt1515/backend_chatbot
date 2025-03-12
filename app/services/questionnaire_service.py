@@ -213,7 +213,7 @@ class QuestionnaireService:
                 if answer.isdigit():
                     sector_index = int(answer) - 1
                     if 0 <= sector_index < len(sectors):
-                        conversation.questionnaire_state.sectors[sector_index]
+                        conversation.questionnaire_state.sector = sectors[sector_index]
                 # Si no es un numero, buscar coincidencia por texto
                 else:
                     answer_lower = answer.lower()
@@ -231,7 +231,7 @@ class QuestionnaireService:
 
         elif question_id == "subsector_selection":
             if conversation.questionnaire_state.sector:
-                subsectors == self.get_subsectors(
+                subsectors = self.get_subsectors(
                     conversation.questionnaire_state.sector
                 )
 
@@ -240,7 +240,7 @@ class QuestionnaireService:
                     if answer.isdigit():
                         subsector_index = int(answer) - 1
                         if 0 <= subsector_index < len(subsectors):
-                            conversation.questionnaire_state.subsectors = [
+                            conversation.questionnaire_state.subsector = subsectors[
                                 subsector_index
                             ]
                     # Si no es un numero, buscar coincidencia por texto
@@ -260,11 +260,15 @@ class QuestionnaireService:
 
         # Actualizar el ID de la pregunta actual
         next_question = self.get_next_question(conversation.questionnaire_state)
-        conversation.questionnaire_state.subsector = subsectors[0]
+        conversation.questionnaire_state.current_question_id = (
+            next_question["id"] if next_question else None
+        )
 
         # Verificar si hemos completado el cuestionario
         if next_question is None:
             conversation.questionnaire_state.completed = True
+
+        return True
 
     def _process_selection_answer(
         self, answer: Any, question: Dict[str, Any], state: QuestionnaireState
@@ -579,7 +583,7 @@ class QuestionnaireService:
                     technologies.append(f"{tech} ({stage})")
 
         # Crear una introduccion personalizada
-        intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecyo de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
+        intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecto de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
 
         # Formatear resumen con un tono más conversacional
         summary = f"""
@@ -587,35 +591,35 @@ class QuestionnaireService:
 
 **RESUMEN DE LA PROPUESTA DE HYDROUS**
 
-**📋 DATOS DEL PROYECTO**
+**DATOS DEL PROYECTO**
 • Cliente: {client_info['name']}
 • Ubicación: {client_info['location']}
 • Sector: {client_info['sector']} - {client_info['subsector']}
 • Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
 
-**🎯 OBJETIVOS PRINCIPALES**
+**OBJETIVOS PRINCIPALES**
 {("• " + "\n• ".join(project_details['objectives'])) if project_details.get('objectives') else "No especificados"}
 
-**♻️ OBJETIVOS DE REÚSO**
+**OBJETIVOS DE REÚSO**
 {("• " + "\n• ".join(project_details['reuse_objectives'])) if project_details.get('reuse_objectives') else "No especificados"}
 
-**⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA**
+**SOLUCIÓN TECNOLÓGICA RECOMENDADA**
 • **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
 • **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
 • **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
 • **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
 
-**💰 ANÁLISIS ECONÓMICO**
+**ANÁLISIS ECONÓMICO**
 • Inversión inicial estimada: ${costs['capex']['total']:,.2f} USD
 • Costo operativo anual: ${costs['opex']['total_anual']:,.2f} USD/año
 • Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
 
-**📈 RETORNO DE INVERSIÓN**
+**RETORNO DE INVERSIÓN**
 • Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
 • Periodo de recuperación: {roi['periodo_recuperacion']:.1f} años
 • ROI a 5 años: {roi['roi_5_anos']:.1f}%
 
-**🌱 BENEFICIOS AMBIENTALES**
+**BENEFICIOS AMBIENTALES**
 • Reducción de la huella hídrica de tu operación
 • Disminución de la descarga de contaminantes al medio ambiente
 • Cumplimiento con normativas ambientales vigentes
