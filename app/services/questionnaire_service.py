@@ -198,109 +198,73 @@ class QuestionnaireService:
         self, conversation: Conversation, question_id: str, answer: Any
     ) -> Union[bool, str]:
         """
-        Procesa una respuesta y actualiza el estado del cuestionario.
-        Devuelve True si la respuesta fue procesada correctamente,
-        o un mensaje de error si la respuesta no pudo ser procesada.
+        Procesa una respuesta y actualiza el estado del cuestionario de manera inteligente
         """
-        # Si es una pregunta de selección, intentar procesar la respuesta como índice o texto
-        current_question = self._get_question_by_id(
-            conversation.questionnaire_state, question_id
-        )
-
-        if not current_question:
-            logger.warning(f"No se encontró la pregunta con ID {question_id}")
-            return "No pude encontrar la pregunta correspondiente. Por favor, intenta nuevamente."
-
-        # Procesar respuesta según el tipo de pregunta
-        if current_question["type"] in ["multiple_choice", "multiple_select"]:
-            processed_answer = self._process_selection_answer(
-                answer, current_question, conversation.questionnaire_state
-            )
-
-            if processed_answer is None:
-                options_text = "\n".join(
-                    [
-                        f"{i+1}. {opt}"
-                        for i, opt in enumerate(current_question["options"])
-                    ]
-                )
-                return f"No pude entender tu selección. Por favor, indica el número o el nombre exacto de una de estas opciones:\n{options_text}"
-
-            answer = processed_answer
-
-        # Guardar la respuesta procesada
+        # Guardar la respuesta
         conversation.questionnaire_state.answers[question_id] = answer
 
-        # Si es una respuesta al sector o subsector, actualizar esos campos
+        # Procesar respuestas a las preguntas especiales (sector y subsector)
         if question_id == "sector_selection":
-            if isinstance(answer, int) or (
-                isinstance(answer, str) and answer.isdigit()
-            ):
-                sector_index = int(answer) - 1
-                sectors = self.get_sectors()
-                if 0 <= sector_index < len(sectors):
-                    conversation.questionnaire_state.sector = sectors[sector_index]
+            # Intentar determinar el sector a partir de la respuesta
+            sectors = self.get_sectors()
+
+            if isinstance(answer, str):
+                # Si es un numero, usarlo como indice
+                if answer.isdigit():
+                    sector_index = int(answer) - 1
+                    if 0 <= sector_index < len(sectors):
+                        conversation.questionnaire_state.sectors[sector_index]
+                # Si no es un numero, buscar coincidencia por texto
                 else:
-                    return "El número seleccionado no corresponde a ningún sector disponible."
-            else:
-                # Si se proporcionó el nombre en lugar del índice
-                if answer in self.get_sectors():
-                    conversation.questionnaire_state.sector = answer
-                else:
-                    # Buscar coincidencia parcial en sectores
-                    matches = [
-                        s for s in self.get_sectors() if answer.lower() in s.lower()
-                    ]
-                    if len(matches) == 1:
-                        conversation.questionnaire_state.sector = matches[0]
-                    elif len(matches) > 1:
-                        return f"Tu respuesta podría referirse a varios sectores: {', '.join(matches)}. ¿Podrías ser más específico?"
-                    else:
-                        return "No reconocí ese sector. Por favor, selecciona uno de los sectores disponibles."
+                    answer_lower = answer.lower()
+                    for sector in sectors:
+                        if (
+                            sector.lower() in answer_lower
+                            or answer_lower in sector.lower()
+                        ):
+                            conversation.questionnaire_state.sector = sector
+                            break
+
+            # Si no se pudo determinar el sector, usar el primero como falback
+            if not conversation.questionnaire_state.sector and sectors:
+                conversation.questionnaire_state.sector = sectors[0]
 
         elif question_id == "subsector_selection":
             if conversation.questionnaire_state.sector:
-                if isinstance(answer, int) or (
-                    isinstance(answer, str) and answer.isdigit()
-                ):
-                    subsector_index = int(answer) - 1
-                    subsectors = self.get_subsectors(
-                        conversation.questionnaire_state.sector
-                    )
-                    if 0 <= subsector_index < len(subsectors):
-                        conversation.questionnaire_state.subsector = subsectors[
-                            subsector_index
-                        ]
+                subsectors == self.get_subsectors(
+                    conversation.questionnaire_state.sector
+                )
+
+                if isinstance(answer, str):
+                    # Si es un numero, usarlo como indice
+                    if answer.isdigit():
+                        subsector_index = int(answer) - 1
+                        if 0 <= subsector_index < len(subsectors):
+                            conversation.questionnaire_state.subsectors = [
+                                subsector_index
+                            ]
+                    # Si no es un numero, buscar coincidencia por texto
                     else:
-                        return "El número seleccionado no corresponde a ningún subsector disponible."
-                else:
-                    # Si se proporcionó el nombre en lugar del índice
-                    subsectors = self.get_subsectors(
-                        conversation.questionnaire_state.sector
-                    )
-                    if answer in subsectors:
-                        conversation.questionnaire_state.subsector = answer
-                    else:
-                        # Buscar coincidencia parcial en subsectores
-                        matches = [s for s in subsectors if answer.lower() in s.lower()]
-                        if len(matches) == 1:
-                            conversation.questionnaire_state.subsector = matches[0]
-                        elif len(matches) > 1:
-                            return f"Tu respuesta podría referirse a varios subsectores: {', '.join(matches)}. ¿Podrías ser más específico?"
-                        else:
-                            return "No reconocí ese subsector. Por favor, selecciona uno de los subsectores disponibles."
+                        answer_lower = answer.lower()
+                        for subsector in subsectors:
+                            if (
+                                subsector.lower() in answer_lower
+                                or answer_lower in subsector.lower()
+                            ):
+                                conversation.questionnaire_state.subsector = subsector
+                                break
+
+                # Si no se pudo determinar el subsector, usar el primero como falback
+                if not conversation.questionnaire_state.subsector and subsectors:
+                    conversation.questionnaire_state.subsector = subsectors[0]
 
         # Actualizar el ID de la pregunta actual
         next_question = self.get_next_question(conversation.questionnaire_state)
-        conversation.questionnaire_state.current_question_id = (
-            next_question["id"] if next_question else None
-        )
+        conversation.questionnaire_state.subsector = subsectors[0]
 
         # Verificar si hemos completado el cuestionario
         if next_question is None:
             conversation.questionnaire_state.completed = True
-
-        return True
 
     def _process_selection_answer(
         self, answer: Any, question: Dict[str, Any], state: QuestionnaireState
@@ -614,43 +578,53 @@ class QuestionnaireService:
                 for tech in details["tecnologias"]:
                     technologies.append(f"{tech} ({stage})")
 
+        # Crear una introduccion personalizada
+        intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecyo de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
+
         # Formatear resumen con un tono más conversacional
         summary = f"""
-¡Excelente! Basándome en toda la información que me has proporcionado, he preparado una propuesta preliminar personalizada para tu proyecto de tratamiento de aguas residuales.
+{intro}
 
-## RESUMEN DE TU PROPUESTA PERSONALIZADA
+**RESUMEN DE LA PROPUESTA DE HYDROUS**
 
-**Cliente:** {client_info['name']}
-**Ubicación:** {client_info['location']}
-**Industria:** {client_info['sector']} - {client_info['subsector']}
+**📋 DATOS DEL PROYECTO**
+• Cliente: {client_info['name']}
+• Ubicación: {client_info['location']}
+• Sector: {client_info['sector']} - {client_info['subsector']}
+• Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
 
-**OBJETIVOS IDENTIFICADOS**
-{"- " + "- ".join(project_details['objectives']) if project_details['objectives'] else "No especificados"}
+**🎯 OBJETIVOS PRINCIPALES**
+{("• " + "\n• ".join(project_details['objectives'])) if project_details.get('objectives') else "No especificados"}
 
-**OBJETIVOS DE REÚSO DEL AGUA**
-{"- " + "- ".join(project_details['reuse_objectives']) if project_details['reuse_objectives'] else "No especificados"}
+**♻️ OBJETIVOS DE REÚSO**
+{("• " + "\n• ".join(project_details['reuse_objectives'])) if project_details.get('reuse_objectives') else "No especificados"}
 
-**SOLUCIÓN RECOMENDADA**
-He diseñado un sistema integral de tratamiento que incluye:
-- Pretratamiento: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
-- Tratamiento primario: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
-- Tratamiento secundario: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
-- Tratamiento terciario: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
+**⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA**
+• **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
+• **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
+• **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
+• **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
 
-**BENEFICIOS ECONÓMICOS**
-- Inversión inicial aproximada: ${costs['capex']['total']:,.2f} USD
-- Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
-- Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
-- Retorno de inversión en aproximadamente {roi['periodo_recuperacion']:.1f} años
-- ROI a 5 años: {roi['roi_5_anos']:.1f}%
+**💰 ANÁLISIS ECONÓMICO**
+• Inversión inicial estimada: ${costs['capex']['total']:,.2f} USD
+• Costo operativo anual: ${costs['opex']['total_anual']:,.2f} USD/año
+• Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
 
-**BENEFICIO AMBIENTAL**
-- Reducción significativa de la huella hídrica de tu empresa
-- Optimización en el consumo de recursos naturales
-- Cumplimiento de normativas ambientales 
-- Contribución a las metas de sostenibilidad corporativa
+**📈 RETORNO DE INVERSIÓN**
+• Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
+• Periodo de recuperación: {roi['periodo_recuperacion']:.1f} años
+• ROI a 5 años: {roi['roi_5_anos']:.1f}%
 
-¿Te gustaría recibir la propuesta técnica detallada por correo electrónico? ¿O prefieres que profundicemos en algún aspecto específico de esta solución?
+**🌱 BENEFICIOS AMBIENTALES**
+• Reducción de la huella hídrica de tu operación
+• Disminución de la descarga de contaminantes al medio ambiente
+• Cumplimiento con normativas ambientales vigentes
+• Contribución a la sostenibilidad del recurso hídrico
+
+**PRÓXIMOS PASOS**
+¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
+
+También puedo responder cualquier pregunta adicional que tengas sobre la solución propuesta.
 """
         return summary
 
