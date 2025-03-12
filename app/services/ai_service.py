@@ -47,6 +47,27 @@ class AIService:
             self.model = None
             self.api_url = None
 
+    async def handle_conversation(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
+        """
+        Versión simplificada del manejador de conversación sin funcionalidad de cuestionario
+
+        Args:
+            conversation: Objeto de conversación actual
+            user_message: Mensaje del usuario
+
+        Returns:
+            str: Respuesta generada para el usuario
+        """
+        # En esta versión simplificada, simplemente procesamos el mensaje normalmente
+        messages_for_ai = [
+            {"role": msg.role, "content": msg.content} for msg in conversation.messages
+        ]
+        messages_for_ai.append({"role": "user", "content": user_message})
+
+        return await self.generate_response(messages_for_ai)
+
     async def generate_response(
         self,
         messages: List[Dict[str, Any]],
