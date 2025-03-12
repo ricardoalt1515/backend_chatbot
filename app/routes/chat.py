@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, Body
+from fastapi import APIRouter, HTTPException, Depends, Body, BackgroundTasks
 import logging
 from typing import Dict, Any, List, Optional
+import os
+import time
+from datetime import datetime
 
 from app.models.conversation import (
     Conversation,
@@ -10,6 +13,7 @@ from app.models.conversation import (
 from app.models.message import Message, MessageCreate, MessageResponse
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service
+from app.services.questionnaire_service import questionnaire_service
 
 logger = logging.getLogger("hydrous-backend")
 
@@ -30,7 +34,8 @@ async def start_conversation(
         welcome_message = Message.assistant(
             "¡Hola! Soy el asistente virtual de Hydrous especializado en soluciones de reciclaje de agua. "
             "¿En qué puedo ayudarte hoy? Puedes preguntarme sobre nuestros sistemas de filtración, "
-            "tratamiento de aguas grises, captación de agua de lluvia u otros servicios."
+            "tratamiento de aguas residuales, reutilización de agua y más. También puedo ayudarte "
+            "a diseñar una solución personalizada para tu negocio completando un sencillo cuestionario."
         )
         conversation.add_message(welcome_message)
 
@@ -64,7 +69,7 @@ async def get_conversation(conversation_id: str):
 
 
 @router.post("/message", response_model=MessageResponse)
-async def send_message(data: MessageCreate):
+async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
         # Validar que la conversación existe
@@ -78,22 +83,18 @@ async def send_message(data: MessageCreate):
             data.conversation_id, user_message
         )
 
-        # Preparar historial para el modelo de IA (incluyendo prompt del sistema)
-        messages_for_ai = [
-            {"role": msg.role, "content": msg.content} for msg in conversation.messages
-        ]
-
-        # Añadir el nuevo mensaje del usuario
-        messages_for_ai.append({"role": "user", "content": data.message})
-
-        # Generar respuesta con el modelo de IA
-        ai_response = await ai_service.generate_response(messages_for_ai)
+        # Usar el servicio actualizado para manejar el flujo de conversación
+        # incluyendo el cuestionario si está activo
+        ai_response = await ai_service.handle_conversation(conversation, data.message)
 
         # Crear y añadir mensaje del asistente
         assistant_message = Message.assistant(ai_response)
         await storage_service.add_message_to_conversation(
             data.conversation_id, assistant_message
         )
+
+        # Programar limpieza de conversaciones antiguas como tarea en segundo plano
+        background_tasks.add_task(storage_service.cleanup_old_conversations)
 
         return MessageResponse(
             id=assistant_message.id,
@@ -106,3 +107,100 @@ async def send_message(data: MessageCreate):
     except Exception as e:
         logger.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
+
+
+@router.get("/{conversation_id}/questionnaire/status")
+async def get_questionnaire_status(conversation_id: str):
+    """Obtiene el estado actual del cuestionario para una conversación"""
+    try:
+        conversation = await storage_service.get_conversation(conversation_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+        return {
+            "active": conversation.is_questionnaire_active(),
+            "completed": conversation.is_questionnaire_completed(),
+            "sector": conversation.questionnaire_state.sector,
+            "subsector": conversation.questionnaire_state.subsector,
+            "current_question": conversation.questionnaire_state.current_question_id,
+            "answers_count": len(conversation.questionnaire_state.answers),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al obtener estado del cuestionario: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail="Error al obtener estado del cuestionario"
+        )
+
+
+@router.post("/{conversation_id}/questionnaire/start")
+async def start_questionnaire(conversation_id: str):
+    """Inicia manualmente el proceso de cuestionario"""
+    try:
+        conversation = await storage_service.get_conversation(conversation_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+        # Verificar si ya está activo
+        if conversation.is_questionnaire_active():
+            return {"message": "El cuestionario ya está activo"}
+
+        # Iniciar cuestionario
+        conversation.start_questionnaire()
+
+        # Obtener introducción y primera pregunta
+        intro_text, explanation = questionnaire_service.get_introduction()
+        next_question = questionnaire_service.get_next_question(
+            conversation.questionnaire_state
+        )
+
+        # Crear mensaje con la introducción y primera pregunta
+        message_text = f"{intro_text}\n\n{explanation}\n\n"
+        if next_question:
+            message_text += ai_service._format_question(next_question)
+            conversation.questionnaire_state.current_question_id = next_question["id"]
+
+        # Añadir mensaje del asistente
+        assistant_message = Message.assistant(message_text)
+        await storage_service.add_message_to_conversation(
+            conversation_id, assistant_message
+        )
+
+        return {
+            "message": "Cuestionario iniciado correctamente",
+            "first_question": message_text,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al iniciar cuestionario: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error al iniciar cuestionario")
+
+
+@router.get("/{conversation_id}/proposal")
+async def generate_proposal(conversation_id: str):
+    """Genera una propuesta basada en las respuestas del cuestionario"""
+    try:
+        # Obtener la conversación
+        conversation = await storage_service.get_conversation(conversation_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+        # Verificar si hay suficientes respuestas
+        if len(conversation.questionnaire_state.answers) < 3:
+            raise HTTPException(
+                status_code=400,
+                detail="No hay suficiente información para generar una propuesta",
+            )
+
+        # Generar propuesta
+        proposal = questionnaire_service.generate_proposal(conversation)
+
+        # Por ahora devolvemos los datos JSON, pero en el futuro podría generarse un PDF
+        return proposal
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al generar propuesta: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error al generar la propuesta")

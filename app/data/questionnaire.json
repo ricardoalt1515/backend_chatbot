@@ -1,0 +1,342 @@
+{
+  "sectors": [
+    "Industrial",
+    "Comercial",
+    "Municipal",
+    "Residencial"
+  ],
+  "subsectors": {
+    "Industrial": [
+      "Alimentos y Bebidas",
+      "Textil",
+      "Petroquímica",
+      "Farmacéutica",
+      "Minería",
+      "Petróleo y Gas",
+      "Metal/Automotriz",
+      "Cemento"
+    ],
+    "Comercial": [
+      "Hotel",
+      "Edificio de oficinas",
+      "Centro comercial/Comercio minorista",
+      "Restaurante"
+    ],
+    "Municipal": [
+      "Gobierno de la ciudad",
+      "Pueblo/Aldea",
+      "Autoridad de servicios de agua"
+    ],
+    "Residencial": [
+      "Vivienda unifamiliar",
+      "Edificio multifamiliar"
+    ]
+  },
+  "introduction": {
+    "text": "¡Hola! Soy el Diseñador de Soluciones de Agua con IA de Hydrous, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarlo paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro, cumplimiento normativo y sostenibilidad.",
+    "explanation": "Para desarrollar la mejor solución para sus instalaciones, formularé sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarle a optimizar la gestión del agua, reducir costes y explorar nuevas fuentes de ingresos con soluciones basadas en Hydrous."
+  },
+  "questions": {
+    "Industrial_Textil": [
+      {
+        "id": "nombre_empresa",
+        "text": "Nombre usuario/cliente/nombre de la empresa",
+        "type": "text",
+        "required": true,
+        "explanation": null
+      },
+      {
+        "id": "ubicacion",
+        "text": "Ubicación (Colonia, Ciudad, código Postal, coordenadas)",
+        "type": "text",
+        "required": true,
+        "explanation": "La ubicación es importante para determinar regulaciones locales y disponibilidad de recursos hídricos en su área."
+      },
+      {
+        "id": "costo_agua",
+        "text": "Costo del agua (moneda/unidad de medición)",
+        "type": "text",
+        "required": true,
+        "explanation": "El costo actual del agua nos ayuda a calcular el retorno de inversión potencial de su sistema de tratamiento."
+      },
+      {
+        "id": "cantidad_agua_consumida",
+        "text": "Cantidad de agua consumida (Unidad de medición/unidad tiempo)",
+        "type": "text",
+        "required": true,
+        "explanation": "El volumen de consumo es crítico para dimensionar correctamente su sistema de tratamiento."
+      },
+      {
+        "id": "cantidad_agua_residual",
+        "text": "Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo)",
+        "type": "text",
+        "required": true,
+        "explanation": "Este dato nos permite determinar la capacidad necesaria del sistema de tratamiento."
+      },
+      {
+        "id": "personas_instalacion",
+        "text": "Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana",
+        "type": "multiple_choice",
+        "options": [
+          "Menos de 20",
+          ">=20, <50",
+          ">50, < 200",
+          ">= 200, < 500",
+          ">=500<1000",
+          ">=1000<2000",
+          ">=2000<5000",
+          ">=5000"
+        ],
+        "required": true,
+        "explanation": "El número de personas influye en el diseño de sistemas de agua potable y sanitarios."
+      },
+      {
+        "id": "volumen_agua_residual",
+        "text": "Volúmenes de agua promedios, picos de generación de agua residual",
+        "type": "text",
+        "required": true,
+        "explanation": "Conocer los picos de generación nos permite diseñar sistemas que puedan manejar fluctuaciones en la carga."
+      },
+      {
+        "id": "analisis_agua_residual",
+        "text": "¿Cuenta con análisis de agua residual? Si es así, por favor comparta los valores o puede cargar los documentos posteriormente.",
+        "type": "text",
+        "required": false,
+        "explanation": "Los análisis históricos nos permiten entender mejor las características específicas de sus aguas residuales."
+      },
+      {
+        "id": "color",
+        "text": "Color de su agua residual (si lo conoce)",
+        "type": "text",
+        "required": false,
+        "explanation": "En la industria textil, el color es un parámetro crítico debido a los tintes utilizados."
+      },
+      {
+        "id": "sst",
+        "text": "SST (Sólidos suspendidos totales) en mg/L (si lo conoce)",
+        "type": "text",
+        "required": false,
+        "explanation": "Los SST son especialmente importantes en aguas residuales textiles por los residuos de fibras."
+      },
+      {
+        "id": "ph",
+        "text": "pH (Potencial Hidrógeno) (si lo conoce)",
+        "type": "text",
+        "required": false,
+        "explanation": "Los procesos textiles generalmente producen aguas con pH variable según los químicos utilizados."
+      },
+      {
+        "id": "metales_pesados",
+        "text": "Metales pesados (Mercurio, arsénico, plomo, etc.) en mg/L (si los conoce)",
+        "type": "text",
+        "required": false,
+        "explanation": "Algunos tintes y procesos textiles pueden contener metales pesados que requieren tratamiento especial."
+      },
+      {
+        "id": "dqo",
+        "text": "DQO (Demanda química de oxígeno) en mg/L (si lo conoce)",
+        "type": "text",
+        "required": false,
+        "explanation": "La DQO elevada es común en aguas textiles debido a los compuestos orgánicos presentes en tintes y auxiliares."
+      },
+      {
+        "id": "dbo",
+        "text": "DBO (Demanda bioquímica de oxígeno) en mg/L (si lo conoce)",
+        "type": "text",
+        "required": false,
+        "explanation": "La relación DBO/DQO nos indica la biodegradabilidad de sus aguas residuales."
+      },
+      {
+        "id": "fuente_agua",
+        "text": "¿Cuál es su fuente de agua?",
+        "type": "multiple_choice",
+        "options": [
+          "Agua municipal",
+          "Agua de pozo",
+          "Cosecha de agua Pluvial"
+        ],
+        "required": true,
+        "explanation": "La fuente determina la calidad de entrada y posibles pre-tratamientos necesarios."
+      },
+      {
+        "id": "usos_agua",
+        "text": "¿Cuáles son sus usos en su empresa?",
+        "type": "multiple_select",
+        "options": [
+          "Lavado de telas",
+          "Teñido e impresión",
+          "Enjuague y acabado",
+          "Agua de refrigeración",
+          "Agua para Calderas (generación de vapor)"
+        ],
+        "required": true,
+        "explanation": "Cada uso tiene requisitos específicos de calidad y genera diferentes tipos de efluentes."
+      },
+      {
+        "id": "agua_potable_volumes",
+        "text": "Volúmenes de agua potable promedios, picos de consumo de agua potable",
+        "type": "text",
+        "required": false,
+        "explanation": "Nos ayuda a dimensionar posibles sistemas de reúso para reducir el consumo de agua potable."
+      },
+      {
+        "id": "objetivo_principal",
+        "text": "¿Cuál es el objetivo principal que estás buscando?",
+        "type": "multiple_choice",
+        "options": [
+          "Cumplimiento normativo",
+          "Reducción de la huella ambiental",
+          "Ahorro de costos/Proyecto de retorno de inversión",
+          "Mayor disponibilidad de agua",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "Conocer su objetivo principal nos permite enfocar la solución hacia lo que más valor le aporta."
+      },
+      {
+        "id": "objetivo_reuso",
+        "text": "Objetivos de reúso del agua o descarga del agua tratada:",
+        "type": "multiple_select",
+        "options": [
+          "Uso en riego de áreas verdes",
+          "Reúso en sanitarios",
+          "Reúso en sus procesos industriales",
+          "Cumplimiento normativo",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "El destino final del agua tratada determina los niveles de calidad necesarios y tecnologías aplicables."
+      },
+      {
+        "id": "descarga_actual",
+        "text": "¿Actualmente en dónde descarga sus aguas residuales?",
+        "type": "multiple_choice",
+        "options": [
+          "Alcantarillado",
+          "Cuerpo de agua natural (Ríos, Lagunas, Esteros o Subsuelo)",
+          "Otro (especifique)"
+        ],
+        "required": true,
+        "explanation": "El punto de descarga determina las regulaciones aplicables y posibles costos asociados."
+      },
+      {
+        "id": "restricciones_proyecto",
+        "text": "¿Cuenta con algunas restricciones adicionales del proyecto?",
+        "type": "multiple_select",
+        "options": [
+          "Limitaciones de espacio y logística",
+          "Restricciones normativas o regulatorias",
+          "Calidad del agua en la entrada",
+          "Limitaciones en las tecnologías disponibles",
+          "Rangos de presupuestos específicos",
+          "Inversión inicial limitada",
+          "Preocupación por costos operativos",
+          "Manejo de residuos",
+          "Disponibilidad de energía local",
+          "Otros (especifique)"
+        ],
+        "required": false,
+        "explanation": "Estas restricciones nos ayudan a diseñar una solución realista y adaptada a sus circunstancias específicas."
+      },
+      {
+        "id": "sistema_existente",
+        "text": "¿Cuenta con algún sistema de tratamiento de agua residual o sistema de potabilización?",
+        "type": "multiple_choice",
+        "options": [
+          "Sí",
+          "No"
+        ],
+        "required": true,
+        "explanation": "Conocer los sistemas existentes nos permite integrar o mejorar lo que ya tienen en funcionamiento."
+      },
+      {
+        "id": "presupuesto",
+        "text": "¿Qué presupuesto tiene estimado para la inversión en proyectos de agua?",
+        "type": "text",
+        "required": false,
+        "explanation": "El presupuesto disponible es clave para recomendar soluciones realistas y factibles económicamente."
+      },
+      {
+        "id": "tiempo_proyecto",
+        "text": "¿En qué tiempo tiene contemplado llevar a cabo el proyecto?",
+        "type": "text",
+        "required": false,
+        "explanation": "El cronograma afecta la selección de tecnologías y la planificación de implementación."
+      },
+      {
+        "id": "financiamiento",
+        "text": "¿Cuenta con financiamiento disponible?",
+        "type": "multiple_choice",
+        "options": [
+          "Sí",
+          "No",
+          "En proceso de evaluación"
+        ],
+        "required": false,
+        "explanation": "Podemos adaptar nuestra propuesta según sus opciones de financiamiento disponibles."
+      },
+      {
+        "id": "recibos_agua",
+        "text": "¿Puede proporcionarnos recibos del agua?",
+        "type": "multiple_choice",
+        "options": [
+          "Sí",
+          "No",
+          "Posteriormente"
+        ],
+        "required": false,
+        "explanation": "Los recibos nos permiten calcular con mayor precisión el potencial de ahorro."
+      },
+      {
+        "id": "cronograma",
+        "text": "¿Cuenta con un cronograma estimado para la implementación de los proyectos?",
+        "type": "multiple_choice",
+        "options": [
+          "Sí",
+          "No",
+          "En desarrollo"
+        ],
+        "required": false,
+        "explanation": "Conocer su cronograma nos ayuda a alinear nuestra propuesta con sus plazos."
+      },
+      {
+        "id": "tiempo_crecimiento",
+        "text": "Tiempo contemplado en el crecimiento de proyectos a futuro",
+        "type": "multiple_choice",
+        "options": [
+          "Inmediato (0-6 meses)",
+          "Corto plazo (6-12 meses)",
+          "Mediano plazo (1-3 años)",
+          "Otro (especifique)"
+        ],
+        "required": false,
+        "explanation": "Planificar para el crecimiento futuro permite diseñar sistemas escalables y modulares."
+      }
+    ]
+  },
+  "facts": {
+    "Industrial_Textil": [
+      "La industria textil es una de las mayores consumidoras de agua, utilizando aproximadamente 150 litros de agua por kilogramo de tela procesada.",
+      "Hasta un 90% del agua utilizada en procesos textiles puede ser recuperada y reutilizada con las tecnologías adecuadas.",
+      "Empresas textiles como Inditex (Zara) y H&M han logrado reducir su consumo de agua en más de 40% mediante sistemas de reciclaje.",
+      "La implementación de sistemas de tratamiento puede reducir los costos de agua en un 30-50% para plantas textiles de tamaño mediano.",
+      "Algunas regiones ofrecen incentivos fiscales y subvenciones para empresas textiles que implementan tecnologías de ahorro de agua.",
+      "En México, la norma NOM-003-SEMARNAT-1997 establece los límites máximos permisibles de contaminantes para aguas residuales tratadas que se reúsen en servicios al público."
+    ]
+  },
+  "proposal_template": {
+    "sections": [
+      "Introducción a Hydrous Management Group",
+      "Antecedentes del Proyecto",
+      "Objetivo del Proyecto",
+      "Supuestos clave de diseño",
+      "Comparación con estándares de la industria",
+      "Diseño de Procesos y Alternativas de Tratamiento",
+      "Equipo y tamaño sugeridos",
+      "Estimación de CAPEX y OPEX",
+      "Análisis del retorno de la inversión (ROI)",
+      "Preguntas y respuestas"
+    ],
+    "disclaimer": "Esta propuesta fue generada utilizando IA basada en la información proporcionada por el usuario y estándares de la industria. Aunque se ha procurado garantizar la precisión, los datos, estimaciones de costos y recomendaciones técnicas pueden contener errores y no son legalmente vinculantes. Se recomienda que todos los detalles sean validados por Hydrous Management Group antes de su implementación."
+  }
+}

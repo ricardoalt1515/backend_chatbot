@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: List[str] = [
-        "https://*.github.io",  # GitHub Pages
+        "https://ricardoalt1515.github.io/chatbot-widget/",  # GitHub Pages
         "http://localhost:*",  # Desarrollo local
         "http://127.0.0.1:*",  # Desarrollo local
         "*",  # Temporal para desarrollo - ¡cambiar en producción!
@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
     MAX_UPLOAD_SIZE: int = 5 * 1024 * 1024  # 5 MB
 
+    # Configuración del cuestionario
+    QUESTIONNAIRE_FILE: str = os.getenv("QUESTIONNAIRE_FILE", "questionnaire.json")
+    ENABLE_QUESTIONNAIRE: bool = os.getenv("ENABLE_QUESTIONNAIRE", "True").lower() in (
+        "true",
+        "1",
+        "t",
+    )
+
     # Configuración del sistema de mensajes
     SYSTEM_PROMPT: str = """
     Eres un asistente especializado en tecnologías de reciclaje de agua de la empresa Hydrous.
@@ -58,6 +66,27 @@ class Settings(BaseSettings):
     5. Consultoría técnica para proyectos de sostenibilidad hídrica
     
     Mantén tus respuestas enfocadas en estos temas.
+    """
+
+    # Prompt para sistema con cuestionario
+    SYSTEM_PROMPT_WITH_QUESTIONNAIRE: str = """
+    Eres un asistente especializado en tecnologías de reciclaje de agua de la empresa Hydrous.
+    Tu objetivo es ayudar a los usuarios a entender las soluciones de tratamiento y reciclaje de agua
+    que ofrece la empresa, responder preguntas técnicas y orientar sobre la implementación
+    de sistemas de reutilización de agua.
+
+    Cuando el usuario muestre interés en soluciones de agua o pida información sobre tratamiento de aguas residuales,
+    debes iniciar un proceso de recopilación de información a través de un cuestionario estructurado.
+
+    Para guiar al usuario a través del cuestionario:
+    1. Pregunta primero a qué sector pertenece: Industrial, Comercial, Municipal o Residencial.
+    2. En base al sector, pregunta el subsector específico.
+    3. Avanza a través del cuestionario relevante, haciendo UNA SOLA PREGUNTA a la vez.
+    4. Para preguntas de opción múltiple, presenta las opciones numeradas.
+    5. Guarda las respuestas y al finalizar, genera una propuesta personalizada.
+
+    Mantén un tono profesional, atractivo y orientado a datos, proporcionando información sobre cómo empresas similares
+    han logrado ahorros, objetivos de sostenibilidad o han recibido subvenciones.
     """
 
 
