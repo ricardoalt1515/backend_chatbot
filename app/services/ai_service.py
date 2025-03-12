@@ -5,6 +5,7 @@ import httpx
 
 from app.config import settings
 from app.models.conversation import Conversation
+from app.services.questionnaire_service import questionnaire_service
 
 logger = logging.getLogger("hydrous-backend")
 
@@ -51,7 +52,7 @@ class AIService:
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Versión simplificada del manejador de conversación sin funcionalidad de cuestionario
+        Maneja la conversación incluyendo el flujo del cuestionario si está activo
 
         Args:
             conversation: Objeto de conversación actual
@@ -60,13 +61,156 @@ class AIService:
         Returns:
             str: Respuesta generada para el usuario
         """
-        # En esta versión simplificada, simplemente procesamos el mensaje normalmente
+        # Si el cuestionario está activo, procesarlo como parte del cuestionario
+        if conversation.is_questionnaire_active():
+            return await self._handle_questionnaire_flow(conversation, user_message)
+
+        # Verificar si el mensaje del usuario debe iniciar el cuestionario
+        if (
+            hasattr(settings, "ENABLE_QUESTIONNAIRE")
+            and settings.ENABLE_QUESTIONNAIRE
+            and self._should_start_questionnaire(user_message)
+        ):
+            conversation.start_questionnaire()
+            intro_text, explanation = questionnaire_service.get_introduction()
+            next_question = questionnaire_service.get_next_question(
+                conversation.questionnaire_state
+            )
+
+            # Combinar introducción con primera pregunta
+            response = f"{intro_text}\n\n{explanation}\n\n"
+            if next_question:
+                response += self._format_question(next_question)
+                conversation.questionnaire_state.current_question_id = next_question[
+                    "id"
+                ]
+
+            return response
+
+        # Si no es parte del cuestionario, procesar normalmente con el modelo de IA
         messages_for_ai = [
             {"role": msg.role, "content": msg.content} for msg in conversation.messages
         ]
         messages_for_ai.append({"role": "user", "content": user_message})
 
         return await self.generate_response(messages_for_ai)
+
+    async def _handle_questionnaire_flow(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
+        """
+        Maneja el flujo del cuestionario
+
+        Args:
+            conversation: Objeto de conversación actual
+            user_message: Respuesta del usuario a la pregunta anterior
+
+        Returns:
+            str: Siguiente pregunta o resumen final
+        """
+        # Procesar respuesta a la pregunta anterior si existe
+        previous_question_id = conversation.questionnaire_state.current_question_id
+        if previous_question_id:
+            questionnaire_service.process_answer(
+                conversation, previous_question_id, user_message
+            )
+
+        # Obtener siguiente pregunta
+        next_question = questionnaire_service.get_next_question(
+            conversation.questionnaire_state
+        )
+
+        if not next_question:
+            # Si no hay siguiente pregunta, generar propuesta
+            if not conversation.is_questionnaire_completed():
+                conversation.complete_questionnaire()
+
+            # Generar y formatear propuesta
+            proposal = questionnaire_service.generate_proposal(conversation)
+            return questionnaire_service.format_proposal_summary(proposal)
+
+        # Actualizar la pregunta actual y devolver la siguiente pregunta formateada
+        conversation.questionnaire_state.current_question_id = next_question["id"]
+        return self._format_question(next_question)
+
+    def _should_start_questionnaire(self, user_message: str) -> bool:
+        """
+        Determina si el mensaje del usuario debería iniciar el cuestionario
+
+        Args:
+            user_message: Mensaje del usuario
+
+        Returns:
+            bool: True si se debe iniciar el cuestionario
+        """
+        user_message = user_message.lower()
+
+        # Palabras clave que indican interés en soluciones de agua, tratamiento o cuestionario
+        keywords = [
+            "solución",
+            "tratamiento",
+            "agua",
+            "aguas residuales",
+            "reciclaje",
+            "cuestionario",
+            "comenzar",
+            "evaluar",
+            "proyecto",
+            "propuesta",
+        ]
+
+        # Patrones que indican interés específico
+        patterns = [
+            r"(?:necesito|quiero|busco|interesa).*(?:solución|sistema|tratamiento).*agua",
+            r"(?:tratar|reciclar|reutilizar).*agua",
+            r"(?:iniciar|comenzar|empezar|hacer).*(?:cuestionario|evaluación|diagnóstico)",
+            r"(?:proyecto|propuesta).*(?:agua|tratamiento|reciclaje)",
+        ]
+
+        # Verificar palabras clave
+        keyword_count = sum(1 for keyword in keywords if keyword in user_message)
+
+        # Verificar patrones
+        pattern_match = any(re.search(pattern, user_message) for pattern in patterns)
+
+        # Decidir basado en umbral y patrones
+        return keyword_count >= 2 or pattern_match
+
+    def _format_question(self, question: Dict[str, Any]) -> str:
+        """
+        Formatea una pregunta para presentarla al usuario
+
+        Args:
+            question: Datos de la pregunta
+
+        Returns:
+            str: Pregunta formateada
+        """
+        if not question:
+            return "Lo siento, no tengo más preguntas para ti en este momento."
+
+        result = question["text"]
+
+        # Añadir explicación si existe
+        if question.get("explanation"):
+            result += f"\n\n*{question['explanation']}*"
+
+        # Formatear opciones para preguntas de selección
+        if question["type"] == "multiple_choice" and "options" in question:
+            result += "\n\n"
+            for i, option in enumerate(question["options"], 1):
+                result += f"{i}. {option}\n"
+            result += (
+                "\nPor favor, responde con el número de la opción que corresponda."
+            )
+
+        elif question["type"] == "multiple_select" and "options" in question:
+            result += "\n\n"
+            for i, option in enumerate(question["options"], 1):
+                result += f"{i}. {option}\n"
+            result += "\nPuedes seleccionar varias opciones separando los números con comas (ej: 1,3,4)."
+
+        return result
 
     async def generate_response(
         self,
@@ -196,5 +340,13 @@ class AIService:
             )
 
 
+# Clase extendida del servicio de IA (se utilizará en lugar de la estándar)
+class AIWithQuestionnaireService(AIService):
+    """Versión del servicio de IA con funcionalidad de cuestionario integrada"""
+
+    def __init__(self):
+        super().__init__()
+
+
 # Instancia global del servicio
-ai_service = AIService()
+ai_service = AIWithQuestionnaireService()

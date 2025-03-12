@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: List[str] = [
-        "https://ricardoalt1515.github.io/chatbot-widget/",  # GitHub Pages
+        "https://*.github.io",  # GitHub Pages
         "http://localhost:*",  # Desarrollo local
         "http://127.0.0.1:*",  # Desarrollo local
         "*",  # Temporal para desarrollo - ¡cambiar en producción!
@@ -95,3 +95,7 @@ settings = Settings()
 
 # Asegurarse de que el directorio de uploads exista
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+# Asegurarse de que el directorio de data exista
+data_dir = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(data_dir, exist_ok=True)
