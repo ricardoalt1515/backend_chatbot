@@ -132,10 +132,10 @@ class AIService:
 
             if state.subsector:
                 context += f"Subsector seleccionado: {state.subsector}\n"
-    
+
             if state.current_question_id:
                 context += f"ID de la pregunta actual: {state.current_question_id}\n"
-    
+
             if state.answers:
                 context += "Respuestas proporcionadas hasta ahora:\n"
                 for q_id, answer in state.answers.items():
@@ -154,18 +154,24 @@ class AIService:
                 else:
                     # Determinar la proxima pregunta basada en las anteriores
                     question_key = f"{state.sector}_{state.subsecotr}"
-                    questions = questionnaire_service.questionnaire_data.get("questions", {}).get(question_key, [])
+                    questions = questionnaire_service.questionnaire_data.get(
+                        "questions", {}
+                    ).get(question_key, [])
 
                     if questions:
                         # Encontrar la primera pregunta no respondida
                         for question in questions:
                             if question["id"] not in state.answers:
                                 context += f"La siguiente pregunta debe ser: {question['text']}\n"
-                                if question.get("type") == "multiple_choice" and "options" in question:
+                                if (
+                                    question.get("type") == "multiple_choice"
+                                    and "options" in question
+                                ):
                                     context += "Las opciones son:\n"
                                     for i, option in enumerate(question["options"], 1):
                                         context += f"{i}. {option}\n"
                                 break
+
         return context
 
     def _update_questionnaire_state_from_response(
@@ -173,19 +179,19 @@ class AIService:
     ) -> None:
         """
         Actualiza el estado del cuestionario basado en la respuesta del modelo
-        
+
         Args:
             conversation: Objeto de conversación actual
             response: Respuesta generada por el modelo
-        
+
         """
         # Este modelo implementa una logica simplificada para detectar cuando
         # el cuestionario ha sido completado basado en la respuesta generada
-        
+
         # Si ya esta completado, no hacemos nada
         if conversation.is_questionnaire_completed():
             return
-        
+
         # Si el cuestionario esta activo, intentamos procesar la respuesta
         if conversation.is_questionnaire_active():
             # Buscar frases que indiquen que se ha completado
@@ -200,7 +206,7 @@ class AIService:
                 "retorno de inversion",
                 "proximos pasos",
             ]
-            
+
             # Si encontramos indicadores de que el cuestionario ha terminado
             if any(phrase in response.lower() for phrase in completion_phrases):
                 conversation.complete_questionnaire()
