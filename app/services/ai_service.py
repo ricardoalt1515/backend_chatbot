@@ -255,7 +255,7 @@ class AIWithQuestionnaireService(AIService):
         super().__init__()
 
 # Instancia global del servicio
-ai_service = AIWithQuestionnaireService())
+ai_service = AIWithQuestionnaireService()
             
             # Hacer solicitud a la API
             async with httpx.AsyncClient() as client:
