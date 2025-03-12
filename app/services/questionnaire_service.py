@@ -585,51 +585,101 @@ class QuestionnaireService:
         # Crear una introduccion personalizada
         intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecto de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
 
-        # Formatear resumen con un tono más conversacional
+        # Definir todo el formato previamente
+        capex_total = format(costs["capex"]["total"], ",.2f")
+        opex_anual = format(costs["opex"]["total_anual"], ",.2f")
+        opex_mensual = format(costs["opex"]["total_mensual"], ",.2f")
+        ahorro_anual = format(roi["ahorro_anual"], ",.2f")
+        periodo_recuperacion = format(roi["periodo_recuperacion"], ".1f")
+        roi_5_anos = format(roi["roi_5_anos"], ".1f")
+
+        # Preparar secciones para tratamientos
+        pretratamiento = (
+            ", ".join(treatment["pretratamiento"]["tecnologias"])
+            if "pretratamiento" in treatment
+            and treatment["pretratamiento"]
+            and "tecnologias" in treatment["pretratamiento"]
+            else "No requerido"
+        )
+        primario = (
+            ", ".join(treatment["primario"]["tecnologias"])
+            if "primario" in treatment
+            and treatment["primario"]
+            and "tecnologias" in treatment["primario"]
+            else "No requerido"
+        )
+        secundario = (
+            ", ".join(treatment["secundario"]["tecnologias"])
+            if "secundario" in treatment
+            and treatment["secundario"]
+            and "tecnologias" in treatment["secundario"]
+            else "No requerido"
+        )
+        terciario = (
+            ", ".join(treatment["terciario"]["tecnologias"])
+            if "terciario" in treatment
+            and treatment["terciario"]
+            and "tecnologias" in treatment["terciario"]
+            else "No requerido"
+        )
+
+        # Preparar objetivos
+        objetivos_principales = (
+            ("• " + "\n• ".join(project_details["objectives"]))
+            if project_details.get("objectives")
+            else "No especificados"
+        )
+        objetivos_reuso = (
+            ("• " + "\n• ".join(project_details["reuse_objectives"]))
+            if project_details.get("reuse_objectives")
+            else "No especificados"
+        )
+
+        # Usar un string template simple sin formato complejo
         summary = f"""
-{intro}
+        {intro}
 
-**RESUMEN DE LA PROPUESTA DE HYDROUS**
+        **RESUMEN DE LA PROPUESTA DE HYDROUS**
 
-**DATOS DEL PROYECTO**
-• Cliente: {client_info['name']}
-• Ubicación: {client_info['location']}
-• Sector: {client_info['sector']} - {client_info['subsector']}
-• Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
+        **DATOS DEL PROYECTO**
+        - Cliente: {client_info['name']}
+        - Ubicación: {client_info['location']}
+        - Sector: {client_info['sector']} - {client_info['subsector']}
+        - Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
 
-**OBJETIVOS PRINCIPALES**
-{("• " + "\n• ".join(project_details['objectives'])) if project_details.get('objectives') else "No especificados"}
+        **OBJETIVOS PRINCIPALES**
+        {objetivos_principales}
 
-**OBJETIVOS DE REÚSO**
-{("• " + "\n• ".join(project_details['reuse_objectives'])) if project_details.get('reuse_objectives') else "No especificados"}
+        **OBJETIVOS DE REÚSO**
+        {objetivos_reuso}
 
-**SOLUCIÓN TECNOLÓGICA RECOMENDADA**
-• **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
-• **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
-• **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
-• **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
+        **SOLUCIÓN TECNOLÓGICA RECOMENDADA**
+        - **Pretratamiento**: {pretratamiento}
+        - **Tratamiento primario**: {primario}
+        - **Tratamiento secundario**: {secundario}
+        - **Tratamiento terciario**: {terciario}
 
-**ANÁLISIS ECONÓMICO**
-• Inversión inicial estimada: ${costs['capex']['total']:,.2f} USD
-• Costo operativo anual: ${costs['opex']['total_anual']:,.2f} USD/año
-• Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
+        **ANÁLISIS ECONÓMICO**
+        - Inversión inicial estimada: ${capex_total} USD
+        - Costo operativo anual: ${opex_anual} USD/año
+        - Costo operativo mensual: ${opex_mensual} USD/mes
 
-**RETORNO DE INVERSIÓN**
-• Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
-• Periodo de recuperación: {roi['periodo_recuperacion']:.1f} años
-• ROI a 5 años: {roi['roi_5_anos']:.1f}%
+        **RETORNO DE INVERSIÓN**
+        - Ahorro anual estimado: ${ahorro_anual} USD/año
+        - Periodo de recuperación: {periodo_recuperacion} años
+        - ROI a 5 años: {roi_5_anos}%
 
-**BENEFICIOS AMBIENTALES**
-• Reducción de la huella hídrica de tu operación
-• Disminución de la descarga de contaminantes al medio ambiente
-• Cumplimiento con normativas ambientales vigentes
-• Contribución a la sostenibilidad del recurso hídrico
+        **BENEFICIOS AMBIENTALES**
+        - Reducción de la huella hídrica de tu operación
+        - Disminución de la descarga de contaminantes al medio ambiente
+        - Cumplimiento con normativas ambientales vigentes
+        - Contribución a la sostenibilidad del recurso hídrico
 
-**PRÓXIMOS PASOS**
-¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
+        **PRÓXIMOS PASOS**
+        ¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
 
-También puedo responder cualquier pregunta adicional que tengas sobre la solución propuesta.
-"""
+        También puedo responder cualquier pregunta adicional que tengas sobre la solución propuesta.
+        """
         return summary
 
 
