@@ -330,7 +330,8 @@ class AIService:
         max_tokens: Optional[int] = None,
     ) -> str:
         """
-        Genera una respuesta utilizando el proveedor de IA configurado
+        Genera una respuesta utilizando el proveedor de IA configurado y
+        asegura que el formato sea compatible con el frontend
 
         Args:
             messages: Lista de mensajes para la conversación
@@ -344,6 +345,22 @@ class AIService:
             # Verificar si tenemos conexión con la API
             if not self.api_key or not self.api_url:
                 return self._get_fallback_response(messages)
+
+            # Añadir instruccion especifica para evitar uso excesivo de Markdown
+            messages.append(
+                {
+                    "role": "system",
+                    "content": """
+                INSTRUCCION IMPORTANTE DE FORMATO:
+                1. No uses encabezados Markdown (como # o ##) excepto para la propuesta final.
+                2. No uses listas con formato Markdown (- o *), usa listas numeradas estandar (1., 2., etc.).
+                3. Para enfatizar texto, usa un formato de texto plano como "IMPORTANTE" en lugar de **texto**.
+                4. Evita el uso de tablas en formato Markdown.
+                5. Si necesitas separar secciones, usa lineas en blanco simples en lugar de lines horizontales (---).
+                6. Para la propuesta final esta bien usar formato Markdown adecuado.
+                """,
+                }
+            )
 
             # Hacer solicitud a la API
             async with httpx.AsyncClient() as client:
@@ -370,11 +387,50 @@ class AIService:
                     return self._get_fallback_response(messages)
 
                 response_data = response.json()
-                return response_data["choices"][0]["message"]["content"]
+                raw_response = response_data["choices"][0]["message"]["content"]
+
+                # Procesar el texto para mantener un formato asistente
+                processed_response = self._process_response_format(raw_response)
+
+                return processed_response
 
         except Exception as e:
             logger.error(f"Error al generar respuesta con {self.provider}: {str(e)}")
             return self._get_fallback_response(messages)
+
+    def _process_response_format(self, text: str) -> str:
+        """
+        Procesa el texto de respuesta para asegurar un formato adecuado para el frontend
+
+        Args:
+            text: Texto original de la respuesta
+        Returns:
+            str: Texto procesado con formato adecuado
+        """
+        # Si el texto parece ser una propuesta, mantener el formato Markdown
+        if "RESUMEN DE LA PROPUESTA" in text or "# RESUMEN DE LA PROPUESTA" in text:
+            return text
+
+        # 1. Reemplazar encabezados Markdown con texto plano enfatizado
+        for i in range(5, 0, -1):  # De h5 a h1
+            heading = "#" * i
+            text = re.sub(
+                f"^{heading}\\s+(.+)$", r"IMPORTANTE: \1", text, flags=re.MULTILINE
+            )
+
+        # 2. Reemplazar listas con viñetas
+        text = re.sub(r"^[\*\-]\s+(.+)$", r"• \1", text, flags=re.MULTILINE)
+
+        # 3. Mantener texto en negrita pero simplificar su uso (opcional)
+        # text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+
+        # 4. Eliminar líneas horizontales
+        text = re.sub(r"^[\-\_]{3,}$", "", text, flags=re.MULTILINE)
+
+        # 5. Eliminar bloques de código si no son necesarios
+        # text = re.sub(r"```[a-z]*\n((.|\n)*?)```", r"\1", text)
+
+        return text
 
     def _get_fallback_response(self, messages: List[Dict[str, Any]]) -> str:
         """
