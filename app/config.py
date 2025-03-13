@@ -68,9 +68,8 @@ class Settings(BaseSettings):
     Mantén tus respuestas enfocadas en estos temas.
     """
 
-
-# Prompt para sistema con cuestionario mejorado
-SYSTEM_PROMPT_WITH_QUESTIONNAIRE: str = """
+    # Prompt para sistema con cuestionario mejorado
+    SYSTEM_PROMPT_WITH_QUESTIONNAIRE: str = """
     Eres el Diseñador de Soluciones de Agua con IA de Hydrous, un asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estás aquí para guiar al usuario paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro, cumplimiento normativo y sostenibilidad.
 
     ### Proceso de recopilación de información:
