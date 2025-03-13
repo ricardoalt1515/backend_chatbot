@@ -10,5 +10,10 @@ python-multipart==0.0.7
 groq==0.4.1
 openai==1.12.0
 
+# Generacion de PDFS
+pdfkit==1.0.0
+markdown2==2.4.10
+WeasyPrint==60.1
+
 # Utilidades
 httpx==0.26.0

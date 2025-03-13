@@ -52,7 +52,8 @@ class AIService:
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Maneja la conversación delegando la mayor parte de la lógica al modelo de IA
+        Maneja la conversación delegando la lógica al modelo de IA, proporcionando
+        contexto selectivo y relevante según el estado del cuestionario.
 
         Args:
             conversation: Objeto de conversación actual
@@ -71,40 +72,43 @@ class AIService:
             if should_start:
                 conversation.start_questionnaire()
 
-        # Preparar mensajes para el modelo de IA con el prompt específico
+        # Preparar mensajes para el modelo de IA
         messages_for_ai = [
             {"role": "system", "content": settings.SYSTEM_PROMPT_WITH_QUESTIONNAIRE}
         ]
 
-        # Añadir documentos de referencia como contexto
-        # 1. Añadir el cuestionario completo como contexto adicional
+        # Añadir contexto selectivo del cuestionario según el estado actual
         if conversation.is_questionnaire_active():
-            # Filtrar por sector/subsector si ya se han seleccionado
-            questionnaire_context = questionnaire_service.get_questionnaire_as_context(
-                conversation.questionnaire_state.sector,
-                conversation.questionnaire_state.subsector,
+            questionnaire_context = questionnaire_service.get_questionnaire_context(
+                conversation.questionnaire_state
             )
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": f"REFERENCIA DEL CUESTIONARIO:\n{questionnaire_context}",
+                    "content": f"CONTEXTO DEL CUESTIONARIO ACTUAL:\n{questionnaire_context}",
                 }
             )
 
-        # 2. Añadir el formato de propuesta como contexto adicional
-        if conversation.is_questionnaire_completed() or (
-            conversation.is_questionnaire_active()
-            and len(conversation.questionnaire_state.answers) > 10
-        ):
-            proposal_format = questionnaire_service.get_proposal_format()
+            # Añadir plantilla de propuesta si estamos cerca de completar el cuestionario
+            if len(conversation.questionnaire_state.answers) > 10:
+                proposal_template = questionnaire_service.get_proposal_template()
+                messages_for_ai.append(
+                    {
+                        "role": "system",
+                        "content": f"FORMATO DE PROPUESTA A UTILIZAR:\n{proposal_template}",
+                    }
+                )
+
+        # Si el cuestionario está completado, incluir información sobre cómo generar PDF
+        if conversation.is_questionnaire_completed():
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": f"FORMATO DE PROPUESTA:\n{proposal_format}",
+                    "content": "El cuestionario ha sido completado. Si el usuario solicita la propuesta en PDF, indícale que puede descargarla usando el botón o enlace 'Descargar propuesta en PDF'.",
                 }
             )
 
-        # Añadir la información de estado actual del cuestionario
+        # Añadir el estado actual del cuestionario
         if (
             conversation.is_questionnaire_active()
             or conversation.is_questionnaire_completed()
@@ -112,34 +116,34 @@ class AIService:
             state_context = self._generate_state_context(conversation)
             messages_for_ai.append({"role": "system", "content": state_context})
 
-        # Añadir historial de mensajes
+        # Añadir historial de mensajes (excluyendo mensajes del sistema)
         for msg in conversation.messages:
-            if msg.role != "system":  # Excluimos los mensajes de sistema originales
+            if msg.role != "system":
                 messages_for_ai.append({"role": msg.role, "content": msg.content})
 
         # Añadir el mensaje actual del usuario
         messages_for_ai.append({"role": "user", "content": user_message})
 
-        # Si acabamos de iniciar el cuestionario, dar una pista al modelo
+        # Si acabamos de iniciar el cuestionario, dar instrucciones específicas al modelo
         if should_start:
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": "El usuario ha mostrado interés en soluciones de tratamiento de agua. Inicia el proceso de cuestionario con el saludo estándar y la primera pregunta sobre el sector.",
+                    "content": "El usuario ha mostrado interés en soluciones de tratamiento de agua. Inicia el proceso de cuestionario con el saludo estándar y la primera pregunta sobre el sector industrial.",
                 }
             )
 
         # Generar respuesta con el modelo de IA
         response = await self.generate_response(messages_for_ai)
 
-        # Procesamiento posterior mínimo para actualizar el estado
+        # Actualizar el estado del cuestionario basado en la interacción
         self._update_questionnaire_state(conversation, user_message, response)
 
         return response
 
     def _generate_state_context(self, conversation: Conversation) -> str:
         """
-        Genera un contexto sobre el estado actual del cuestionario
+        Genera un contexto informativo sobre el estado actual del cuestionario
 
         Args:
             conversation: Objeto de conversación actual
@@ -162,7 +166,7 @@ class AIService:
                 context += f"  • Pregunta '{q_id}': {answer}\n"
 
         if state.completed:
-            context += "- El cuestionario ha sido completado. Genera una propuesta final usando el formato de propuesta proporcionado.\n"
+            context += "- El cuestionario ha sido completado. Debes generar una propuesta final según el formato proporcionado.\n"
         elif state.active:
             context += "- El cuestionario está activo. Continúa con la siguiente pregunta según el documento del cuestionario.\n"
 
@@ -172,7 +176,7 @@ class AIService:
         self, conversation: Conversation, user_message: str, ai_response: str
     ) -> None:
         """
-        Actualiza el estado del cuestionario basado en la interacción
+        Actualiza el estado del cuestionario basado en la interacción reciente
 
         Args:
             conversation: Objeto de conversación actual
@@ -181,71 +185,75 @@ class AIService:
         """
         state = conversation.questionnaire_state
 
-        # Si el cuestionario está activo
+        # Si el cuestionario no está activo, no hay nada que actualizar
+        if not state.active and not state.completed:
+            return
+
+        # Detectar selección de sector
+        if not state.sector:
+            # Verificar si el modelo está preguntando por el sector
+            if "¿En qué sector opera tu empresa?" in ai_response:
+                return  # Esperando respuesta de sector
+
+            # Intentar identificar el sector en la respuesta del usuario
+            sectors = ["Industrial", "Comercial", "Municipal", "Residencial"]
+            for sector in sectors:
+                if sector.lower() in user_message.lower():
+                    state.sector = sector
+                    break
+
+            # Verificar respuestas numéricas (1-4)
+            if user_message.strip() in ["1", "2", "3", "4"]:
+                index = int(user_message.strip()) - 1
+                if 0 <= index < len(sectors):
+                    state.sector = sectors[index]
+
+        # Detectar selección de subsector
+        elif state.sector and not state.subsector:
+            # Verificar si el modelo está preguntando por el subsector
+            if "giro específico" in ai_response or "subsector" in ai_response:
+                return  # Esperando respuesta de subsector
+
+            # Obtener los subsectores para el sector seleccionado
+            subsectors = questionnaire_service.get_subsectors(state.sector)
+
+            # Buscar coincidencia por texto
+            for subsector in subsectors:
+                if subsector.lower() in user_message.lower():
+                    state.subsector = subsector
+                    break
+
+            # Verificar respuestas numéricas
+            if user_message.strip().isdigit():
+                index = int(user_message.strip()) - 1
+                if 0 <= index < len(subsectors):
+                    state.subsector = subsectors[index]
+
+        # Detectar si el cuestionario ha terminado y se ha generado una propuesta
+        if (
+            "RESUMEN DE LA PROPUESTA" in ai_response
+            or "ANÁLISIS ECONÓMICO" in ai_response
+        ):
+            state.completed = True
+            # No desactivamos el cuestionario para mantener el contexto
+
+        # Actualizar pregunta actual si es necesario
         if state.active and not state.completed:
-            # Lógica simplificada para detectar sector/subsector
-            if not state.sector:
-                # Intentar identificar el sector en la respuesta del usuario
-                sectors = ["Industrial", "Comercial", "Municipal", "Residencial"]
-                for sector in sectors:
-                    if sector.lower() in user_message.lower():
-                        state.sector = sector
-                        break
-                # También verificar respuestas numéricas (1-4)
-                if user_message.strip() in ["1", "2", "3", "4"]:
-                    index = int(user_message.strip()) - 1
-                    if 0 <= index < len(sectors):
-                        state.sector = sectors[index]
+            # Si tenemos sector y subsector, actualizar información de preguntas
+            if state.sector and state.subsector:
+                # Este método es simplificado, idealmente deberíamos identificar exactamente
+                # qué pregunta está siendo respondida, pero por ahora mantenemos el enfoque mínimo
+                question_key = f"{state.sector}_{state.subsector}"
+                questions = questionnaire_service.questionnaire_data.get(
+                    "questions", {}
+                ).get(question_key, [])
 
-            # Similar para subsector, si ya tenemos sector pero no subsector
-            elif state.sector and not state.subsector:
-                subsectors = []
-                if state.sector == "Industrial":
-                    subsectors = [
-                        "Alimentos y Bebidas",
-                        "Textil",
-                        "Petroquímica",
-                        "Farmacéutica",
-                        "Minería",
-                        "Petróleo y Gas",
-                        "Metal/Automotriz",
-                        "Cemento",
-                    ]
-                elif state.sector == "Comercial":
-                    subsectors = [
-                        "Hotel",
-                        "Edificio de oficinas",
-                        "Centro comercial/Comercio minorista",
-                        "Restaurante",
-                    ]
-                elif state.sector == "Municipal":
-                    subsectors = [
-                        "Gobierno de la ciudad",
-                        "Pueblo/Aldea",
-                        "Autoridad de servicios de agua",
-                    ]
-                elif state.sector == "Residencial":
-                    subsectors = ["Vivienda unifamiliar", "Edificio multifamiliar"]
-
-                # Buscar coincidencia por texto
-                for subsector in subsectors:
-                    if subsector.lower() in user_message.lower():
-                        state.subsector = subsector
-                        break
-
-                # Verificar respuestas numéricas
-                if user_message.strip().isdigit():
-                    index = int(user_message.strip()) - 1
-                    if 0 <= index < len(subsectors):
-                        state.subsector = subsectors[index]
-
-            # Detectar si el cuestionario ha sido completado (propuesta generada)
-            if (
-                "RESUMEN DE LA PROPUESTA" in ai_response
-                or "CAPEX & OPEX" in ai_response
-            ):
-                state.completed = True
-                state.active = False
+                # Si hay una pregunta en la respuesta del modelo, esa es la actual
+                for question in questions:
+                    q_text = question.get("text", "")
+                    if q_text in ai_response and question["id"] not in state.answers:
+                        state.current_question_id = question["id"]
+                        return
 
     def _should_start_questionnaire(self, user_message: str) -> bool:
         """
@@ -443,13 +451,5 @@ class AIService:
             )
 
 
-# Clase extendida del servicio de IA (se utilizará en lugar de la estándar)
-class AIWithQuestionnaireService(AIService):
-    """Versión del servicio de IA con funcionalidad de cuestionario integrada"""
-
-    def __init__(self):
-        super().__init__()
-
-
-# Instancia global del servicio
-ai_service = AIWithQuestionnaireService()
+# Instancia global del servicio de IA
+ai_service = AIService()

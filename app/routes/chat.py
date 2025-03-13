@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Body, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Body, BackgroundTasks, Response
+from fastapi.responses import FileResponse
 import logging
 from typing import Dict, Any, List, Optional
 import os
@@ -84,6 +85,38 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             data.conversation_id, user_message
         )
 
+        # Detectar si es una solicitud para generar PDF
+        pdf_requested = "pdf" in data.message.lower() and (
+            "generar" in data.message.lower()
+            or "descargar" in data.message.lower()
+            or "propuesta" in data.message.lower()
+        )
+
+        # Si se solicita PDF y el cuestionario está completo, generar PDF
+        if pdf_requested and conversation.is_questionnaire_completed():
+            # Generar propuesta y PDF
+            proposal = questionnaire_service.generate_proposal(conversation)
+            pdf_path = questionnaire_service.generate_proposal_pdf(proposal)
+
+            # Informar al usuario que puede descargar el PDF
+            pdf_message = (
+                f"He generado el PDF con la propuesta personalizada. "
+                f"Puedes descargarlo usando el siguiente enlace: "
+                f"/api/chat/{conversation.id}/download-proposal-pdf"
+            )
+
+            assistant_message = Message.assistant(pdf_message)
+            await storage_service.add_message_to_conversation(
+                data.conversation_id, assistant_message
+            )
+
+            return MessageResponse(
+                id=assistant_message.id,
+                conversation_id=data.conversation_id,
+                message=pdf_message,
+                created_at=assistant_message.created_at,
+            )
+
         # Usar el servicio actualizado para manejar el flujo de conversación
         # incluyendo el cuestionario si está activo
         ai_response = await ai_service.handle_conversation(conversation, data.message)
@@ -108,6 +141,50 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
+
+
+@router.get("/{conversation_id}/download-proposal-pdf")
+async def download_proposal_pdf(conversation_id: str):
+    """Descarga la propuesta en formato PDF"""
+    try:
+        # Obtener la conversación
+        conversation = await storage_service.get_conversation(conversation_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+
+        # Verificar que el cuestionario está completo
+        if not conversation.is_questionnaire_completed():
+            raise HTTPException(
+                status_code=400,
+                detail="El cuestionario no está completo, no se puede generar la propuesta",
+            )
+
+        # Generar la propuesta y el PDF
+        proposal = questionnaire_service.generate_proposal(conversation)
+        pdf_path = questionnaire_service.generate_proposal_pdf(proposal)
+
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise HTTPException(
+                status_code=500,
+                detail="Error al generar el PDF, por favor intente nuevamente",
+            )
+
+        # Obtener el nombre del cliente para el nombre del archivo
+        client_name = proposal["client_info"]["name"].replace(" ", "_")
+        filename = f"Propuesta_Hydrous_{client_name}.pdf"
+
+        # Devolver el archivo PDF
+        return FileResponse(
+            path=pdf_path,
+            filename=filename,
+            media_type="application/pdf",
+            background=BackgroundTasks(),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al descargar propuesta PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
 
 @router.get("/{conversation_id}/questionnaire/status")

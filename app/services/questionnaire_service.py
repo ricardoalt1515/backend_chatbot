@@ -3,6 +3,8 @@ import logging
 import os
 import random
 from typing import Dict, Any, Optional, List, Tuple
+import markdown2
+import pdfkit  # Para convertir HTML a PDF
 
 from app.models.conversation import Conversation, QuestionnaireState
 from app.config import settings
@@ -73,6 +75,128 @@ class QuestionnaireService:
         intro = self.questionnaire_data.get("introduction", {})
         return intro.get("text", ""), intro.get("explanation", "")
 
+    def get_questionnaire_context(self, state: QuestionnaireState) -> str:
+        """
+        Obtiene el contexto relevante del cuestionario basado en el estado actual
+
+        Args:
+            state: Estado actual del cuestionario
+
+        Returns:
+            str: Contexto relevante para el modelo de IA
+        """
+        # Si no se ha seleccionado sector, enviar introducción y selección de sector
+        if not state.sector:
+            return self._get_introduction_and_sectors()
+
+        # Si se ha seleccionado sector pero no subsector, enviar selección de subsector
+        if state.sector and not state.subsector:
+            return self._get_subsector_selection(state.sector)
+
+        # Si se tiene sector y subsector, enviar solo las preguntas relevantes
+        # y la pregunta actual marcada como "ACTUAL"
+        return self._get_sector_subsector_questions(
+            state.sector, state.subsector, state.current_question_id
+        )
+
+    def _get_introduction_and_sectors(self) -> str:
+        """Obtiene la introducción y la selección de sectores"""
+        intro_text, explanation = self.get_introduction()
+        sectors = self.get_sectors()
+
+        context = f"""
+{intro_text}
+
+{explanation}
+
+**¿En qué sector opera tu empresa?**
+
+"""
+        # Añadir los sectores numerados
+        for i, sector in enumerate(sectors, 1):
+            context += f"{i}. {sector}\n"
+
+        return context
+
+    def _get_subsector_selection(self, sector: str) -> str:
+        """Obtiene la selección de subsectores para un sector"""
+        subsectors = self.get_subsectors(sector)
+
+        context = f"""
+**Sector: {sector}**
+
+**¿Cuál es el giro específico de tu Empresa dentro del sector {sector}?**
+
+"""
+        # Añadir los subsectores numerados
+        for i, subsector in enumerate(subsectors, 1):
+            context += f"{i}. {subsector}\n"
+
+        return context
+
+    def _get_sector_subsector_questions(
+        self, sector: str, subsector: str, current_question_id: Optional[str] = None
+    ) -> str:
+        """
+        Obtiene las preguntas para un sector/subsector específico
+
+        Args:
+            sector: Sector seleccionado
+            subsector: Subsector seleccionado
+            current_question_id: ID de la pregunta actual (para marcarla)
+
+        Returns:
+            str: Contexto de las preguntas
+        """
+        question_key = f"{sector}_{subsector}"
+        questions = self.questionnaire_data.get("questions", {}).get(question_key, [])
+
+        if not questions:
+            return f"No se encontraron preguntas para {sector} - {subsector}"
+
+        context = f"""
+**Sector: {sector}**
+**Subsector: {subsector}**
+
+**"Para continuar, quiero conocer algunos datos clave sobre tu empresa,
+como la ubicación y el costo del agua. Estos factores pueden influir en
+la viabilidad de distintas soluciones. Por ejemplo, en ciertas regiones,
+el agua puede ser más costosa o escasa, lo que hace que una solución de
+tratamiento o reutilización sea aún más valiosa. ¡Vamos con las
+siguientes preguntas!"**
+
+"""
+
+        # Añadir todas las preguntas, marcando la actual
+        for question in questions:
+            q_id = question.get("id", "")
+            q_text = question.get("text", "")
+            q_type = question.get("type", "text")
+            q_explanation = question.get("explanation", "")
+
+            # Marcar la pregunta actual
+            if q_id == current_question_id:
+                context += f">>> PREGUNTA ACTUAL: {q_text} <<<\n"
+            else:
+                context += f"- {q_text}\n"
+
+            # Añadir explicación si existe
+            if q_explanation:
+                context += f"  (Explicación: {q_explanation})\n"
+
+            # Añadir opciones para preguntas de selección
+            if (
+                q_type in ["multiple_choice", "multiple_select"]
+                and "options" in question
+            ):
+                context += "  Opciones:\n"
+                for i, option in enumerate(question["options"], 1):
+                    context += f"  {i}. {option}\n"
+
+            context += "\n"
+
+        return context
+
     def get_next_question(self, state: QuestionnaireState) -> Optional[Dict[str, Any]]:
         """Obtiene la siguiente pregunta basada en el estado actual"""
         if not state.active:
@@ -126,64 +250,34 @@ class QuestionnaireService:
     def process_answer(
         self, conversation: Conversation, question_id: str, answer: Any
     ) -> None:
-        """Procesa una respuesta y actualiza el estado del cuestionario de manera más inteligente"""
+        """Procesa una respuesta y actualiza el estado del cuestionario"""
         # Guardar la respuesta
         conversation.questionnaire_state.answers[question_id] = answer
 
-        # Procesar respuestas a las preguntas especiales (sector y subsector)
+        # Si es una respuesta al sector o subsector, actualizar esos campos
         if question_id == "sector_selection":
-            # Intentar determinar el sector a partir de la respuesta
+            sector_index = int(answer) - 1 if answer.isdigit() else 0
             sectors = self.get_sectors()
-
-            if isinstance(answer, str):
-                # Si es un número, usarlo como índice
-                if answer.isdigit():
-                    sector_index = int(answer) - 1
-                    if 0 <= sector_index < len(sectors):
-                        conversation.questionnaire_state.sector = sectors[sector_index]
-                # Si no es un número, buscar coincidencia por texto
-                else:
-                    answer_lower = answer.lower()
-                    for sector in sectors:
-                        if (
-                            sector.lower() in answer_lower
-                            or answer_lower in sector.lower()
-                        ):
-                            conversation.questionnaire_state.sector = sector
-                            break
-
-            # Si no se pudo determinar el sector, usar el primero como fallback
-            if not conversation.questionnaire_state.sector and sectors:
-                conversation.questionnaire_state.sector = sectors[0]
-
+            if 0 <= sector_index < len(sectors):
+                conversation.questionnaire_state.sector = sectors[sector_index]
+            else:
+                # Si se proporcionó el nombre en lugar del índice
+                if answer in sectors:
+                    conversation.questionnaire_state.sector = answer
         elif question_id == "subsector_selection":
             if conversation.questionnaire_state.sector:
+                subsector_index = int(answer) - 1 if answer.isdigit() else 0
                 subsectors = self.get_subsectors(
                     conversation.questionnaire_state.sector
                 )
-
-                if isinstance(answer, str):
-                    # Si es un número, usarlo como índice
-                    if answer.isdigit():
-                        subsector_index = int(answer) - 1
-                        if 0 <= subsector_index < len(subsectors):
-                            conversation.questionnaire_state.subsector = subsectors[
-                                subsector_index
-                            ]
-                    # Si no es un número, buscar coincidencia por texto
-                    else:
-                        answer_lower = answer.lower()
-                        for subsector in subsectors:
-                            if (
-                                subsector.lower() in answer_lower
-                                or answer_lower in subsector.lower()
-                            ):
-                                conversation.questionnaire_state.subsector = subsector
-                                break
-
-                # Si no se pudo determinar el subsector, usar el primero como fallback
-                if not conversation.questionnaire_state.subsector and subsectors:
-                    conversation.questionnaire_state.subsector = subsectors[0]
+                if 0 <= subsector_index < len(subsectors):
+                    conversation.questionnaire_state.subsector = subsectors[
+                        subsector_index
+                    ]
+                else:
+                    # Si se proporcionó el nombre en lugar del índice
+                    if answer in subsectors:
+                        conversation.questionnaire_state.subsector = answer
 
         # Actualizar el ID de la pregunta actual
         next_question = self.get_next_question(conversation.questionnaire_state)
@@ -354,7 +448,7 @@ class QuestionnaireService:
         return []
 
     def format_proposal_summary(self, proposal: Dict[str, Any]) -> str:
-        """Formatea un resumen de la propuesta para presentar al usuario de manera más atractiva"""
+        """Formatea un resumen de la propuesta para presentar al usuario"""
         client_info = proposal["client_info"]
         project_details = proposal["project_details"]
         treatment = proposal["recommended_treatment"]
@@ -368,346 +462,146 @@ class QuestionnaireService:
                 for tech in details["tecnologias"]:
                     technologies.append(f"{tech} ({stage})")
 
-        # Crear una introducción personalizada
-        intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecto de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
-
-        # Formatear objetivos principales
-        objetivos_principales = (
-            "• " + "\n• ".join(project_details["objectives"])
-            if project_details.get("objectives")
-            else "No especificados"
-        )
-
-        # Formatear objetivos de reúso
-        objetivos_reuso = (
-            "• " + "\n• ".join(project_details["reuse_objectives"])
-            if project_details.get("reuse_objectives")
-            else "No especificados"
-        )
-
-        # Formatear resumen con más detalle y mejor presentación
+        # Formatear resumen
         summary = f"""
-{intro}
+# RESUMEN DE LA PROPUESTA DE HYDROUS
 
-**RESUMEN DE LA PROPUESTA DE HYDROUS**
+## 📋 DATOS DEL PROYECTO
+- **Cliente**: {client_info['name']}
+- **Ubicación**: {client_info['location']}
+- **Sector**: {client_info['sector']} - {client_info['subsector']}
+- **Flujo de agua a tratar**: {project_details.get('flow_rate', 'No especificado')}
 
-**📋 DATOS DEL PROYECTO**
-• Cliente: {client_info['name']}
-• Ubicación: {client_info['location']}
-• Sector: {client_info['sector']} - {client_info['subsector']}
-• Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
+## 🎯 OBJETIVOS PRINCIPALES
+{"- " + "- ".join(project_details['objectives']) if project_details.get('objectives') else "No especificados"}
 
-**🎯 OBJETIVOS PRINCIPALES**
-{objetivos_principales}
+## ♻️ OBJETIVOS DE REÚSO
+{"- " + "- ".join(project_details['reuse_objectives']) if project_details.get('reuse_objectives') else "No especificados"}
 
-**♻️ OBJETIVOS DE REÚSO**
-{objetivos_reuso}
+## ⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA
+- **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
+- **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
+- **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
+- **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
 
-**⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA**
-• **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
-• **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
-• **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
-• **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
+## 💰 ANÁLISIS ECONÓMICO
+- **Inversión inicial estimada**: ${costs['capex']['total']:,.2f} USD
+- **Costo operativo anual**: ${costs['opex']['total_anual']:,.2f} USD/año
+- **Costo operativo mensual**: ${costs['opex']['total_mensual']:,.2f} USD/mes
 
-**💰 ANÁLISIS ECONÓMICO**
-• Inversión inicial estimada: ${costs['capex']['total']:,.2f} USD
-• Costo operativo anual: ${costs['opex']['total_anual']:,.2f} USD/año
-• Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
+## 📈 RETORNO DE INVERSIÓN
+- **Ahorro anual estimado**: ${roi['ahorro_anual']:,.2f} USD/año
+- **Periodo de recuperación**: {roi['periodo_recuperacion']:.1f} años
+- **ROI a 5 años**: {roi['roi_5_anos']:.1f}%
 
-**📈 RETORNO DE INVERSIÓN**
-• Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
-• Periodo de recuperación: {roi['periodo_recuperacion']:.1f} años
-• ROI a 5 años: {roi['roi_5_anos']:.1f}%
+## 🌱 BENEFICIOS AMBIENTALES
+- Reducción de la huella hídrica de tu operación
+- Disminución de la descarga de contaminantes al medio ambiente
+- Cumplimiento con normativas ambientales vigentes
+- Contribución a la sostenibilidad del recurso hídrico
 
-**🌱 BENEFICIOS AMBIENTALES**
-• Reducción de la huella hídrica de tu operación
-• Disminución de la descarga de contaminantes al medio ambiente
-• Cumplimiento con normativas ambientales vigentes
-• Contribución a la sostenibilidad del recurso hídrico
-
-**PRÓXIMOS PASOS**
+## PRÓXIMOS PASOS
 ¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
 
-También puedo responder cualquier pregunta adicional que tengas sobre la solución propuesta.
+También puedo generar un PDF con esta propuesta para que puedas descargarla y compartirla con tu equipo.
 """
         return summary
 
-    def get_questionnaire_as_context(
-        self, sector: str = None, subsector: str = None
-    ) -> str:
+    def generate_proposal_pdf(self, proposal: Dict[str, Any]) -> str:
         """
-        Obtiene el cuestionario completo como contexto para el modelo de IA,
-        opcionalmente filtrado por sector y subsector.
+        Genera un PDF con la propuesta formateada
 
         Args:
-            sector: Sector específico (ej. "Industrial")
-            subsector: Subsector específico (ej. "Textil")
+            proposal: Datos de la propuesta
 
         Returns:
-            str: Texto del cuestionario relevante
+            str: Ruta al archivo PDF generado
         """
-        # Texto completo del cuestionario (preámbulo)
-        context = """
-        **\"¡Hola! Gracias por tomarte el tiempo para responder estas preguntas.
-        La información que nos compartas nos ayudará a diseñar una solución de
-        agua personalizada, eficiente y rentable para tu operación. No te
-        preocupes si no tienes todas las respuestas a la mano; iremos paso a
-        paso y te explicaré por qué cada pregunta es importante. ¡Empecemos!\"**
+        try:
+            # Crear el contenido HTML a partir del markdown
+            markdown_content = self.format_proposal_summary(proposal)
+            html_content = markdown2.markdown(markdown_content)
 
-        **Antes de entrar en detalles técnicos, me gustaría conocer un poco más
-        sobre tu empresa y el sector en el que opera. Esto nos ayudará a
-        entender mejor tus necesidades y diseñar una solución de agua adecuada
-        para ti. Vamos con las primeras preguntas.\"**
-        """
-
-        # Si no se especifica sector, devolvemos solo la lista de sectores
-        if not sector:
-            context += """
-            ¿En qué sector opera tu empresa?
-
-            - Industrial
-            - Comercial
-            - Municipal
-            - Residencial
+            # Añadir estilos al HTML
+            styled_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Propuesta Hydrous - {proposal['client_info']['name']}</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+                    h2 {{ color: #2980b9; margin-top: 20px; }}
+                    .header {{ background-color: #3498db; color: white; padding: 20px; text-align: center; }}
+                    .footer {{ background-color: #f9f9f9; padding: 10px; text-align: center; font-size: 0.8em; margin-top: 30px; }}
+                    .disclaimer {{ background-color: #f8f9fa; border-left: 4px solid #e74c3c; padding: 10px; margin: 20px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>Hydrous Management Group</h1>
+                    <p>Soluciones personalizadas de tratamiento de agua</p>
+                </div>
+                
+                {html_content}
+                
+                <div class="footer">
+                    <p>Hydrous Management Group © {datetime.datetime.now().year}</p>
+                    <p>Propuesta generada con IA - Para más información contacte a info@hydrous.com</p>
+                </div>
+            </body>
+            </html>
             """
-            return context
 
-        # Si se especifica sector pero no subsector, devolvemos la lista de subsectores
-        if sector and not subsector:
-            if sector == "Industrial":
-                context += """
-                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+            # Generar un nombre de archivo único
+            client_name = proposal["client_info"]["name"].replace(" ", "_")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{client_name}_propuesta_{timestamp}.pdf"
+            output_path = os.path.join(settings.UPLOAD_DIR, filename)
 
-                **Industrial**
-                - Alimentos y Bebidas
-                - Textil
-                - Petroquímica
-                - Farmacéutica
-                - Minería
-                - Petróleo y Gas
-                - Metal/Automotriz
-                - Cemento
-                - Otro
-                """
-            elif sector == "Comercial":
-                context += """
-                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+            # Convertir HTML a PDF
+            pdfkit.from_string(styled_html, output_path)
 
-                **Comercial**
-                - Hotel
-                - Edificio de oficinas
-                - Centro comercial/Comercio minorista
-                - Restaurante
-                """
-            elif sector == "Municipal":
-                context += """
-                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+            return output_path
+        except Exception as e:
+            logger.error(f"Error al generar PDF: {str(e)}")
+            return ""
 
-                **Municipal**
-                - Gobierno de la ciudad
-                - Pueblo/Aldea
-                - Autoridad de servicios de agua
-                """
-            elif sector == "Residencial":
-                context += """
-                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
-
-                **Residencial**
-                - Vivienda unifamiliar
-                - Edificio multifamiliar
-                """
-            return context
-
-        # Si tenemos sector y subsector, devolvemos el cuestionario específico
-        # Aquí incluiríamos el texto completo del cuestionario para esa combinación
-        context += f"\n**Sector: {sector}**\n**Subsector: {subsector}**\n\n"
-
-        # Ejemplo para Industrial_Textil (se implementaría para todas las combinaciones)
-        if sector == "Industrial" and subsector == "Textil":
-            context += """
-            **"Para continuar, quiero conocer algunos datos clave sobre tu empresa,
-            como la ubicación y el costo del agua. Estos factores pueden influir en
-            la viabilidad de distintas soluciones. Por ejemplo, en ciertas regiones,
-            el agua puede ser más costosa o escasa, lo que hace que una solución de
-            tratamiento o reutilización sea aún más valiosa. ¡Vamos con las
-            siguientes preguntas!\"**
-
-            1. Nombre usuario/cliente/nombre de la empresa
-            2. Ubicación (Colonia, Ciudad, código Postal, coordenadas)
-            3. Costo del agua (moneda/unidad de medición)
-            4. Cantidad de agua consumida (Unidad de medición/unidad tiempo)
-            5. Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo)
-            6. Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
-               - Menos de 20
-               - >=20, <50
-               - >50, < 200
-               - >= 200, < 500
-               - >=500<1000
-               - >=1000<2000
-               - >=2000<5000
-               - >=5000
-
-            7. Volúmenes de agua promedios, picos de generación de agua residual
-            8. Análisis de agua residual (de preferencia históricos):
-               - Color
-               - SST (Solidos suspendidos)
-               - pH (Potencial Hidrogeno)
-               - Metales pesados (Mercurio, arsénico, plomo etc.)
-               - DQO (Demanda química de oxígeno)
-               - DBO (Demanda bioquímica de oxígeno)
-               
-            9. Cuál es su fuente de agua
-               - Agua municipal
-               - Agua de pozo
-               - Cosecha de agua Pluvial
-               
-            10. Cuales son sus usos en su empresa:
-                - Lavado de telas
-                - Teñido e impresión
-                - Enjuague y acabado
-                - Agua de refrigeración
-                - Agua para Calderas (generación de vapor)
-                
-            11. Volúmenes de agua potable promedios, picos de consumo
-            
-            12. Cual es el objetivo principal que estas buscando
-                - Cumplimiento normativo
-                - Reducción de la huella ambiental
-                - Ahorro de costos/Proyecto de retorno de inversión
-                - Mayor disponibilidad de agua
-                - Otro (especifique)
-                
-            13. Objetivos de reusó del agua o descarga del agua tratada:
-                - Uso en riego de áreas verdes
-                - Rehusó en sanitarios
-                - Rehusó en sus procesos industriales
-                - Cumplimiento normativo
-                - Otro Especifique
-                
-            14. ¿Actualmente en donde descarga sus aguas residuales?
-                - Alcantarillado
-                - Cuerpo de agua natural (Ríos, Lagunas Esteros o Subsuelo)
-                - Otro (Especifique)
-                
-            15. Cuenta con algunas restricciones adicionales del proyecto:
-                - Limitaciones de espacio y logística
-                - Restricciones normativas o regulatorias
-                - Calidad del agua en la entrada
-                - Limitaciones en las tecnologías disponibles
-                - Rangos de presupuestos descríbalos por favor
-                - Inversión inicial limitada
-                - Preocupación por costos operativos
-                - Manejo de residuos
-                - Disponibilidad de energía local
-                - Otros (especifique)
-                
-            16. Cuenta con algún sistema de tratamiento de agua residual o sistema de potabilización
-                - Si
-                - No
-                
-            17. Que presupuesto tiene estimado para la inversión en proyectos de agua
-            18. En que tiempo tiene contemplado llevar a cabo el proyecto
-            19. Cuenta con financiamiento disponible
-            20. Puede proporcionarnos recibos del agua
-            21. Cuenta con un cronograma estimado para la implementación de los proyectos
-            22. Tiempo contemplado en el crecimiento de proyectos a futuro
-                - Inmediato (0-6 meses)
-                - Corto plazo (6-12 meses)
-                - Mediano plazo (1-3 años)
-                - Otro especifique
-            """
-        # Se agregarían condiciones similares para todas las combinaciones de sector_subsector
-
-        return context
-
-    def get_proposal_format(self) -> str:
+    def get_proposal_template(self) -> str:
         """
-        Obtiene el formato de propuesta para usar como plantilla
+        Obtiene la plantilla de formato para propuestas
 
         Returns:
-            str: Texto del formato de propuesta
+            str: Plantilla de formato para propuestas
         """
         return """
-        **Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal
-        Guideline**
+**Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal
+Guideline**
 
-        **📌 Important Disclaimer**
+**📌 Important Disclaimer**
 
-        This proposal was **generated using AI** based on the information
-        provided by the end user and **industry-standard benchmarks**. While
-        every effort has been made to ensure accuracy, the data, cost estimates,
-        and technical recommendations **may contain errors and are not legally
-        binding**. It is recommended that all details be **validated by Hydrous
-        Management Group** before implementation.
+This proposal was **generated using AI** based on the information
+provided by the end user and **industry-standard benchmarks**. While
+every effort has been made to ensure accuracy, the data, cost estimates,
+and technical recommendations **may contain errors and are not legally
+binding**. It is recommended that all details be **validated by Hydrous
+Management Group** before implementation.
 
-        If a **phone number or contact information** was provided, a
-        representative from **Hydrous Management Group will reach out** for
-        further discussion. If not, you may contact us at **info@hydrous.com**
-        for additional inquiries or clarification.
+If a **phone number or contact information** was provided, a
+representative from **Hydrous Management Group will reach out** for
+further discussion. If not, you may contact us at **info@hydrous.com**
+for additional inquiries or clarification.
 
-        **1. Introduction to Hydrous Management Group**
+**1. Introduction to Hydrous Management Group**
 
-        Hydrous Management Group specializes in **customized wastewater
-        treatment solutions** tailored for industrial and commercial clients.
-        Our **expertise in water management** helps businesses achieve
-        **regulatory compliance, cost reductions, and sustainable water reuse**.
+Hydrous Management Group specializes in **customized wastewater
+treatment solutions** tailored for industrial and commercial clients.
+Our **expertise in water management** helps businesses achieve
+**regulatory compliance, cost reductions, and sustainable water reuse**.
 
-        Using advanced treatment technologies and AI-powered design, Hydrous
-        delivers **efficient, scalable, and cost-effective** wastewater
-        solutions that optimize operational performance while minimizing
-        environmental impact.
-
-        **2. Project Background**
-
-        This section provides an overview of the client's facility, industry,
-        and wastewater treatment needs.
-
-        **3. Objective of the Project**
-
-        Clearly define the **primary objectives** for wastewater treatment.
-
-        ✅ **Regulatory Compliance** -- Ensure treated wastewater meets
-        discharge regulations.
-        ✅ **Cost Optimization** -- Reduce water purchase and discharge costs.
-        ✅ **Water Reuse** -- Treat wastewater for use in industrial processes.
-        ✅ **Sustainability** -- Improve environmental footprint through
-        efficient resource management.
-
-        **4. Key Design Assumptions & Comparison to Industry Standards**
-
-        This section compares the **raw wastewater characteristics** provided by
-        the client with **industry-standard values** for similar industrial
-        wastewater. It also outlines the target effluent quality for compliance
-        or reuse.
-
-        **5. Process Design & Treatment Alternatives**
-
-        This section outlines **recommended treatment technologies** and
-        possible **alternatives** to meet wastewater treatment objectives.
-
-        **6. Suggested Equipment & Sizing**
-
-        This section lists **recommended equipment, capacities, dimensions, and
-        possible vendors/models** where available.
-
-        **7. Estimated CAPEX & OPEX**
-
-        This section itemizes both **capital expenditure (CAPEX)** and
-        **operational expenditure (OPEX)**.
-
-        **8. Return on Investment (ROI) Analysis**
-
-        Projected cost savings based on **reduced water purchases and lower
-        discharge fees**.
-
-        **9. Q&A Exhibit**
-
-        Attach all **key questions and answers** gathered during consultation as
-        an exhibit for reference.
-
-        📩 **For inquiries or validation of this proposal, contact Hydrous
-        Management Group at:** **info@hydrous.com**.
-        """
+(... resto del formato de propuesta ...)
+"""
 
 
 # Instancia global del servicio
