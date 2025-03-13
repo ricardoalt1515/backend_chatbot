@@ -86,28 +86,39 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         )
 
         # Detectar si es una solicitud para generar PDF
-        pdf_requested = "pdf" in data.message.lower() and (
-            "generar" in data.message.lower()
-            or "descargar" in data.message.lower()
-            or "propuesta" in data.message.lower()
-        )
+        pdf_keywords = [
+            "pdf",
+            "descargar",
+            "propuesta",
+            "documento",
+            "guardar",
+            "archivo",
+        ]
+        pdf_requested = any(keyword in data.message.lower() for keyword in pdf_keywords)
 
         # Si se solicita PDF y el cuestionario está completo, generar PDF
         if pdf_requested and conversation.is_questionnaire_completed():
-            # Generar propuesta y PDF
+            # Generar y verificar propuesta
             proposal = questionnaire_service.generate_proposal(conversation)
-            pdf_path = questionnaire_service.generate_proposal_pdf(proposal)
 
             # Informar al usuario que puede descargar el PDF
+            download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
             pdf_message = (
-                f"He generado el PDF con la propuesta personalizada. "
-                f"Puedes descargarlo usando el siguiente enlace: "
-                f"/api/chat/{conversation.id}/download-proposal-pdf"
+                "He preparado tu propuesta personalizada. Puedes descargarla usando el siguiente enlace:\n\n"
+                f"[DESCARGAR PROPUESTA EN PDF] ({download_url})\n\n"
+                "Este enlace te permitira guardar la propuesta en tu dispositivo para que puedas revisarla"
+                "cuando lo necesites o compartirla con tu equipo. ¿Necesitas algo más?"
             )
 
+            # añadir mensaje del asistente
             assistant_message = Message.assistant(pdf_message)
             await storage_service.add_message_to_conversation(
                 data.conversation_id, assistant_message
+            )
+
+            # Generar el PDF en segundo plano para tenerlo listo cuadno se solicite
+            background_tasks.add_task(
+                questionnaire_service.generate_proposal_pdf, proposal
             )
 
             return MessageResponse(
@@ -145,7 +156,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 
 @router.get("/{conversation_id}/download-proposal-pdf")
 async def download_proposal_pdf(conversation_id: str):
-    """Descarga la propuesta en formato PDF"""
+    """Descarga la propuesta en formato PDF o HTML segun disponibilidad"""
     try:
         # Obtener la conversación
         conversation = await storage_service.get_conversation(conversation_id)
@@ -159,32 +170,52 @@ async def download_proposal_pdf(conversation_id: str):
                 detail="El cuestionario no está completo, no se puede generar la propuesta",
             )
 
-        # Generar la propuesta y el PDF
+        # Generar la propuesta y el PDF/HTML
         proposal = questionnaire_service.generate_proposal(conversation)
-        pdf_path = questionnaire_service.generate_proposal_pdf(proposal)
+        file_path = questionnaire_service.generate_proposal_pdf(proposal)
 
-        if not pdf_path or not os.path.exists(pdf_path):
-            raise HTTPException(
-                status_code=500,
-                detail="Error al generar el PDF, por favor intente nuevamente",
-            )
+        if not file_path or not os.path.exists(file_path):
+            # Si falla la generacion, generar una respuesta HTML simple
+            html_content = f"""
+            <html>
+                <head>
+                    <title>Propuesta Hydrous</title>
+                </head>
+                <body>
+                    <h1>Error al generar documento</h1>
+                    <p>No se pudo generar el documento de propuesta. Por favor intente nuevamente o contacte con soporte.</p>
+                </body>
+            </html>
+            """
+            response.headers["Content-Type"] = "text/html"
+            return html_content
 
-        # Obtener el nombre del cliente para el nombre del archivo
+        # Obtener el nombre del clietne para el nombre del archivo
         client_name = proposal["client_info"]["name"].replace(" ", "_")
-        filename = f"Propuesta_Hydrous_{client_name}.pdf"
 
-        # Devolver el archivo PDF
+        # Determinar tipo de archivo basado en la extension
+        is_pdf = file_path.lower().endswith(".pdf")
+        if is_pdf:
+            filename = f"Propuesta_Hydrous_{client_name}.pdf"
+            media_type = "application/pdf"
+        else:
+            filename = f"Propuesta_Hydrous_{client_name}.html"
+            media_type = "text/html"
+
+        # Devolver el archivo
         return FileResponse(
-            path=pdf_path,
+            path=file_path,
             filename=filename,
-            media_type="application/pdf",
+            media_type=media_type,
             background=BackgroundTasks(),
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error al descargar propuesta PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al generar el PDF")
+        logger.error(f"Error al descargar propuesta: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al generar el documento {str(e)}"
+        )
 
 
 @router.get("/{conversation_id}/questionnaire/status")

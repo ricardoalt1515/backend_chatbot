@@ -1,7 +1,9 @@
+import datetime
 import json
 import logging
 import os
 import random
+import string
 from typing import Dict, Any, Optional, List, Tuple
 import markdown2
 import pdfkit  # Para convertir HTML a PDF
@@ -518,6 +520,12 @@ También puedo generar un PDF con esta propuesta para que puedas descargarla y c
             str: Ruta al archivo PDF generado
         """
         try:
+            # Obtener nombre del cliente para el nombre del archivo
+            client_name = proposal["client_info"]["name"].replace(" ", "_")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{client_name}_propuesta_{timestamp}.pdf"
+            output_path = os.path.join(settings.UPLOAD_DIR, filename)
+
             # Crear el contenido HTML a partir del markdown
             markdown_content = self.format_proposal_summary(proposal)
             html_content = markdown2.markdown(markdown_content)
@@ -536,6 +544,10 @@ También puedo generar un PDF con esta propuesta para que puedas descargarla y c
                     .header {{ background-color: #3498db; color: white; padding: 20px; text-align: center; }}
                     .footer {{ background-color: #f9f9f9; padding: 10px; text-align: center; font-size: 0.8em; margin-top: 30px; }}
                     .disclaimer {{ background-color: #f8f9fa; border-left: 4px solid #e74c3c; padding: 10px; margin: 20px 0; }}
+                    ul, ol {{ margin-left: 2em; }}
+                    table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                    th {{ background-color: #f2f2f2; }}
                 </style>
             </head>
             <body>
@@ -554,18 +566,43 @@ También puedo generar un PDF con esta propuesta para que puedas descargarla y c
             </html>
             """
 
-            # Generar un nombre de archivo único
-            client_name = proposal["client_info"]["name"].replace(" ", "_")
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{client_name}_propuesta_{timestamp}.pdf"
-            output_path = os.path.join(settings.UPLOAD_DIR, filename)
+            # Guardar el HTML para debugging y como respaldo
+            html_path = os.path.join(
+                settings.UPLOAD_DIR, f"{client_name}_propuesta_{timestamp}.html"
+            )
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(styled_html)
 
-            # Convertir HTML a PDF
-            pdfkit.from_string(styled_html, output_path)
+            # Metodo 1: Intentar con pdfkit (requiere wkhtmltopdf instalado)
+            try:
+                import pdfkit
 
-            return output_path
+                pdfkit_config = pdfkit.configuration()
+                pdfkit.from_string(
+                    styled_html, output_path, configuration=pdfkit_config
+                )
+                logger.info(f"PDF generado con pdfkit: {output_path}")
+                return output_path
+            except Exception as e:
+                logger.warning(
+                    f"Error al generar PDF con pdfkit: {str(e)}, intentando con Weasyprint"
+                )
+
+            # Metodo 2: Intentar con Weasyprint como alternativa
+            try:
+                from weasyprint import HTML
+
+                HTML(string=styled_html).write_pdf(output_path)
+                logger.info(f"PDF generado con Weasyprint: {output_path}")
+                return output_path
+            except Exception as e:
+                logger.warning(f"Error al generar PDF con Weasyprint: {str(e)}")
+
+            # Si ambos metodos fallan, devolver la ruta del HTML como falback
+            logger.warning(f"No se pudo generar PDF, devolviendo HTML: {html_path}")
+            return html_path
         except Exception as e:
-            logger.error(f"Error al generar PDF: {str(e)}")
+            logger.error(f"Erro al generar PDF: {str(e)}")
             return ""
 
     def get_proposal_template(self) -> str:
@@ -576,32 +613,32 @@ También puedo generar un PDF con esta propuesta para que puedas descargarla y c
             str: Plantilla de formato para propuestas
         """
         return """
-**Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal
-Guideline**
+    **Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal
+    Guideline**
 
-**📌 Important Disclaimer**
+    **Important Disclaimer**
 
-This proposal was **generated using AI** based on the information
-provided by the end user and **industry-standard benchmarks**. While
-every effort has been made to ensure accuracy, the data, cost estimates,
-and technical recommendations **may contain errors and are not legally
-binding**. It is recommended that all details be **validated by Hydrous
-Management Group** before implementation.
+    This proposal was **generated using AI** based on the information
+    provided by the end user and **industry-standard benchmarks**. While
+    every effort has been made to ensure accuracy, the data, cost estimates,
+    and technical recommendations **may contain errors and are not legally
+    binding**. It is recommended that all details be **validated by Hydrous
+    Management Group** before implementation.
 
-If a **phone number or contact information** was provided, a
-representative from **Hydrous Management Group will reach out** for
-further discussion. If not, you may contact us at **info@hydrous.com**
-for additional inquiries or clarification.
+    If a **phone number or contact information** was provided, a
+    representative from **Hydrous Management Group will reach out** for
+    further discussion. If not, you may contact us at **info@hydrous.com**
+    for additional inquiries or clarification.
 
-**1. Introduction to Hydrous Management Group**
+    **1. Introduction to Hydrous Management Group**
 
-Hydrous Management Group specializes in **customized wastewater
-treatment solutions** tailored for industrial and commercial clients.
-Our **expertise in water management** helps businesses achieve
-**regulatory compliance, cost reductions, and sustainable water reuse**.
+    Hydrous Management Group specializes in **customized wastewater
+    treatment solutions** tailored for industrial and commercial clients.
+    Our **expertise in water management** helps businesses achieve
+    **regulatory compliance, cost reductions, and sustainable water reuse**.
 
-(... resto del formato de propuesta ...)
-"""
+    (... resto del formato de propuesta ...)
+    """
 
 
 # Instancia global del servicio
