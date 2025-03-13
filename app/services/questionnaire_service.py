@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import random
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List, Tuple
 
 from app.models.conversation import Conversation, QuestionnaireState
 from app.config import settings
@@ -11,41 +11,15 @@ logger = logging.getLogger("hydrous-backend")
 
 
 class QuestionnaireService:
-    """Servicio mejorado para manejar el cuestionario y sus respuestas de forma conversacional"""
+    """Servicio para manejar el cuestionario y sus respuestas"""
 
     def __init__(self):
         self.questionnaire_data = self._load_questionnaire_data()
-        # Frases de transición para hacer más fluido el cuestionario
-        self.transitions = [
-            "Entendido. Ahora",
-            "Perfecto. A continuación,",
-            "Gracias por esa información.",
-            "Excelente. Sigamos con",
-            "Muy bien.",
-            "Comprendo.",
-            "Esa información es útil.",
-            "Avancemos con",
-            "Continuemos.",
-            "Ahora necesitaría saber",
-        ]
-        # Frases para solicitar clarificación
-        self.clarification_phrases = [
-            "No estoy seguro de haber entendido tu respuesta. ¿Podrías por favor",
-            "Disculpa, pero necesito una respuesta más clara. ¿Podrías",
-            "Para asegurarme de registrar correctamente tu respuesta, ¿podrías",
-            "Necesito un poco más de claridad en tu respuesta. ¿Te importaría",
-        ]
-        # Frases para confirmación
-        self.confirmation_phrases = [
-            "He registrado que",
-            "Entiendo que",
-            "He anotado que",
-            "Perfecto, he guardado que",
-        ]
 
     def _load_questionnaire_data(self) -> Dict[str, Any]:
         """Carga los datos del cuestionario desde un archivo JSON"""
         try:
+            # En producción esto se cargaría desde un archivo
             questionnaire_path = os.path.join(
                 os.path.dirname(__file__), "../data/questionnaire.json"
             )
@@ -71,7 +45,7 @@ class QuestionnaireService:
                 "Industrial_Textil": [
                     {
                         "id": "nombre_empresa",
-                        "text": "¿Cuál es el nombre de tu empresa o cómo prefieres que te llame?",
+                        "text": "Nombre usuario/cliente/nombre de la empresa",
                         "type": "text",
                         "required": True,
                     }
@@ -97,17 +71,7 @@ class QuestionnaireService:
     def get_introduction(self) -> Tuple[str, str]:
         """Obtiene el texto de introducción del cuestionario"""
         intro = self.questionnaire_data.get("introduction", {})
-        text = intro.get("text", "")
-        explanation = intro.get("explanation", "")
-
-        # Asegurar que la introducción es conversacional
-        if not text:
-            text = "¡Hola! Soy el Diseñador de Soluciones de Agua con IA de Hydrous, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales."
-
-        if not explanation:
-            explanation = "Para desarrollar la mejor solución para tus instalaciones, te haré algunas preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada."
-
-        return text, explanation
+        return intro.get("text", ""), intro.get("explanation", "")
 
     def get_next_question(self, state: QuestionnaireState) -> Optional[Dict[str, Any]]:
         """Obtiene la siguiente pregunta basada en el estado actual"""
@@ -127,11 +91,11 @@ class QuestionnaireService:
         if not state.subsector:
             return {
                 "id": "subsector_selection",
-                "text": f"Dentro del sector {state.sector}, ¿cuál es el giro específico de tu empresa?",
+                "text": f"¿Cuál es el giro específico de tu Empresa dentro del sector {state.sector}?",
                 "type": "multiple_choice",
                 "options": self.get_subsectors(state.sector),
                 "required": True,
-                "explanation": "Cada subsector tiene características específicas que influyen en el diseño de la solución óptima para tus necesidades.",
+                "explanation": "Cada subsector tiene características específicas que influyen en el diseño de la solución.",
             }
 
         # Obtener las preguntas para este sector/subsector
@@ -146,60 +110,23 @@ class QuestionnaireService:
         # Determinar la siguiente pregunta no contestada
         for q in questions:
             if q["id"] not in state.answers:
-                # Enriquecer la pregunta con un hecho relevante
                 fact = self.get_random_fact(state.sector, state.subsector)
 
-                # Hacer una copia para no modificar el original
-                enriched_question = q.copy()
-
-                # Mejorar el texto de la pregunta para hacerlo más conversacional
-                enriched_question["text"] = self._make_question_conversational(
-                    q["text"], q["id"]
-                )
-
                 # Añadir un hecho relevante a la explicación si existe
-                if fact and enriched_question.get("explanation"):
-                    enriched_question["explanation"] = (
-                        f"{enriched_question['explanation']}\n\n*Dato interesante: {fact}*"
+                if fact and q.get("explanation"):
+                    q["explanation"] = (
+                        f"{q['explanation']}\n\n*Dato interesante: {fact}*"
                     )
-                elif fact:
-                    enriched_question["explanation"] = f"*Dato interesante: {fact}*"
 
-                return enriched_question
+                return q
 
         # Si llegamos aquí, es que todas las preguntas han sido respondidas
         return None
 
-    def _make_question_conversational(
-        self, question_text: str, question_id: str
-    ) -> str:
-        """Hace que la pregunta suene más conversacional según su tipo"""
-
-        # Si la pregunta ya tiene forma de pregunta, la dejamos como está
-        if question_text.strip().endswith("?"):
-            return question_text
-
-        # Patrones comunes para convertir a formato de pregunta
-        if "nombre" in question_id.lower():
-            return f"¿Cuál es {question_text}?"
-        elif "ubicacion" in question_id.lower():
-            return f"¿Cuál es tu {question_text}?"
-        elif "costo" in question_id.lower() or "precio" in question_id.lower():
-            return f"¿Podrías indicarme {question_text}?"
-        elif "cantidad" in question_id.lower() or "volumen" in question_id.lower():
-            return f"¿Cuál es la {question_text}?"
-        elif "objetivo" in question_id.lower():
-            return f"¿Cuál es {question_text}?"
-
-        # Si no hay un patrón específico, simplemente añadimos "¿Cuál es...?"
-        return f"¿Podrías proporcionarnos información sobre {question_text}?"
-
     def process_answer(
         self, conversation: Conversation, question_id: str, answer: Any
-    ) -> Union[bool, str]:
-        """
-        Procesa una respuesta y actualiza el estado del cuestionario de manera inteligente
-        """
+    ) -> None:
+        """Procesa una respuesta y actualiza el estado del cuestionario de manera más inteligente"""
         # Guardar la respuesta
         conversation.questionnaire_state.answers[question_id] = answer
 
@@ -209,12 +136,12 @@ class QuestionnaireService:
             sectors = self.get_sectors()
 
             if isinstance(answer, str):
-                # Si es un numero, usarlo como indice
+                # Si es un número, usarlo como índice
                 if answer.isdigit():
                     sector_index = int(answer) - 1
                     if 0 <= sector_index < len(sectors):
                         conversation.questionnaire_state.sector = sectors[sector_index]
-                # Si no es un numero, buscar coincidencia por texto
+                # Si no es un número, buscar coincidencia por texto
                 else:
                     answer_lower = answer.lower()
                     for sector in sectors:
@@ -225,7 +152,7 @@ class QuestionnaireService:
                             conversation.questionnaire_state.sector = sector
                             break
 
-            # Si no se pudo determinar el sector, usar el primero como falback
+            # Si no se pudo determinar el sector, usar el primero como fallback
             if not conversation.questionnaire_state.sector and sectors:
                 conversation.questionnaire_state.sector = sectors[0]
 
@@ -236,14 +163,14 @@ class QuestionnaireService:
                 )
 
                 if isinstance(answer, str):
-                    # Si es un numero, usarlo como indice
+                    # Si es un número, usarlo como índice
                     if answer.isdigit():
                         subsector_index = int(answer) - 1
                         if 0 <= subsector_index < len(subsectors):
                             conversation.questionnaire_state.subsector = subsectors[
                                 subsector_index
                             ]
-                    # Si no es un numero, buscar coincidencia por texto
+                    # Si no es un número, buscar coincidencia por texto
                     else:
                         answer_lower = answer.lower()
                         for subsector in subsectors:
@@ -254,7 +181,7 @@ class QuestionnaireService:
                                 conversation.questionnaire_state.subsector = subsector
                                 break
 
-                # Si no se pudo determinar el subsector, usar el primero como falback
+                # Si no se pudo determinar el subsector, usar el primero como fallback
                 if not conversation.questionnaire_state.subsector and subsectors:
                     conversation.questionnaire_state.subsector = subsectors[0]
 
@@ -267,145 +194,6 @@ class QuestionnaireService:
         # Verificar si hemos completado el cuestionario
         if next_question is None:
             conversation.questionnaire_state.completed = True
-
-        return True
-
-    def _process_selection_answer(
-        self, answer: Any, question: Dict[str, Any], state: QuestionnaireState
-    ) -> Any:
-        """
-        Procesa una respuesta para preguntas de selección.
-        Maneja tanto respuestas numéricas como texto.
-        """
-        options = question.get("options", [])
-        if not options:
-            return answer
-
-        # Si es respuesta numérica
-        if isinstance(answer, int) or (isinstance(answer, str) and answer.isdigit()):
-            index = int(answer) - 1  # Ajustamos al índice base-0
-            if 0 <= index < len(options):
-                if question["type"] == "multiple_choice":
-                    return options[index]  # Devolvemos el texto de la opción
-                else:
-                    return [options[index]]  # Para multiple_select devolvemos una lista
-            return None
-
-        # Si es una respuesta de texto para multiple_select (valores separados por coma)
-        if (
-            question["type"] == "multiple_select"
-            and isinstance(answer, str)
-            and "," in answer
-        ):
-            indices = []
-            selected_options = []
-
-            for part in answer.split(","):
-                part = part.strip()
-                if part.isdigit():
-                    index = int(part) - 1
-                    if 0 <= index < len(options):
-                        selected_options.append(options[index])
-                else:
-                    # Buscar coincidencia por texto
-                    matches = [opt for opt in options if part.lower() in opt.lower()]
-                    selected_options.extend(matches)
-
-            return selected_options if selected_options else None
-
-        # Si es respuesta de texto, buscar coincidencia
-        if isinstance(answer, str):
-            # Primero buscar coincidencia exacta
-            if answer in options:
-                return answer
-
-            # Luego buscar coincidencia parcial
-            matches = [opt for opt in options if answer.lower() in opt.lower()]
-            if len(matches) == 1:
-                return matches[0]
-
-        return None
-
-    def _get_question_by_id(
-        self, state: QuestionnaireState, question_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Obtiene los datos de una pregunta por su ID"""
-        if question_id == "sector_selection":
-            return {
-                "id": "sector_selection",
-                "text": "¿En qué sector opera tu empresa?",
-                "type": "multiple_choice",
-                "options": self.get_sectors(),
-                "required": True,
-            }
-
-        if question_id == "subsector_selection" and state.sector:
-            return {
-                "id": "subsector_selection",
-                "text": f"¿Cuál es el giro específico de tu empresa dentro del sector {state.sector}?",
-                "type": "multiple_choice",
-                "options": self.get_subsectors(state.sector),
-                "required": True,
-            }
-
-        # Buscar en las preguntas específicas del sector/subsector
-        if state.sector and state.subsector:
-            question_key = f"{state.sector}_{state.subsector}"
-            questions = self.questionnaire_data.get("questions", {}).get(
-                question_key, []
-            )
-
-            for q in questions:
-                if q["id"] == question_id:
-                    return q
-
-        return None
-
-    def get_random_transition(self) -> str:
-        """Devuelve una frase de transición aleatoria para hacer más fluido el cuestionario"""
-        return random.choice(self.transitions)
-
-    def get_clarification_phrase(self) -> str:
-        """Devuelve una frase de solicitud de clarificación aleatoria"""
-        return random.choice(self.clarification_phrases)
-
-    def get_confirmation_phrase(self) -> str:
-        """Devuelve una frase de confirmación aleatoria"""
-        return random.choice(self.confirmation_phrases)
-
-    def format_question_with_transition(
-        self, question: Dict[str, Any], previous_answer: Optional[str] = None
-    ) -> str:
-        """
-        Formatea una pregunta con una transición natural basada en la respuesta anterior.
-        Hace que el cuestionario se sienta como una conversación.
-        """
-        transition = self.get_random_transition()
-
-        # Si hay una respuesta anterior, confirmarla primero
-        confirmation = ""
-        if previous_answer:
-            confirmation = f"{self.get_confirmation_phrase()} {previous_answer}. "
-
-        result = f"{confirmation}{transition} {question['text']}"
-
-        # Añadir explicación si existe
-        if question.get("explanation"):
-            result += f"\n\n*{question['explanation']}*"
-
-        # Formatear opciones para preguntas de selección
-        if question["type"] == "multiple_choice" and "options" in question:
-            result += "\n\n"
-            for i, option in enumerate(question["options"], 1):
-                result += f"{i}. {option}\n"
-
-        elif question["type"] == "multiple_select" and "options" in question:
-            result += "\n\n"
-            for i, option in enumerate(question["options"], 1):
-                result += f"{i}. {option}\n"
-            result += "\nPuedes seleccionar varias opciones separando los números con comas (ej: 1,3,4)."
-
-        return result
 
     def is_questionnaire_complete(self, conversation: Conversation) -> bool:
         """Verifica si el cuestionario está completo"""
@@ -425,9 +213,7 @@ class QuestionnaireService:
         objectives = []
         if "objetivo_principal" in answers:
             obj_principal = answers["objetivo_principal"]
-            if isinstance(obj_principal, int) or (
-                isinstance(obj_principal, str) and obj_principal.isdigit()
-            ):
+            if obj_principal.isdigit():
                 obj_index = int(obj_principal) - 1
                 options = self._get_options_for_question(
                     "objetivo_principal", sector, subsector
@@ -443,7 +229,7 @@ class QuestionnaireService:
             reuse = answers["objetivo_reuso"]
             if isinstance(reuse, list):
                 for r in reuse:
-                    if isinstance(r, int) or (isinstance(r, str) and r.isdigit()):
+                    if r.isdigit():
                         r_index = int(r) - 1
                         options = self._get_options_for_question(
                             "objetivo_reuso", sector, subsector
@@ -452,7 +238,7 @@ class QuestionnaireService:
                             reuse_objectives.append(options[r_index])
                     else:
                         reuse_objectives.append(r)
-            elif isinstance(reuse, int) or (isinstance(reuse, str) and reuse.isdigit()):
+            elif reuse.isdigit():
                 r_index = int(reuse) - 1
                 options = self._get_options_for_question(
                     "objetivo_reuso", sector, subsector
@@ -568,7 +354,7 @@ class QuestionnaireService:
         return []
 
     def format_proposal_summary(self, proposal: Dict[str, Any]) -> str:
-        """Formatea un resumen de la propuesta para presentar al usuario"""
+        """Formatea un resumen de la propuesta para presentar al usuario de manera más atractiva"""
         client_info = proposal["client_info"]
         project_details = proposal["project_details"]
         treatment = proposal["recommended_treatment"]
@@ -582,105 +368,332 @@ class QuestionnaireService:
                 for tech in details["tecnologias"]:
                     technologies.append(f"{tech} ({stage})")
 
-        # Crear una introduccion personalizada
+        # Crear una introducción personalizada
         intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecto de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
 
-        # Definir todo el formato previamente
-        capex_total = format(costs["capex"]["total"], ",.2f")
-        opex_anual = format(costs["opex"]["total_anual"], ",.2f")
-        opex_mensual = format(costs["opex"]["total_mensual"], ",.2f")
-        ahorro_anual = format(roi["ahorro_anual"], ",.2f")
-        periodo_recuperacion = format(roi["periodo_recuperacion"], ".1f")
-        roi_5_anos = format(roi["roi_5_anos"], ".1f")
-
-        # Preparar secciones para tratamientos
-        pretratamiento = (
-            ", ".join(treatment["pretratamiento"]["tecnologias"])
-            if "pretratamiento" in treatment
-            and treatment["pretratamiento"]
-            and "tecnologias" in treatment["pretratamiento"]
-            else "No requerido"
-        )
-        primario = (
-            ", ".join(treatment["primario"]["tecnologias"])
-            if "primario" in treatment
-            and treatment["primario"]
-            and "tecnologias" in treatment["primario"]
-            else "No requerido"
-        )
-        secundario = (
-            ", ".join(treatment["secundario"]["tecnologias"])
-            if "secundario" in treatment
-            and treatment["secundario"]
-            and "tecnologias" in treatment["secundario"]
-            else "No requerido"
-        )
-        terciario = (
-            ", ".join(treatment["terciario"]["tecnologias"])
-            if "terciario" in treatment
-            and treatment["terciario"]
-            and "tecnologias" in treatment["terciario"]
-            else "No requerido"
-        )
-
-        # Preparar objetivos
-        objetivos_principales = (
-            ("• " + "\n• ".join(project_details["objectives"]))
-            if project_details.get("objectives")
-            else "No especificados"
-        )
-        objetivos_reuso = (
-            ("• " + "\n• ".join(project_details["reuse_objectives"]))
-            if project_details.get("reuse_objectives")
-            else "No especificados"
-        )
-
-        # Usar un string template simple sin formato complejo
+        # Formatear resumen con más detalle y mejor presentación
         summary = f"""
-        {intro}
+{intro}
 
-        **RESUMEN DE LA PROPUESTA DE HYDROUS**
+**RESUMEN DE LA PROPUESTA DE HYDROUS**
 
-        **DATOS DEL PROYECTO**
-        - Cliente: {client_info['name']}
-        - Ubicación: {client_info['location']}
-        - Sector: {client_info['sector']} - {client_info['subsector']}
-        - Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
+**📋 DATOS DEL PROYECTO**
+• Cliente: {client_info['name']}
+• Ubicación: {client_info['location']}
+• Sector: {client_info['sector']} - {client_info['subsector']}
+• Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
 
-        **OBJETIVOS PRINCIPALES**
-        {objetivos_principales}
+**🎯 OBJETIVOS PRINCIPALES**
+{("• " + "\n• ".join(project_details['objectives'])) if project_details.get('objectives') else "No especificados"}
 
-        **OBJETIVOS DE REÚSO**
-        {objetivos_reuso}
+**♻️ OBJETIVOS DE REÚSO**
+{("• " + "\n• ".join(project_details['reuse_objectives'])) if project_details.get('reuse_objectives') else "No especificados"}
 
-        **SOLUCIÓN TECNOLÓGICA RECOMENDADA**
-        - **Pretratamiento**: {pretratamiento}
-        - **Tratamiento primario**: {primario}
-        - **Tratamiento secundario**: {secundario}
-        - **Tratamiento terciario**: {terciario}
+**⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA**
+• **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
+• **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
+• **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
+• **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
 
-        **ANÁLISIS ECONÓMICO**
-        - Inversión inicial estimada: ${capex_total} USD
-        - Costo operativo anual: ${opex_anual} USD/año
-        - Costo operativo mensual: ${opex_mensual} USD/mes
+**💰 ANÁLISIS ECONÓMICO**
+• Inversión inicial estimada: ${costs['capex']['total']:,.2f} USD
+• Costo operativo anual: ${costs['opex']['total_anual']:,.2f} USD/año
+• Costo operativo mensual: ${costs['opex']['total_mensual']:,.2f} USD/mes
 
-        **RETORNO DE INVERSIÓN**
-        - Ahorro anual estimado: ${ahorro_anual} USD/año
-        - Periodo de recuperación: {periodo_recuperacion} años
-        - ROI a 5 años: {roi_5_anos}%
+**📈 RETORNO DE INVERSIÓN**
+• Ahorro anual estimado: ${roi['ahorro_anual']:,.2f} USD/año
+• Periodo de recuperación: {roi['periodo_recuperacion']:.1f} años
+• ROI a 5 años: {roi['roi_5_anos']:.1f}%
 
-        **BENEFICIOS AMBIENTALES**
-        - Reducción de la huella hídrica de tu operación
-        - Disminución de la descarga de contaminantes al medio ambiente
-        - Cumplimiento con normativas ambientales vigentes
-        - Contribución a la sostenibilidad del recurso hídrico
+**🌱 BENEFICIOS AMBIENTALES**
+• Reducción de la huella hídrica de tu operación
+• Disminución de la descarga de contaminantes al medio ambiente
+• Cumplimiento con normativas ambientales vigentes
+• Contribución a la sostenibilidad del recurso hídrico
 
-        **PRÓXIMOS PASOS**
-        ¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
+**PRÓXIMOS PASOS**
+¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
 
-        También puedo responder cualquier pregunta adicional que tengas sobre la solución propuesta.
-        """
+También puedo responder cualquier pregunta adicional que tengas sobre la solución propuesta.
+"""
         return summary
+
+    def get_questionnaire_as_context(
+        self, sector: str = None, subsector: str = None
+    ) -> str:
+        """
+        Obtiene el cuestionario completo como contexto para el modelo de IA,
+        opcionalmente filtrado por sector y subsector.
+
+        Args:
+            sector: Sector específico (ej. "Industrial")
+            subsector: Subsector específico (ej. "Textil")
+
+        Returns:
+            str: Texto del cuestionario relevante
+        """
+        # Texto completo del cuestionario (preámbulo)
+        context = """
+        **\"¡Hola! Gracias por tomarte el tiempo para responder estas preguntas.
+        La información que nos compartas nos ayudará a diseñar una solución de
+        agua personalizada, eficiente y rentable para tu operación. No te
+        preocupes si no tienes todas las respuestas a la mano; iremos paso a
+        paso y te explicaré por qué cada pregunta es importante. ¡Empecemos!\"**
+
+        **Antes de entrar en detalles técnicos, me gustaría conocer un poco más
+        sobre tu empresa y el sector en el que opera. Esto nos ayudará a
+        entender mejor tus necesidades y diseñar una solución de agua adecuada
+        para ti. Vamos con las primeras preguntas.\"**
+        """
+
+        # Si no se especifica sector, devolvemos solo la lista de sectores
+        if not sector:
+            context += """
+            ¿En qué sector opera tu empresa?
+
+            - Industrial
+            - Comercial
+            - Municipal
+            - Residencial
+            """
+            return context
+
+        # Si se especifica sector pero no subsector, devolvemos la lista de subsectores
+        if sector and not subsector:
+            if sector == "Industrial":
+                context += """
+                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+
+                **Industrial**
+                - Alimentos y Bebidas
+                - Textil
+                - Petroquímica
+                - Farmacéutica
+                - Minería
+                - Petróleo y Gas
+                - Metal/Automotriz
+                - Cemento
+                - Otro
+                """
+            elif sector == "Comercial":
+                context += """
+                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+
+                **Comercial**
+                - Hotel
+                - Edificio de oficinas
+                - Centro comercial/Comercio minorista
+                - Restaurante
+                """
+            elif sector == "Municipal":
+                context += """
+                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+
+                **Municipal**
+                - Gobierno de la ciudad
+                - Pueblo/Aldea
+                - Autoridad de servicios de agua
+                """
+            elif sector == "Residencial":
+                context += """
+                ¿Cuál es el giro especifico de tu Empresa dentro este Sector?
+
+                **Residencial**
+                - Vivienda unifamiliar
+                - Edificio multifamiliar
+                """
+            return context
+
+        # Si tenemos sector y subsector, devolvemos el cuestionario específico
+        # Aquí incluiríamos el texto completo del cuestionario para esa combinación
+        context += f"\n**Sector: {sector}**\n**Subsector: {subsector}**\n\n"
+
+        # Ejemplo para Industrial_Textil (se implementaría para todas las combinaciones)
+        if sector == "Industrial" and subsector == "Textil":
+            context += """
+            **"Para continuar, quiero conocer algunos datos clave sobre tu empresa,
+            como la ubicación y el costo del agua. Estos factores pueden influir en
+            la viabilidad de distintas soluciones. Por ejemplo, en ciertas regiones,
+            el agua puede ser más costosa o escasa, lo que hace que una solución de
+            tratamiento o reutilización sea aún más valiosa. ¡Vamos con las
+            siguientes preguntas!\"**
+
+            1. Nombre usuario/cliente/nombre de la empresa
+            2. Ubicación (Colonia, Ciudad, código Postal, coordenadas)
+            3. Costo del agua (moneda/unidad de medición)
+            4. Cantidad de agua consumida (Unidad de medición/unidad tiempo)
+            5. Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo)
+            6. Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
+               - Menos de 20
+               - >=20, <50
+               - >50, < 200
+               - >= 200, < 500
+               - >=500<1000
+               - >=1000<2000
+               - >=2000<5000
+               - >=5000
+
+            7. Volúmenes de agua promedios, picos de generación de agua residual
+            8. Análisis de agua residual (de preferencia históricos):
+               - Color
+               - SST (Solidos suspendidos)
+               - pH (Potencial Hidrogeno)
+               - Metales pesados (Mercurio, arsénico, plomo etc.)
+               - DQO (Demanda química de oxígeno)
+               - DBO (Demanda bioquímica de oxígeno)
+               
+            9. Cuál es su fuente de agua
+               - Agua municipal
+               - Agua de pozo
+               - Cosecha de agua Pluvial
+               
+            10. Cuales son sus usos en su empresa:
+                - Lavado de telas
+                - Teñido e impresión
+                - Enjuague y acabado
+                - Agua de refrigeración
+                - Agua para Calderas (generación de vapor)
+                
+            11. Volúmenes de agua potable promedios, picos de consumo
+            
+            12. Cual es el objetivo principal que estas buscando
+                - Cumplimiento normativo
+                - Reducción de la huella ambiental
+                - Ahorro de costos/Proyecto de retorno de inversión
+                - Mayor disponibilidad de agua
+                - Otro (especifique)
+                
+            13. Objetivos de reusó del agua o descarga del agua tratada:
+                - Uso en riego de áreas verdes
+                - Rehusó en sanitarios
+                - Rehusó en sus procesos industriales
+                - Cumplimiento normativo
+                - Otro Especifique
+                
+            14. ¿Actualmente en donde descarga sus aguas residuales?
+                - Alcantarillado
+                - Cuerpo de agua natural (Ríos, Lagunas Esteros o Subsuelo)
+                - Otro (Especifique)
+                
+            15. Cuenta con algunas restricciones adicionales del proyecto:
+                - Limitaciones de espacio y logística
+                - Restricciones normativas o regulatorias
+                - Calidad del agua en la entrada
+                - Limitaciones en las tecnologías disponibles
+                - Rangos de presupuestos descríbalos por favor
+                - Inversión inicial limitada
+                - Preocupación por costos operativos
+                - Manejo de residuos
+                - Disponibilidad de energía local
+                - Otros (especifique)
+                
+            16. Cuenta con algún sistema de tratamiento de agua residual o sistema de potabilización
+                - Si
+                - No
+                
+            17. Que presupuesto tiene estimado para la inversión en proyectos de agua
+            18. En que tiempo tiene contemplado llevar a cabo el proyecto
+            19. Cuenta con financiamiento disponible
+            20. Puede proporcionarnos recibos del agua
+            21. Cuenta con un cronograma estimado para la implementación de los proyectos
+            22. Tiempo contemplado en el crecimiento de proyectos a futuro
+                - Inmediato (0-6 meses)
+                - Corto plazo (6-12 meses)
+                - Mediano plazo (1-3 años)
+                - Otro especifique
+            """
+        # Se agregarían condiciones similares para todas las combinaciones de sector_subsector
+
+        return context
+
+    def get_proposal_format(self) -> str:
+        """
+        Obtiene el formato de propuesta para usar como plantilla
+
+        Returns:
+            str: Texto del formato de propuesta
+        """
+        return """
+        **Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal
+        Guideline**
+
+        **📌 Important Disclaimer**
+
+        This proposal was **generated using AI** based on the information
+        provided by the end user and **industry-standard benchmarks**. While
+        every effort has been made to ensure accuracy, the data, cost estimates,
+        and technical recommendations **may contain errors and are not legally
+        binding**. It is recommended that all details be **validated by Hydrous
+        Management Group** before implementation.
+
+        If a **phone number or contact information** was provided, a
+        representative from **Hydrous Management Group will reach out** for
+        further discussion. If not, you may contact us at **info@hydrous.com**
+        for additional inquiries or clarification.
+
+        **1. Introduction to Hydrous Management Group**
+
+        Hydrous Management Group specializes in **customized wastewater
+        treatment solutions** tailored for industrial and commercial clients.
+        Our **expertise in water management** helps businesses achieve
+        **regulatory compliance, cost reductions, and sustainable water reuse**.
+
+        Using advanced treatment technologies and AI-powered design, Hydrous
+        delivers **efficient, scalable, and cost-effective** wastewater
+        solutions that optimize operational performance while minimizing
+        environmental impact.
+
+        **2. Project Background**
+
+        This section provides an overview of the client's facility, industry,
+        and wastewater treatment needs.
+
+        **3. Objective of the Project**
+
+        Clearly define the **primary objectives** for wastewater treatment.
+
+        ✅ **Regulatory Compliance** -- Ensure treated wastewater meets
+        discharge regulations.
+        ✅ **Cost Optimization** -- Reduce water purchase and discharge costs.
+        ✅ **Water Reuse** -- Treat wastewater for use in industrial processes.
+        ✅ **Sustainability** -- Improve environmental footprint through
+        efficient resource management.
+
+        **4. Key Design Assumptions & Comparison to Industry Standards**
+
+        This section compares the **raw wastewater characteristics** provided by
+        the client with **industry-standard values** for similar industrial
+        wastewater. It also outlines the target effluent quality for compliance
+        or reuse.
+
+        **5. Process Design & Treatment Alternatives**
+
+        This section outlines **recommended treatment technologies** and
+        possible **alternatives** to meet wastewater treatment objectives.
+
+        **6. Suggested Equipment & Sizing**
+
+        This section lists **recommended equipment, capacities, dimensions, and
+        possible vendors/models** where available.
+
+        **7. Estimated CAPEX & OPEX**
+
+        This section itemizes both **capital expenditure (CAPEX)** and
+        **operational expenditure (OPEX)**.
+
+        **8. Return on Investment (ROI) Analysis**
+
+        Projected cost savings based on **reduced water purchases and lower
+        discharge fees**.
+
+        **9. Q&A Exhibit**
+
+        Attach all **key questions and answers** gathered during consultation as
+        an exhibit for reference.
+
+        📩 **For inquiries or validation of this proposal, contact Hydrous
+        Management Group at:** **info@hydrous.com**.
+        """
 
 
 # Instancia global del servicio
