@@ -371,6 +371,20 @@ class QuestionnaireService:
         # Crear una introducción personalizada
         intro = f"¡Excelente, {client_info['name']}! Gracias por completar el cuestionario. Basado en tus respuestas, he preparado una propuesta personalizada para tu proyecto de tratamiento de aguas residuales en el sector {client_info['sector']} - {client_info['subsector']}."
 
+        # Formatear objetivos principales
+        objetivos_principales = (
+            "• " + "\n• ".join(project_details["objectives"])
+            if project_details.get("objectives")
+            else "No especificados"
+        )
+
+        # Formatear objetivos de reúso
+        objetivos_reuso = (
+            "• " + "\n• ".join(project_details["reuse_objectives"])
+            if project_details.get("reuse_objectives")
+            else "No especificados"
+        )
+
         # Formatear resumen con más detalle y mejor presentación
         summary = f"""
 {intro}
@@ -384,10 +398,10 @@ class QuestionnaireService:
 • Flujo de agua a tratar: {project_details.get('flow_rate', 'No especificado')}
 
 **🎯 OBJETIVOS PRINCIPALES**
-{("• " + "\n• ".join(project_details['objectives'])) if project_details.get('objectives') else "No especificados"}
+{objetivos_principales}
 
 **♻️ OBJETIVOS DE REÚSO**
-{("• " + "\n• ".join(project_details['reuse_objectives'])) if project_details.get('reuse_objectives') else "No especificados"}
+{objetivos_reuso}
 
 **⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA**
 • **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
