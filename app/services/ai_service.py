@@ -79,42 +79,76 @@ class AIService:
 
         # Añadir contexto selectivo del cuestionario según el estado actual
         if conversation.is_questionnaire_active():
+            # 1. Contexto general sobre el estado actual del cuestionario
             questionnaire_context = questionnaire_service.get_questionnaire_context(
                 conversation.questionnaire_state
             )
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": f"CONTEXTO DEL CUESTIONARIO ACTUAL:\n{questionnaire_context}",
+                    "content": f"ESTADO DEL CUESTIONARIO ACTUAL:\n{questionnaire_context}",
                 }
             )
 
-            # Añadir plantilla de propuesta si estamos cerca de completar el cuestionario
+            # 2. Añadir la seccion especifica del cuestionario que se esta utilizando
+            current_section = questionnaire_service.get_questionnaire_context(
+                conversation.questionnaire_state
+            )
+            messages_for_ai.append(
+                {
+                    "role": "system",
+                    "content": f"SECCION ACTUAL DEL CUESTIONARIO(SIGUE EXACTAMENTE ESTE ORDEN DE PREGUNTAS):\n{current_section}",
+                }
+            )
+
+            # 3. Si estamos cerca de completar el cuestionario, Añadir instrucciones de diagnóstico
+            if len(conversation.questionnaire_state.answers) > 5:
+                messages_for_ai.append(
+                    {
+                        "role": "system",
+                        "content": """
+                    INSTRUCCIONES PARA DIAGNOSTICO PRELIMINAR:
+                    A medida que recopiles mas informacion, comienza a identificar los factores claves:
+                    - Alta carga organica
+                    - Presencia de metales
+                    - Necesidad de reutilizacion avanzada
+                    - Requisitos de descarga cero
+
+                    Si faltan datos criticos, solicita cortésmente que el usuario los obtenga (pruebas de laboratorio, mediciones de flujo).
+                    Haz suposiciones razonables si no se proporcionan datos, pero dejalas claras (por ejemplo, "Suponiendo un TSS tipico de 600 mg/L para su industria...").
+                    """,
+                    }
+                )
+
+            # 4. Si estamos cerca de completar el cuestionario, Añadir plantilla de propuesta
             if len(conversation.questionnaire_state.answers) > 10:
                 proposal_template = questionnaire_service.get_proposal_template()
                 messages_for_ai.append(
                     {
                         "role": "system",
-                        "content": f"FORMATO DE PROPUESTA A UTILIZAR:\n{proposal_template}",
+                        "content": f"FORMATO DE PROPUESTA A UTILIZAR CUANDO SE COMPLETE EL CUESTIONARIO:\n{proposal_template}",
                     }
                 )
 
-        # Si el cuestionario está completado, incluir información sobre cómo generar PDF
+        # Si el cuestionario esta completado, incluir indicaciones para la propuesta
         if conversation.is_questionnaire_completed():
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": "El cuestionario ha sido completado. Si el usuario solicita la propuesta en PDF, indícale que puede descargarla usando el botón o enlace 'Descargar propuesta en PDF'.",
+                    "content": """
+                INSTRUCCIONES PARA GENERAR PROPUESTA FINAL:
+                El cuestionario ha sido completado. Debes:
+                1. Resumir los datos clave recopilados.
+                2. Presentar un enfoque de tratamiento recomendado (pretratamiento, primario, secundario, terciario).
+                3. Justificar cada etapa del tratamiento basado en los datos del usuario.
+                4. Proporcionar estimaciones de CAPEX y OPEX con los descargos de responsabilidad adecuados.
+                5. Incluir un analisis de ROI aproximado.
+                6. Ofrecer la opcion de descargar la propuesta como PDF.
+
+                si el usuario solicita el PDF, indicale que puede descargar la propuesta usando el enlace de descarga.
+                """,
                 }
             )
-
-        # Añadir el estado actual del cuestionario
-        if (
-            conversation.is_questionnaire_active()
-            or conversation.is_questionnaire_completed()
-        ):
-            state_context = self._generate_state_context(conversation)
-            messages_for_ai.append({"role": "system", "content": state_context})
 
         # Añadir historial de mensajes (excluyendo mensajes del sistema)
         for msg in conversation.messages:
@@ -129,9 +163,20 @@ class AIService:
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": "El usuario ha mostrado interés en soluciones de tratamiento de agua. Inicia el proceso de cuestionario con el saludo estándar y la primera pregunta sobre el sector industrial.",
+                    "content": """
+                    El usuario ha mostrado interes en soluciones de tratamiento de agua. Inicia la conversacion con:
+                    
+                    1. El saludo estandar completo(Soy el Diseñador de Soluciones de Agua con IA de Hydrous...).
+                    2. Pregunta por el sector al que pertenece su empresa (Industrial, Comercial, Municipal o Residencial).
+                    3. Asegurate de proporcionar las opciones numeradas (1. Industrial, 2. Comercial, etc.).
+                    4. Manten un tono conversacional y amigable.
+
+                    NO procedas a mas preguntas hasta que el usuario responda esta primera pregunta.
+                    """,
                 }
             )
+
+        # Añadir instrucciones de formato para evitar problemas de Markdown
 
         # Generar respuesta con el modelo de IA
         response = await self.generate_response(messages_for_ai)
