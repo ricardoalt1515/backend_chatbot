@@ -1,11 +1,20 @@
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import httpx
+import time
 
 from app.config import settings
 from app.models.conversation import Conversation
 from app.services.questionnaire_service import questionnaire_service
+
+# Intento importar el contador de tokens si está disponible
+try:
+    from app.utils.token_counter import count_tokens, estimate_cost
+
+    token_counter_available = True
+except ImportError:
+    token_counter_available = False
 
 logger = logging.getLogger("hydrous-backend")
 
@@ -52,8 +61,7 @@ class AIService:
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Maneja la conversación delegando la lógica al modelo de IA, proporcionando
-        contexto selectivo y relevante según el estado del cuestionario.
+        Maneja la conversación de manera optimizada, reduciendo tokens y mejorando la calidad
 
         Args:
             conversation: Objeto de conversación actual
@@ -72,150 +80,336 @@ class AIService:
             if should_start:
                 conversation.start_questionnaire()
 
-        # Preparar mensajes para el modelo de IA
-        messages_for_ai = [
-            {"role": "system", "content": settings.SYSTEM_PROMPT_WITH_QUESTIONNAIRE}
-        ]
+        # 1. Determinar la etapa actual de la conversación
+        current_stage = self._determine_conversation_stage(conversation)
 
-        # Añadir contexto selectivo del cuestionario según el estado actual
-        if conversation.is_questionnaire_active():
-            # 1. Contexto general sobre el estado actual del cuestionario
-            questionnaire_context = questionnaire_service.get_questionnaire_context(
-                conversation.questionnaire_state
-            )
-            messages_for_ai.append(
-                {
-                    "role": "system",
-                    "content": f"ESTADO DEL CUESTIONARIO ACTUAL:\n{questionnaire_context}",
-                }
-            )
+        # 2. Obtener el prompt adecuado para la etapa
+        stage_prompt = self._get_prompt_for_stage(current_stage)
 
-            # 2. Añadir la seccion especifica del cuestionario que se esta utilizando
-            current_section = questionnaire_service.get_questionnaire_context(
-                conversation.questionnaire_state
-            )
-            messages_for_ai.append(
-                {
-                    "role": "system",
-                    "content": f"SECCION ACTUAL DEL CUESTIONARIO(SIGUE EXACTAMENTE ESTE ORDEN DE PREGUNTAS):\n{current_section}",
-                }
-            )
+        # 3. Preparar los mensajes para el modelo de IA
+        messages_for_ai = [{"role": "system", "content": stage_prompt}]
 
-            # 3. Si estamos cerca de completar el cuestionario, Añadir instrucciones de diagnóstico
-            if len(conversation.questionnaire_state.answers) > 5:
+        # 4. Añadir contexto relevante según la etapa
+        if current_stage in ["QUESTIONNAIRE", "ANALYSIS", "PROPOSAL"]:
+            # Obtener solo las preguntas relevantes (actual y siguientes)
+            relevant_questions = self._get_relevant_questions_context(conversation)
+            if relevant_questions:
                 messages_for_ai.append(
-                    {
-                        "role": "system",
-                        "content": """
-                    INSTRUCCIONES PARA DIAGNOSTICO PRELIMINAR:
-                    A medida que recopiles mas informacion, comienza a identificar los factores claves:
-                    - Alta carga organica
-                    - Presencia de metales
-                    - Necesidad de reutilizacion avanzada
-                    - Requisitos de descarga cero
-
-                    Si faltan datos criticos, solicita cortésmente que el usuario los obtenga (pruebas de laboratorio, mediciones de flujo).
-                    Haz suposiciones razonables si no se proporcionan datos, pero dejalas claras (por ejemplo, "Suponiendo un TSS tipico de 600 mg/L para su industria...").
-                    """,
-                    }
+                    {"role": "system", "content": relevant_questions}
                 )
 
-            # 4. Si estamos cerca de completar el cuestionario, Añadir plantilla de propuesta
-            if len(conversation.questionnaire_state.answers) > 10:
-                proposal_template = questionnaire_service.get_proposal_template()
-                messages_for_ai.append(
-                    {
-                        "role": "system",
-                        "content": f"FORMATO DE PROPUESTA A UTILIZAR CUANDO SE COMPLETE EL CUESTIONARIO:\n{proposal_template}",
-                    }
-                )
+            # Añadir resumen compacto de respuestas anteriores
+            answers_summary = self._get_compact_answers_summary(conversation)
+            if answers_summary:
+                messages_for_ai.append({"role": "system", "content": answers_summary})
 
-        # Si el cuestionario esta completado, incluir indicaciones para la propuesta
-        if conversation.is_questionnaire_completed():
-            messages_for_ai.append(
-                {
-                    "role": "system",
-                    "content": """
-                INSTRUCCIONES PARA GENERAR PROPUESTA FINAL:
-                El cuestionario ha sido completado. Debes:
-                1. Resumir los datos clave recopilados.
-                2. Presentar un enfoque de tratamiento recomendado (pretratamiento, primario, secundario, terciario).
-                3. Justificar cada etapa del tratamiento basado en los datos del usuario.
-                4. Proporcionar estimaciones de CAPEX y OPEX con los descargos de responsabilidad adecuados.
-                5. Incluir un analisis de ROI aproximado.
-                6. Ofrecer la opcion de descargar la propuesta como PDF.
+        # 5. Añadir ejemplo de few-shot si está disponible para esta etapa
+        few_shot_example = self._get_few_shot_example(current_stage)
+        if few_shot_example:
+            messages_for_ai.append({"role": "system", "content": few_shot_example})
 
-                si el usuario solicita el PDF, indicale que puede descargar la propuesta usando el enlace de descarga.
-                """,
-                }
-            )
+        # 6. Añadir historial comprimido de la conversación
+        compressed_history = self._compress_conversation_history(conversation)
+        messages_for_ai.extend(compressed_history)
 
-        # Añadir historial de mensajes (excluyendo mensajes del sistema)
-        for msg in conversation.messages:
-            if msg.role != "system":
-                messages_for_ai.append({"role": msg.role, "content": msg.content})
+        # 7. Añadir el mensaje actual del usuario si no está incluido en el historial
+        if (
+            not compressed_history
+            or compressed_history[-1]["role"] != "user"
+            or compressed_history[-1]["content"] != user_message
+        ):
+            messages_for_ai.append({"role": "user", "content": user_message})
 
-        # Añadir el mensaje actual del usuario
-        messages_for_ai.append({"role": "user", "content": user_message})
-
-        # Si acabamos de iniciar el cuestionario, dar instrucciones específicas al modelo
+        # 8. Instrucción final si acabamos de iniciar el cuestionario
         if should_start:
             messages_for_ai.append(
                 {
                     "role": "system",
-                    "content": """
-                    El usuario ha mostrado interes en soluciones de tratamiento de agua. Inicia la conversacion con:
-                    
-                    1. El saludo estandar completo(Soy el Diseñador de Soluciones de Agua con IA de Hydrous...).
-                    2. Pregunta por el sector al que pertenece su empresa (Industrial, Comercial, Municipal o Residencial).
-                    3. Asegurate de proporcionar las opciones numeradas (1. Industrial, 2. Comercial, etc.).
-                    4. Manten un tono conversacional y amigable.
-
-                    NO procedas a mas preguntas hasta que el usuario responda esta primera pregunta.
-                    """,
+                    "content": "El usuario ha mostrado interés en soluciones de tratamiento de agua. Comienza con el saludo estándar y la primera pregunta sobre el sector.",
                 }
             )
 
-        # Añadir instrucciones de formato para evitar problemas de Markdown
+        # 9. Optimización: Calcular tokens aproximados y registrar para análisis
+        if token_counter_available:
+            try:
+                token_count = count_tokens(messages_for_ai, self.model)
+                cost_estimate = estimate_cost(token_count, self.model)
+                logger.info(
+                    f"Tokens enviados: {token_count} en etapa {current_stage} (est. costo: ${cost_estimate:.5f})"
+                )
+            except Exception as e:
+                logger.warning(f"Error al contar tokens: {str(e)}")
+                # Aproximación rápida
+                total_tokens = sum(
+                    len(msg["content"].split()) * 1.35 for msg in messages_for_ai
+                )
+                logger.info(
+                    f"Tokens aproximados: {int(total_tokens)} en etapa {current_stage}"
+                )
+        else:
+            # Aproximación rápida si no está disponible el contador de tokens
+            total_tokens = sum(
+                len(msg["content"].split()) * 1.35 for msg in messages_for_ai
+            )
+            logger.info(
+                f"Tokens aproximados enviados al modelo: {int(total_tokens)} en etapa {current_stage}"
+            )
 
-        # Generar respuesta con el modelo de IA
+        # 10. Generar respuesta con el modelo de IA
+        start_time = time.time()
         response = await self.generate_response(messages_for_ai)
+        elapsed_time = time.time() - start_time
+        logger.info(f"Respuesta generada en {elapsed_time:.2f} segundos")
 
-        # Actualizar el estado del cuestionario basado en la interacción
+        # 11. Actualizar el estado del cuestionario basado en la interacción
         self._update_questionnaire_state(conversation, user_message, response)
 
         return response
 
-    def _generate_state_context(self, conversation: Conversation) -> str:
+    def _determine_conversation_stage(self, conversation: Conversation) -> str:
         """
-        Genera un contexto informativo sobre el estado actual del cuestionario
+        Determina la etapa actual de la conversación para seleccionar el prompt adecuado
 
         Args:
             conversation: Objeto de conversación actual
 
         Returns:
-            str: Contexto sobre el estado actual
+            str: Etapa actual de la conversación (INIT, SECTOR, SUBSECTOR, etc.)
         """
         state = conversation.questionnaire_state
-        context = "ESTADO ACTUAL DEL CUESTIONARIO:\n"
 
-        if state.sector:
-            context += f"- Sector seleccionado: {state.sector}\n"
+        # Si el cuestionario no está activo
+        if not state.active:
+            if state.completed:
+                return "PROPOSAL"
+            else:
+                return "INIT"
 
-        if state.subsector:
-            context += f"- Subsector seleccionado: {state.subsector}\n"
+        # Si el cuestionario está activo pero no tenemos sector
+        if not state.sector:
+            return "INIT"
 
-        if state.answers:
-            context += "- Respuestas proporcionadas hasta ahora:\n"
-            for q_id, answer in state.answers.items():
-                context += f"  • Pregunta '{q_id}': {answer}\n"
+        # Si tenemos sector pero no subsector
+        if state.sector and not state.subsector:
+            return "SECTOR"
 
-        if state.completed:
-            context += "- El cuestionario ha sido completado. Debes generar una propuesta final según el formato proporcionado.\n"
-        elif state.active:
-            context += "- El cuestionario está activo. Continúa con la siguiente pregunta según el documento del cuestionario.\n"
+        # Si tenemos ambos pero pocas respuestas (inicio del cuestionario)
+        answer_count = len(state.answers)
+        if answer_count < 10:
+            return "QUESTIONNAIRE"
+
+        # Si tenemos suficientes respuestas para iniciar análisis
+        if 10 <= answer_count < 15:
+            return "ANALYSIS"
+
+        # Si tenemos muchas respuestas, probablemente estamos cerca de terminar
+        if answer_count >= 15:
+            return "PROPOSAL"
+
+        # Default
+        return "QUESTIONNAIRE"
+
+    def _get_prompt_for_stage(self, stage: str) -> str:
+        """
+        Obtiene el prompt adecuado para la etapa actual de la conversación
+
+        Args:
+            stage: Etapa actual de la conversación
+
+        Returns:
+            str: Prompt para la etapa actual
+        """
+        # Siempre incluimos el prompt base y las instrucciones de formato
+        prompt = settings.STAGED_PROMPTS["BASE"] + "\n\n"
+
+        # Añadimos el prompt específico para la etapa
+        if stage in settings.STAGED_PROMPTS:
+            prompt += settings.STAGED_PROMPTS[stage] + "\n\n"
+
+        # Añadimos instrucciones de formato
+        prompt += settings.STAGED_PROMPTS["FORMAT"]
+
+        return prompt
+
+    def _get_few_shot_example(self, stage: str) -> Optional[str]:
+        """
+        Obtiene un ejemplo de few-shot para la etapa actual si está disponible
+
+        Args:
+            stage: Etapa actual de la conversación
+
+        Returns:
+            Optional[str]: Ejemplo de few-shot o None si no hay ejemplo
+        """
+        return settings.FEW_SHOT_EXAMPLES.get(stage)
+
+    def _compress_conversation_history(
+        self, conversation: Conversation, max_messages: int = 10
+    ) -> List[Dict[str, str]]:
+        """
+        Comprime el historial de la conversación para reducir tokens
+
+        Args:
+            conversation: Objeto de conversación actual
+            max_messages: Número máximo de mensajes a incluir
+
+        Returns:
+            List[Dict[str, str]]: Historial comprimido
+        """
+        messages = [msg for msg in conversation.messages if msg.role != "system"]
+
+        # Si tenemos pocos mensajes, los devolvemos todos
+        if len(messages) <= max_messages:
+            return [{"role": msg.role, "content": msg.content} for msg in messages]
+
+        # Si tenemos muchos mensajes, seleccionamos los más importantes
+        compressed_history = []
+
+        # Siempre incluimos los primeros 2 mensajes (saludo inicial)
+        for msg in messages[:2]:
+            compressed_history.append({"role": msg.role, "content": msg.content})
+
+        # Incluimos los últimos N-2 mensajes para mantener el contexto reciente
+        for msg in messages[-(max_messages - 2) :]:
+            compressed_history.append({"role": msg.role, "content": msg.content})
+
+        # Si hemos omitido mensajes, añadimos un resumen
+        if len(messages) > max_messages:
+            omitted_count = len(messages) - max_messages
+            summary = {
+                "role": "system",
+                "content": f"[Se han omitido {omitted_count} mensajes anteriores para optimizar. La conversación ha incluido preguntas sobre {conversation.questionnaire_state.sector}/{conversation.questionnaire_state.subsector} y el usuario ha proporcionado información sobre su proyecto.]",
+            }
+            compressed_history.insert(
+                2, summary
+            )  # Insertar después de los 2 primeros mensajes
+
+        return compressed_history
+
+    def _get_relevant_questions_context(self, conversation: Conversation) -> str:
+        """
+        Obtiene solo las preguntas relevantes del cuestionario para la etapa actual
+
+        Args:
+            conversation: Objeto de conversación actual
+
+        Returns:
+            str: Contexto de preguntas relevantes
+        """
+        state = conversation.questionnaire_state
+
+        # Si no tenemos sector/subsector, no hay preguntas específicas
+        if not state.sector or not state.subsector:
+            return ""
+
+        # Obtener la pregunta actual
+        current_question_id = state.current_question_id
+        if not current_question_id:
+            return ""
+
+        # Obtener todas las preguntas para este sector/subsector
+        question_key = f"{state.sector}_{state.subsector}"
+        all_questions = questionnaire_service.questionnaire_data.get(
+            "questions", {}
+        ).get(question_key, [])
+        if not all_questions:
+            return ""
+
+        # Encontrar la pregunta actual y las siguientes 2 preguntas
+        relevant_questions = []
+        found_current = False
+        count_after = 0
+
+        for question in all_questions:
+            if found_current and count_after < 2:
+                # Incluimos hasta 2 preguntas después de la actual
+                relevant_questions.append(question)
+                count_after += 1
+
+            if question["id"] == current_question_id:
+                # Encontramos la pregunta actual
+                relevant_questions.append(question)
+                found_current = True
+
+        # Si no encontramos la pregunta actual, devolvemos vacío
+        if not found_current:
+            return ""
+
+        # Formateamos las preguntas relevantes
+        context = "PREGUNTAS RELEVANTES DEL CUESTIONARIO:\n\n"
+        for i, q in enumerate(relevant_questions):
+            # Marcar la pregunta actual
+            prefix = ">>> PREGUNTA ACTUAL: " if i == 0 else f"Pregunta siguiente {i}: "
+
+            context += f"{prefix}{q.get('text', '')}\n"
+
+            # Añadir explicación si existe
+            if "explanation" in q:
+                context += f"Explicación: {q['explanation']}\n"
+
+            # Añadir opciones si existen
+            if (
+                q.get("type") in ["multiple_choice", "multiple_select"]
+                and "options" in q
+            ):
+                context += "Opciones:\n"
+                for j, option in enumerate(q["options"], 1):
+                    context += f"{j}. {option}\n"
+
+            context += "\n"
 
         return context
+
+    def _get_compact_answers_summary(self, conversation: Conversation) -> str:
+        """
+        Genera un resumen compacto de las respuestas proporcionadas
+
+        Args:
+            conversation: Objeto de conversación actual
+
+        Returns:
+            str: Resumen de respuestas en formato compacto
+        """
+        state = conversation.questionnaire_state
+
+        # Si no hay respuestas, devolvemos un string vacío
+        if not state.answers:
+            return ""
+
+        # Creamos un resumen en formato JSON compacto
+        answers_list = []
+
+        for q_id, answer in state.answers.items():
+            # Intentamos encontrar el texto de la pregunta
+            question_text = q_id  # Por defecto, usamos el ID
+
+            if q_id == "sector_selection":
+                question_text = "Sector"
+            elif q_id == "subsector_selection":
+                question_text = "Subsector"
+            else:
+                # Buscar en las preguntas del sector/subsector
+                if state.sector and state.subsector:
+                    question_key = f"{state.sector}_{state.subsector}"
+                    questions = questionnaire_service.questionnaire_data.get(
+                        "questions", {}
+                    ).get(question_key, [])
+
+                    for q in questions:
+                        if q.get("id") == q_id:
+                            question_text = q.get("text", "").split("?")[
+                                0
+                            ]  # Tomamos solo la primera parte
+                            break
+
+            # Añadimos la respuesta al resumen
+            answers_list.append(f"- {question_text}: {answer}")
+
+        # Formatear el resumen
+        summary = "RESUMEN DE RESPUESTAS DEL USUARIO:\n\n"
+        summary += "\n".join(answers_list)
+
+        return summary
 
     def _update_questionnaire_state(
         self, conversation: Conversation, user_message: str, ai_response: str
@@ -384,25 +578,25 @@ class AIService:
             max_tokens: Número máximo de tokens para la respuesta
 
         Returns:
-            str: Texto de la respuesta generada
+            str: Texto de la respuesta generada con formato adecuado para el frontend
         """
         try:
             # Verificar si tenemos conexión con la API
             if not self.api_key or not self.api_url:
                 return self._get_fallback_response(messages)
 
-            # Añadir instruccion especifica para evitar uso excesivo de Markdown
+            # Añadir instrucción específica para evitar uso excesivo de Markdown
             messages.append(
                 {
                     "role": "system",
                     "content": """
-                INSTRUCCION IMPORTANTE DE FORMATO:
+                INSTRUCCIÓN IMPORTANTE DE FORMATO:
                 1. No uses encabezados Markdown (como # o ##) excepto para la propuesta final.
-                2. No uses listas con formato Markdown (- o *), usa listas numeradas estandar (1., 2., etc.).
-                3. Para enfatizar texto, usa un formato de texto plano como "IMPORTANTE" en lugar de **texto**.
+                2. No uses listas con formato Markdown (- o *), usa listas numeradas estándar (1., 2., etc.).
+                3. Para enfatizar texto, usa formato de texto plano como "IMPORTANTE:" en lugar de **texto**.
                 4. Evita el uso de tablas en formato Markdown.
-                5. Si necesitas separar secciones, usa lineas en blanco simples en lugar de lines horizontales (---).
-                6. Para la propuesta final esta bien usar formato Markdown adecuado.
+                5. Si necesitas separar secciones, usa líneas en blanco simples en lugar de líneas horizontales (---).
+                6. Para la propuesta final está bien usar formato Markdown adecuado.
                 """,
                 }
             )
@@ -434,7 +628,7 @@ class AIService:
                 response_data = response.json()
                 raw_response = response_data["choices"][0]["message"]["content"]
 
-                # Procesar el texto para mantener un formato asistente
+                # Procesar el texto para mantener un formato consistente
                 processed_response = self._process_response_format(raw_response)
 
                 return processed_response
@@ -449,12 +643,16 @@ class AIService:
 
         Args:
             text: Texto original de la respuesta
+
         Returns:
             str: Texto procesado con formato adecuado
         """
-        # Si el texto parece ser una propuesta, mantener el formato Markdown
+        # Si el texto parece ser una propuesta (tiene encabezados y secciones),
+        # mantener el formato Markdown para que se pueda renderizar adecuadamente
         if "RESUMEN DE LA PROPUESTA" in text or "# RESUMEN DE LA PROPUESTA" in text:
             return text
+
+        # Para el resto de respuestas, simplificar el formato Markdown:
 
         # 1. Reemplazar encabezados Markdown con texto plano enfatizado
         for i in range(5, 0, -1):  # De h5 a h1
@@ -463,17 +661,11 @@ class AIService:
                 f"^{heading}\\s+(.+)$", r"IMPORTANTE: \1", text, flags=re.MULTILINE
             )
 
-        # 2. Reemplazar listas con viñetas
+        # 2. Reemplazar listas con viñetas por listas con números o texto plano
         text = re.sub(r"^[\*\-]\s+(.+)$", r"• \1", text, flags=re.MULTILINE)
 
-        # 3. Mantener texto en negrita pero simplificar su uso (opcional)
-        # text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-
-        # 4. Eliminar líneas horizontales
+        # 3. Eliminar líneas horizontales
         text = re.sub(r"^[\-\_]{3,}$", "", text, flags=re.MULTILINE)
-
-        # 5. Eliminar bloques de código si no son necesarios
-        # text = re.sub(r"```[a-z]*\n((.|\n)*?)```", r"\1", text)
 
         return text
 
@@ -552,5 +744,13 @@ class AIService:
             )
 
 
-# Instancia global del servicio de IA
-ai_service = AIService()
+# Clase extendida del servicio de IA (se utilizará en lugar de la estándar)
+class AIWithQuestionnaireService(AIService):
+    """Versión del servicio de IA con funcionalidad de cuestionario integrada"""
+
+    def __init__(self):
+        super().__init__()
+
+
+# Instancia global del servicio
+ai_service = AIWithQuestionnaireService()

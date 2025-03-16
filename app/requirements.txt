@@ -17,3 +17,7 @@ WeasyPrint==60.1
 
 # Utilidades
 httpx==0.26.0
+
+# Procesamiento de texto y analisis
+nltk==3.8.1
+tiktoken==0.5.2
