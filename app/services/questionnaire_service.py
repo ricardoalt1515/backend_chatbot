@@ -450,63 +450,71 @@ siguientes preguntas!"**
         return []
 
     def format_proposal_summary(self, proposal: Dict[str, Any]) -> str:
-        """Formatea un resumen de la propuesta para presentar al usuario"""
+        """Formatea un resumen de la propuesta para presentar al usuario,
+        Incluyendo enlace de descarga si se proporciona el ID de conversacion."""
         client_info = proposal["client_info"]
         project_details = proposal["project_details"]
         treatment = proposal["recommended_treatment"]
         costs = proposal["cost_estimation"]
         roi = proposal["roi_analysis"]
 
-        # Formatear tecnologías recomendadas
-        technologies = []
-        for stage, details in treatment.items():
-            if details and "tecnologias" in details:
-                for tech in details["tecnologias"]:
-                    technologies.append(f"{tech} ({stage})")
+        # Formatear resumen con Markdown mejorado
 
-        # Formatear resumen
         summary = f"""
-# RESUMEN DE LA PROPUESTA DE HYDROUS
+    # 🌊 PROPUESTA DE SOLUCIÓN HYDROUS
 
-## 📋 DATOS DEL PROYECTO
-- **Cliente**: {client_info['name']}
-- **Ubicación**: {client_info['location']}
-- **Sector**: {client_info['sector']} - {client_info['subsector']}
-- **Flujo de agua a tratar**: {project_details.get('flow_rate', 'No especificado')}
+    ## 📋 DATOS DEL PROYECTO
+    - **Cliente**: {client_info['name']}
+    - **Ubicación**: {client_info['location']}
+    - **Sector**: {client_info['sector']} - {client_info['subsector']}
+    - **Flujo de agua a tratar**: {project_details.get('flow_rate', 'No especificado')}
 
-## 🎯 OBJETIVOS PRINCIPALES
-{"- " + "- ".join(project_details['objectives']) if project_details.get('objectives') else "No especificados"}
+    ## 🎯 OBJETIVOS PRINCIPALES
+    {"- " + "- ".join(project_details['objectives']) if project_details.get('objectives') else "No especificados"}
 
-## ♻️ OBJETIVOS DE REÚSO
-{"- " + "- ".join(project_details['reuse_objectives']) if project_details.get('reuse_objectives') else "No especificados"}
+    ## ♻️ OBJETIVOS DE REÚSO
+    {"- " + "- ".join(project_details['reuse_objectives']) if project_details.get('reuse_objectives') else "No especificados"}
 
-## ⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA
-- **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
-- **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
-- **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
-- **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
+    ## ⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA
+    - **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
+    - **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
+    - **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
+    - **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
 
-## 💰 ANÁLISIS ECONÓMICO
-- **Inversión inicial estimada**: ${costs['capex']['total']:,.2f} USD
-- **Costo operativo anual**: ${costs['opex']['total_anual']:,.2f} USD/año
-- **Costo operativo mensual**: ${costs['opex']['total_mensual']:,.2f} USD/mes
+    ## 💰 ANÁLISIS ECONÓMICO
+    - **Inversión inicial estimada**: ${costs['capex']['total']:,.2f} USD
+    - **Costo operativo anual**: ${costs['opex']['total_anual']:,.2f} USD/año
+    - **Costo operativo mensual**: ${costs['opex']['total_mensual']:,.2f} USD/mes
 
-## 📈 RETORNO DE INVERSIÓN
-- **Ahorro anual estimado**: ${roi['ahorro_anual']:,.2f} USD/año
-- **Periodo de recuperación**: {roi['periodo_recuperacion']:.1f} años
-- **ROI a 5 años**: {roi['roi_5_anos']:.1f}%
+    ## 📈 RETORNO DE INVERSIÓN
+    - **Ahorro anual estimado**: ${roi['ahorro_anual']:,.2f} USD/año
+    - **Periodo de recuperación**: {roi['periodo_recuperacion']:.1f} años
+    - **ROI a 5 años**: {roi['roi_5_anos']:.1f}%
 
-## 🌱 BENEFICIOS AMBIENTALES
-- Reducción de la huella hídrica de tu operación
-- Disminución de la descarga de contaminantes al medio ambiente
-- Cumplimiento con normativas ambientales vigentes
-- Contribución a la sostenibilidad del recurso hídrico
+    ## 🌱 BENEFICIOS AMBIENTALES
+    - Reducción de la huella hídrica de tu operación
+    - Disminución de la descarga de contaminantes al medio ambiente
+    - Cumplimiento con normativas ambientales vigentes
+    - Contribución a la sostenibilidad del recurso hídrico
+    """
 
-## PRÓXIMOS PASOS
-¿Te gustaría recibir una propuesta detallada por correo electrónico? ¿O prefieres programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
+        # Añadir enlace de descarga si tenemos ID de conversación
+        if conversation_id:
+            download_url = f"/api/chat/{conversation_id}/download-proposal-pdf"
+            summary += f"""
+        ## 📥 DESCARGA TU PROPUESTA COMPLETA
 
-También puedo generar un PDF con esta propuesta para que puedas descargarla y compartirla con tu equipo.
-"""
+        **[👉 DESCARGAR PROPUESTA EN PDF]({download_url})**
+
+        *Guarda esta propuesta personalizada en tu dispositivo para compartirla con tu equipo o revisarla cuando lo necesites.*
+        """
+
+        summary += """
+        ## PRÓXIMOS PASOS
+        ¿Te gustaría programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
+
+        También puedes escribir "descargar propuesta" para obtener esta información en formato PDF.
+        """
         return summary
 
     def generate_proposal_pdf(self, proposal: Dict[str, Any]) -> str:

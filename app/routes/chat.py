@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any, List, Optional
 import os
 import time
+import re
 from datetime import datetime
 
 from app.models.conversation import (
@@ -20,6 +21,56 @@ from app.config import settings
 logger = logging.getLogger("hydrous-backend")
 
 router = APIRouter()
+
+
+def _is_pdf_request(message: str) -> bool:
+    """
+    Determina si el mensaje del usuario es una solicitud de PDF
+
+    Args:
+        message: Mensaje del usuario
+
+    Returns:
+        bool: True si es una solicitud de PDF
+    """
+    message = message.lower()
+
+    # Palabras clave relacionadas con PDF
+    pdf_keywords = [
+        "pdf",
+        "descargar",
+        "propuesta",
+        "documento",
+        "guardar",
+        "archivo",
+        "exportar",
+        "bajar",
+        "obtener",
+        "enviar",
+    ]
+
+    # Frases comunes de solicitud
+    pdf_phrases = [
+        "quiero el pdf",
+        "dame la propuesta",
+        "ver el documento",
+        "obtener el archivo",
+        "descargar la propuesta",
+        "enviame el pdf",
+        "generar documento",
+        "necesito la propuesta",
+        "el enlace no funciona",
+    ]
+
+    # Verificar palabras clave simples
+    if any(keyword in message for keyword in pdf_keywords):
+        return True
+
+    # Verificar frases comunes
+    if any(phrase in message for phrase in pdf_phrases):
+        return True
+
+    return False
 
 
 @router.post("/start", response_model=ConversationResponse)
@@ -86,15 +137,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         )
 
         # Detectar si es una solicitud para generar PDF
-        pdf_keywords = [
-            "pdf",
-            "descargar",
-            "propuesta",
-            "documento",
-            "guardar",
-            "archivo",
-        ]
-        pdf_requested = any(keyword in data.message.lower() for keyword in pdf_keywords)
+        pdf_requested = _is_pdf_request(data.message)
 
         # Si se solicita PDF y el cuestionario está completo, generar PDF
         if pdf_requested and conversation.is_questionnaire_completed():
@@ -103,12 +146,21 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 
             # Informar al usuario que puede descargar el PDF
             download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
-            pdf_message = (
-                "He preparado tu propuesta personalizada. Puedes descargarla usando el siguiente enlace:\n\n"
-                f"[DESCARGAR PROPUESTA EN PDF] ({download_url})\n\n"
-                "Este enlace te permitira guardar la propuesta en tu dispositivo para que puedas revisarla"
-                "cuando lo necesites o compartirla con tu equipo. ¿Necesitas algo más?"
-            )
+            pdf_message = f"""
+# 📄 Propuesta Lista para Descargar
+
+He preparado tu propuesta personalizada basada en la información proporcionada. Puedes descargarla como PDF usando el siguiente enlace:
+
+## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
+
+Este documento incluye:
+- Análisis de tus necesidades específicas
+- Solución tecnológica recomendada
+- Estimación de costos y retorno de inversión
+- Pasos siguientes recomendados
+
+¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
+"""
 
             # añadir mensaje del asistente
             assistant_message = Message.assistant(pdf_message)
@@ -116,7 +168,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                 data.conversation_id, assistant_message
             )
 
-            # Generar el PDF en segundo plano para tenerlo listo cuadno se solicite
+            # Generar el PDF en segundo plano para tenerlo listo cuando se solicite
             background_tasks.add_task(
                 questionnaire_service.generate_proposal_pdf, proposal
             )
@@ -138,82 +190,19 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             data.conversation_id, assistant_message
         )
 
-        # Detectar si es una solicitud para generar PDF
-        pdf_keywords = [
-            "pdf",
-            "descargar",
-            "propuesta",
-            "documento",
-            "guardar",
-            "archivo",
-            "exportar",
-            "bajar",
-            "obtener",
-            "enviar",
-        ]
-
-        pdf_requested = False
-        user_msg_lower = data.message.lower()
-
-        # Verificar palabras claves simple
-        if any(keyword in user_msg_lower for keyword in pdf_keywords):
-            pdf_requested = True
-
-        # verificar frase comunes de solicitud
-        pdf_phrases = [
-            "quiero el pdf",
-            "dame la propuesta",
-            "ver el documento",
-            "obtener el archivo",
-            "descargar la propuesta",
-            "enviame el pdf",
-            "generar documento",
-            "necesito la propuesta",
-            "el enlace no funciona",
-        ]
-
-        if any(phrase in user_msg_lower for phrase in pdf_phrases):
-            pdf_requested = True
-
-        # Si se solicita PDF y el cuestionario esta completo, generar enlace de descarga
-        if pdf_requested and conversation.is_questionnaire_completed():
+        # Verificar nuevamente si es una solicitud para generar PDF después de la respuesta del modelo
+        # Esto es útil por si el modelo detectó una intención implícita que nuestra función simple no captó
+        if (
+            (not pdf_requested)
+            and _is_pdf_request(ai_response)
+            and conversation.is_questionnaire_completed()
+        ):
             # Generar y verificar la propuesta
             proposal = questionnaire_service.generate_proposal(conversation)
 
             # Generar PDF en segundo plano para tenerlo listo cuando se solicite
             background_tasks.add_task(
                 questionnaire_service.generate_proposal_pdf, proposal
-            )
-
-            # Crear un mensaje informativo con enlace directo de descarga
-            download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
-            pdf_message = f"""
-            # Propuesta Lista para Descargar
-
-            He preparado tu propuesta personalizada basada en las respuestas que proporcionaste al cuestionario. Puedes descargarla como PDF usando el siguiente enlace:
-
-            ## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
-
-            Este documento incluye:
-            - Análisis de tus necesidades específicas
-            - Solución tecnológica recomendada
-            - Estimación de costos y retorno de inversión
-            - Pasos siguientes recomendados
-
-            ¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
-            """
-
-            # añadir mensaje al asistente
-            assistant_message = Message.assistant(pdf_message)
-            await storage_service.add_message_to_conversation(
-                data.conversation_id, assistant_message
-            )
-
-            return MessageResponse(
-                id=assistant_message.id,
-                conversation_id=data.conversation_id,
-                message=pdf_message,
-                created_at=assistant_message.created_at,
             )
 
         # Programar limpieza de conversaciones antiguas como tarea en segundo plano
@@ -233,8 +222,8 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 
 
 @router.get("/{conversation_id}/download-proposal-pdf")
-async def download_proposal_pdf(conversation_id: str):
-    """Descarga la propuesta en formato PDF o HTML segun disponibilidad"""
+async def download_proposal_pdf(conversation_id: str, response: Response):
+    """Descarga la propuesta en formato PDF o HTML según disponibilidad"""
     try:
         # Obtener la conversación
         conversation = await storage_service.get_conversation(conversation_id)
@@ -266,9 +255,9 @@ async def download_proposal_pdf(conversation_id: str):
             </html>
             """
             response.headers["Content-Type"] = "text/html"
-            return html_content
+            return Response(content=html_content, media_type="text/html")
 
-        # Obtener el nombre del clietne para el nombre del archivo
+        # Obtener el nombre del cliente para el nombre del archivo
         client_name = proposal["client_info"]["name"].replace(" ", "_")
 
         # Determinar tipo de archivo basado en la extension
@@ -406,7 +395,9 @@ async def answer_questionnaire(conversation_id: str, data: Dict[str, Any] = Body
 
             # Generar y formatear propuesta
             proposal = questionnaire_service.generate_proposal(conversation)
-            summary = questionnaire_service.format_proposal_summary(proposal)
+            summary = questionnaire_service.format_proposal_summary(
+                proposal, conversation.id
+            )
 
             # Añadir mensaje con la propuesta
             assistant_message = Message.assistant(summary)

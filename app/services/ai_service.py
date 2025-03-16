@@ -662,27 +662,64 @@ class AIService:
         Returns:
             str: Texto procesado con formato adecuado
         """
-        # Si el texto parece ser una propuesta (tiene encabezados y secciones),
-        # mantener el formato Markdown para que se pueda renderizar adecuadamente
-        if "RESUMEN DE LA PROPUESTA" in text or "# RESUMEN DE LA PROPUESTA" in text:
-            return text
+        # No realizamos modificaciones al texto, permitiendo el uso completo de Markdown
+        # Solo realizamos algunas mejoras menor para garantizar formato consistente
 
-        # Para el resto de respuestas, simplificar el formato Markdown:
+        # Asegurar que los enlaces Markdown esten correctamente formateados
+        text = re.sub(r"\[([^\]]+)\]\s*\(([^)]+)\)", r"[\1](\2)", text)
 
-        # 1. Reemplazar encabezados Markdown con texto plano enfatizado
-        for i in range(5, 0, -1):  # De h5 a h1
+        # Asegurar que los encabezados tengan espacio despues del #
+        for i in range(6, 0, -1):  # de h5 a h1
             heading = "#" * i
             text = re.sub(
-                f"^{heading}\\s+(.+)$", r"IMPORTANTE: \1", text, flags=re.MULTILINE
+                f"^{heading}([^#\s])", f"{heading} \\1", text, flags=re.MULTILINE
             )
 
-        # 2. Reemplazar listas con viñetas por listas con números o texto plano
-        text = re.sub(r"^[\*\-]\s+(.+)$", r"• \1", text, flags=re.MULTILINE)
-
-        # 3. Eliminar líneas horizontales
-        text = re.sub(r"^[\-\_]{3,}$", "", text, flags=re.MULTILINE)
-
         return text
+
+    def _format_question(self, question: Dict[str, Any]) -> str:
+        """
+        Formatea una pregunta del cuestionario para mejorar la claridad
+        Coloca la pregunta al final y la destaca claramente con formato Markdown
+
+        Args:
+            question: Diccionario con la informacion de la pregunta
+        Returns:
+            str: Texto formateado con la pregunta
+        """
+        # Obtener datos basicos de la pregunta
+        q_text = question.get("text", "")
+        q_type = question.get("type", "text")
+        q_explanation = question.get("explanation", "")
+
+        # Iniciar con una introduccion amigable
+        message = ""
+
+        # Añadir explicación si existe (antes de la pregunta)
+        if q_explanation:
+            # Extraer dato interesante si esta presente
+            if "*Dato interesante:" in q_explanation:
+                parts = q_explanation.split("*Dato interesante:")
+                explanation = parts[0].strip()
+                fact = parts[1].strip() if len(parts) > 1 else ""
+
+                message += f"{explanation}\n\n"
+
+                # Formatear el dato interesante con Markdown
+                if fact:
+                    message += f"*💡 Dato interesante: {fact}*\n\n"
+            else:
+                message += f"{q_explanation}\n\n"
+
+        # Destacar claramente la pregunta al final con Markdown
+        message += f"## {q_text}\n\n"
+
+        # Añadir opciones para preguntas de seleccion
+        if q_type in ["multiple_choice", "multiple_select"] and "options" in question:
+            for i, option in enumerate(question["options"], 1):
+                message += f"{i}. {option}\n"
+
+        return message
 
     def _get_fallback_response(self, messages: List[Dict[str, Any]]) -> str:
         """
