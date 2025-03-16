@@ -469,12 +469,27 @@ class AIService:
                     state.subsector = subsectors[index]
 
         # Detectar si el cuestionario ha terminado y se ha generado una propuesta
-        if (
-            "RESUMEN DE LA PROPUESTA" in ai_response
-            or "ANÁLISIS ECONÓMICO" in ai_response
-        ):
+        proposal_indicators = [
+            "RESUMEN DE LA PROPUESTA",
+            "ANALISIS ECONOMICO",
+            "DESCARGAR PROPUESTA EN PDF",
+        ]
+
+        if any(indicator in ai_response for indicator in proposal_indicators):
             state.completed = True
-            # No desactivamos el cuestionario para mantener el contexto
+
+            # Reemplazar el placeholder CONVERSATION_ID con el ID real de la conversación
+            if "CONVERSATION_ID" in ai_response and conversation.id:
+                update_response = ai_response.replace(
+                    "CONVERSATION_ID", conversation.id
+                )
+
+                # Necesitamos actualizar el mensaje en conversation
+                if (
+                    conversation.messages
+                    and conversation.messages[-1].role == "assistant"
+                ):
+                    conversation.messages[-1].content = update_response
 
         # Actualizar pregunta actual si es necesario
         if state.active and not state.completed:

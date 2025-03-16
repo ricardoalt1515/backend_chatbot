@@ -138,6 +138,84 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             data.conversation_id, assistant_message
         )
 
+        # Detectar si es una solicitud para generar PDF
+        pdf_keywords = [
+            "pdf",
+            "descargar",
+            "propuesta",
+            "documento",
+            "guardar",
+            "archivo",
+            "exportar",
+            "bajar",
+            "obtener",
+            "enviar",
+        ]
+
+        pdf_requested = False
+        user_msg_lower = data.message.lower()
+
+        # Verificar palabras claves simple
+        if any(keyword in user_msg_lower for keyword in pdf_keywords):
+            pdf_requested = True
+
+        # verificar frase comunes de solicitud
+        pdf_phrases = [
+            "quiero el pdf",
+            "dame la propuesta",
+            "ver el documento",
+            "obtener el archivo",
+            "descargar la propuesta",
+            "enviame el pdf",
+            "generar documento",
+            "necesito la propuesta",
+            "el enlace no funciona",
+        ]
+
+        if any(phrase in user_msg_lower for phrase in pdf_phrases):
+            pdf_requested = True
+
+        # Si se solicita PDF y el cuestionario esta completo, generar enlace de descarga
+        if pdf_requested and conversation.is_questionnaire_completed():
+            # Generar y verificar la propuesta
+            proposal = questionnaire_service.generate_proposal(conversation)
+
+            # Generar PDF en segundo plano para tenerlo listo cuando se solicite
+            background_tasks.add_task(
+                questionnaire_service.generate_proposal_pdf, proposal
+            )
+
+            # Crear un mensaje informativo con enlace directo de descarga
+            download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
+            pdf_message = f"""
+            # Propuesta Lista para Descargar
+
+            He preparado tu propuesta personalizada basada en las respuestas que proporcionaste al cuestionario. Puedes descargarla como PDF usando el siguiente enlace:
+
+            ## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
+
+            Este documento incluye:
+            - Análisis de tus necesidades específicas
+            - Solución tecnológica recomendada
+            - Estimación de costos y retorno de inversión
+            - Pasos siguientes recomendados
+
+            ¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
+            """
+
+            # añadir mensaje al asistente
+            assistant_message = Message.assistant(pdf_message)
+            await storage_service.add_message_to_conversation(
+                data.conversation_id, assistant_message
+            )
+
+            return MessageResponse(
+                id=assistant_message.id,
+                conversation_id=data.conversation_id,
+                message=pdf_message,
+                created_at=assistant_message.created_at,
+            )
+
         # Programar limpieza de conversaciones antiguas como tarea en segundo plano
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
