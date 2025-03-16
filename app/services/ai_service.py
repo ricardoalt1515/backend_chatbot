@@ -606,12 +606,14 @@ class AIService:
                     "role": "system",
                     "content": """
                 INSTRUCCIÓN IMPORTANTE DE FORMATO:
-                1. No uses encabezados Markdown (como # o ##) excepto para la propuesta final.
-                2. No uses listas con formato Markdown (- o *), usa listas numeradas estándar (1., 2., etc.).
-                3. Para enfatizar texto, usa formato de texto plano como "IMPORTANTE:" en lugar de **texto**.
-                4. Evita el uso de tablas en formato Markdown.
-                5. Si necesitas separar secciones, usa líneas en blanco simples en lugar de líneas horizontales (---).
-                6. Para la propuesta final está bien usar formato Markdown adecuado.
+                1. Usa formato Markdown para mejorar la presentacion y claridad del cotenido.
+                2. Utiliza encabezados Markdown (# para titulos principales, ## para subtitulos) para estructurar el texto.
+                3. Resalta las PREGUNTAS usando encabezados de nivel 2 (##) y colócalas SIEMPRE al final del mensaje.
+                4. Usa listas con viñetas (- o *) para enumerar opciones cuando sea apropiado.
+                5. tiliza **negrita** para enfatizar información importante.
+                6. Utiliza *cursiva* para destacar datos interesantes.
+                7. Puedes usar tablas Markdown para presentar informacion comparativa
+                8. Para los enlaces, usa el formato [text] (url).
                 """,
                 }
             )
