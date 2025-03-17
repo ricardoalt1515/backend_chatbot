@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import time
 
-from config import settings
+from app.config import settings
 from models.conversation import Conversation
 from services.questionnaire_service import questionnaire_service
 from services import document_service
