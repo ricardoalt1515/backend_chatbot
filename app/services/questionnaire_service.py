@@ -192,6 +192,119 @@ class QuestionnaireService:
         questions_key = f"{sector}_{subsector}"
         return self.questionnaire_data.get("questions", {}).get(questions_key, [])
 
+    def generate_interim_summary(self, conversation: Conversation) -> str:
+        """Genera un resumen intermedio de la informacion recopilada hasta el momento"""
+        state = conversation.questionnaire_state
+
+        answers = state.answers
+        sector = state.sector
+        subsector = state.subsector
+
+        summary = f"""
+    ## Resumen de la Información Recopilada
+
+    Hemos avanzado significativamente en la recopilación de datos para su solución de tratamiento de agua. A continuación, un resumen de la información proporcionada hasta el momento:
+
+    ### Datos Básicos
+    - **Sector**: {sector}
+    - **Subsector**: {subsector}
+    """
+
+        # Añadir respuestas clave
+        key_info = []
+
+        if "nombre_empresa" in answers:
+            key_info.append(f"- **Empresa/Proyecto**: {answers['nombre_empresa']}")
+
+        if "ubicacion" in answers:
+            key_info.append(f"- **Ubicación**: {answers['ubicacion']}")
+
+        if "costo_agua" in answers:
+            key_info.append(f"- **Costo del agua**: {answers['costo_agua']}")
+
+        if "cantidad_agua_consumida" in answers:
+            key_info.append(
+                f"- **Consumo de agua**: {answers['cantidad_agua_consumida']}"
+            )
+
+        if "cantidad_agua_residual" in answers:
+            key_info.append(
+                f"- **Generación de agua residual**: {answers['cantidad_agua_residual']}"
+            )
+
+        if key_info:
+            summary += "\n".join(key_info) + "\n"
+
+        # Añadir parámetros técnicos si existen
+        if "parametros_agua" in answers and isinstance(
+            answers["parametros_agua"], dict
+        ):
+            summary += "\n### Parámetros Técnicos\n"
+            for param, value in answers["parametros_agua"].items():
+                summary += f"- **{param}**: {value}\n"
+
+        # Confirmación y siguiente pregunta
+        summary += """
+    ¿Es correcta esta información? Si necesita realizar alguna corrección, por favor indíquelo. 
+    De lo contrario, continuaremos con las siguientes preguntas para completar su perfil de necesidades.
+    """
+
+        return summary
+
+    def suggest_document_upload(self, question_id: str) -> str:
+        """Sugiere la carga de documentos en momentos estratégicos"""
+        document_suggestions = {
+            "parametros_agua": """
+    ### Análisis de Laboratorio
+
+    Si dispone de análisis de laboratorio de su agua residual, puede subirlos ahora. 
+    Estos datos nos permitirán diseñar una solución mucho más precisa y eficiente.
+
+    Para subir un documento, utilice el botón de "Adjuntar archivo" que aparece abajo.
+    """,
+            "costo_agua": """
+    ### Recibos de Agua
+
+    Si tiene a mano recibos recientes de agua, puede subirlos para un análisis más preciso 
+    de costos y potenciales ahorros. Esta información mejorará significativamente la 
+    exactitud de nuestros cálculos de retorno de inversión.
+    """,
+            "sistema_existente": """
+    ### Documentación Técnica
+
+    Si dispone de documentación, diagramas o fotografías de su sistema actual, 
+    nos ayudaría enormemente a entender su infraestructura existente y cómo 
+    integrar nuestra solución de la manera más eficiente.
+    """,
+            "recibos_agua": """
+    ### Recibos o Facturas
+
+    Si puede proporcionarnos sus recibos o facturas de agua recientes, 
+    podremos realizar un análisis mucho más preciso de su consumo y 
+    potenciales ahorros con nuestro sistema.
+    """,
+            "agua_potable_analisis": """
+    ### Análisis de Agua Potable
+
+    Si cuenta con análisis recientes de la calidad de su agua potable, 
+    estos datos nos ayudarán a entender mejor las características específicas 
+    del agua que utiliza y optimizar su tratamiento.
+    """,
+        }
+
+        return document_suggestions.get(question_id, "")
+
+    def _get_question_text(self, sector: str, subsector: str, question_id: str) -> str:
+        """Obtiene el texto de la pregunta a partir del ID"""
+        questions_key = f"{sector}_{subsector}"
+        questions = self.questionnaire_data.get("questions", {}).get(questions_key, [])
+
+        for q in questions:
+            if q.get("id") == question_id:
+                return q.get("text", question_id)
+
+        return question_id
+
     def format_question_for_display(
         self, question: Dict[str, Any], include_fact: bool = True
     ) -> str:

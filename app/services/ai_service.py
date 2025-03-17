@@ -59,75 +59,190 @@ class AIService:
             self.model = None
             self.api_url = None
 
+        # Mensaje de saludo inical
+        self.INITIAL_GREETING = """
+        # Bienvenido a Hydrous Managment Group
+
+        Soy el Diseñador de Soluciones de Agua con IA de Hydrous, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarlo paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro, cumplimiento normativo y sostenibilidad.
+
+        Para desarrollar la mejor solución para sus instalaciones, formularé sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarle a optimizar la gestión del agua, reducir costes y explorar nuevas fuentes de ingresos con soluciones basadas en Hydrous.
+
+        *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
+
+        **PREGUNTA: ¿En qué sector opera su empresa?**
+        1. Industrial
+        2. Comercial
+        3. Municipal
+        4. Residencial
+        """
+
         # Atributos para mantener el contexto entre llamadas
         self.current_sector = None
         self.current_subsector = None
+
+    def format_response_with_questions(
+        self,
+        previous_answer_comment,
+        interesting_fact,
+        question_context,
+        question_text,
+        options=None,
+    ):
+        """Formatea una rispuesta siguiendo la estructura establecida"""
+        response = f"{previous_answer_comment}\n\n"
+
+        if interesting_fact:
+            response += f"*{interesting_fact}*\n\n"
+
+        if question_context:
+            response += f"{question_context}\n\n"
+
+        response += f"**PREGUNTA: {question_text}**\n\n"
+
+        if options:
+            for i, option in enumerate(options, 1):
+                response += f"{i}. {option}\n"
+
+        return response
+
+    def should_suggest_document(self, question_id):
+        """Determina si se debe sugerir subir un documento en esta pregunta"""
+        document_suggestion_question = [
+            "parametros de agua",
+            "costo de agua",
+            "sistema_existente",
+            "recibos_agua",
+            "descripcion_sistema",
+            "agua_potable_analisis",
+        ]
+
+        return question_id in document_suggestion_question
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
         Maneja la conversación básica (este método será sobrescrito en la clase derivada)
-
-        Args:
-            conversation: Objeto de conversación actual
-            user_message: Mensaje del usuario
-
-        Returns:
-            str: Respuesta generada para el usuario
         """
-        # Verificar si debemos iniciar un cuestionario basado en el mensaje del usuario
-        should_start = False
+        # Si no esta activo el cuestionario iniciarlo  (esto es opcional, depende de tu preferencia)
         if (
             not conversation.is_questionnaire_active()
             and not conversation.is_questionnaire_completed()
         ):
-            should_start = self._should_start_questionnaire(user_message)
-            if should_start:
+            if self._detect_questionnaire_intent(user_message):
                 conversation.start_questionnaire()
 
-        # Determinar la fase actual basada en el progreso del cuestionario
-        phase = self._determine_conversation_phase(conversation)
+        # Procesar la respuesta del usuario si el cuestionario esta activo
+        if conversation.is_questionnaire_active():
+            self._update_questionnaire_state(conversation, user_message)
 
-        # Obtener insights de documentos para esta conversación
-        document_insights = ""
-        try:
-            from app.services.document_service import document_service
+            # Verificar si es momento de mostrar un resumen intermedio
+            answers_count = len(conversation.questionnaire_state.answers)
+            if answers_count > 0 and answers_count % 5 == 0:  # Cada 5 preguntas
+                return questionnaire_service.generate_interim_summary(conversation)
 
-            conversation_id = conversation.id
-            if conversation_id:
-                # Inyectar insights de documentos en el contexto
-                document_insights = (
-                    await document_service.get_document_insights_summary(
-                        conversation_id
+            # Obtener la siguiente pregunta
+            next_question = self._get_next_question(conversation)
+            if next_question:
+                # Determinar si debemos sugerir carga de documentos
+                document_suggestion = ""
+                if self.should_suggest_document(next_question.get("id", "")):
+                    document_suggestion = questionnaire_service.suggest_document_upload(
+                        next_question.get("id", "")
                     )
-                )
-        except Exception as e:
-            logger.error(f"Error al obtener insights de documentos: {str(e)}")
 
-        # Preparar los mensajes para el modelo de IA
+                # Obtener un dato interesante relevante
+                interesting_fact = questionnaire_service.get_random_fact(
+                    conversation.questionnaire_state.sector,
+                    conversation.questionnaire_state.subsector,
+                )
+
+                # Comentario sobre respuesta anterior (simplificado)
+                previous_comment = "Gracias por su respuesta."
+
+                # Preparar el contexto de la pregunta
+                question_context = next_question.get("explanation", "")
+
+                # Preparar opciones si es múltiple elección
+                options = None
+                if (
+                    next_question.get("type") in ["multiple_choice", "multiple_select"]
+                    and "options" in next_question
+                ):
+                    options = next_question["options"]
+
+                # Formatear la respuesta según la estructura definida
+                response = self.format_response_with_question(
+                    previous_comment,
+                    interesting_fact,
+                    question_context,
+                    next_question.get("text", ""),
+                    options,
+                )
+
+                # Añadir sugerencia de documento si corresponde
+                if document_suggestion:
+                    response = f"{response}\n\n{document_suggestion}"
+
+                # Actualizar la pregunta actual
+                conversation.questionnaire_state.current_question_id = (
+                    next_question.get("id", "")
+                )
+
+                return response
+            else:
+                # Si no hay más preguntas, completar el cuestionario
+                conversation.complete_questionnaire()
+
+                # Generar propuesta
+                proposal = questionnaire_service.generate_proposal(conversation)
+                return questionnaire_service.format_proposal_summary(
+                    proposal, conversation.id
+                )
+
+        # Si el cuestionario está completo, manejar preguntas sobre la propuesta
+        if conversation.is_questionnaire_completed():
+            # Preparar los mensajes para el modelo
+            messages = [
+                {"role": "system", "content": settings.SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": "El usuario ya ha completado el cuestionario y se le ha presentado una propuesta. Responde a sus preguntas adicionales sobre la propuesta, manteniendo un tono profesional y ofreciendo detalles técnicos cuando sea necesario.",
+                },
+            ]
+
+            # Añadir parte del historial reciente para contexto
+            recent_messages = [
+                msg
+                for msg in conversation.messages[-6:]
+                if msg.role in ["user", "assistant"]
+            ]
+            for msg in recent_messages:
+                messages.append({"role": msg.role, "content": msg.content})
+
+            # Añadir el mensaje actual
+            messages.append({"role": "user", "content": user_message})
+
+            # Generar respuesta para preguntas post-propuesta
+            return await self.generate_response(messages)
+
+        # Fallback para otros casos
         messages = [{"role": "system", "content": settings.SYSTEM_PROMPT}]
 
-        # Añadir información de documentos si existe
-        if document_insights:
-            messages.append({"role": "system", "content": document_insights})
-
-        # Añadir historial reciente de la conversación
+        # Añadir parte del historial reciente
         recent_messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in conversation.messages[-8:]
+            msg
+            for msg in conversation.messages[-6:]
             if msg.role in ["user", "assistant"]
         ]
+        for msg in recent_messages:
+            messages.append({"role": msg.role, "content": msg.content})
 
-        messages.extend(recent_messages)
-
-        # Añadir el mensaje actual del usuario
+        # Añadir el mensaje actual
         messages.append({"role": "user", "content": user_message})
 
-        # Generar respuesta con el modelo de IA
-        response = await self.generate_response(messages)
-
-        return response
+        # Generar respuesta
+        return await self.generate_response(messages)
 
     def _determine_conversation_phase(self, conversation: Conversation) -> str:
         """Determina la fase actual de la conversación según el progreso"""
@@ -224,6 +339,46 @@ class AIService:
                 return True
 
         return False
+
+    def _get_next_question(
+        self, conversation: Conversation
+    ) -> Optional[Dict[str, Any]]:
+        """Obtiene la siguiente pregunta segun el estado del cuestionario"""
+        state = conversation.questionnaire_state
+
+        # Si no tenemos sector, preguntar por sector
+        if not state.sector:
+            return {
+                "id": "sector_selection",
+                "text": "¿En qué sector opera su empresa?",
+                "type": "multiple_choice",
+                "options": questionnaire_service.get_sectors(),
+                "explanation": "El sector nos ayudará a entender mejor su contexto y necesidades específicas.",
+            }
+
+        # Si tenemos sector pero no subsector, preguntar por subsector
+        if state.sector and not state.subsector:
+            return {
+                "id": "subsector_selection",
+                "text": f"¿Cuál es el subsector específico dentro de {state.sector}?",
+                "type": "multiple_choice",
+                "options": questionnaire_service.get_subsectors(state.sector),
+                "explanation": "Cada subsector tiene características y necesidades específicas para el tratamiento de agua.",
+            }
+
+        # Obtener las preguntas para este sector/subsector
+        questions_key = f"{state.sector}_{state.subsector}"
+        questions = questionnaire_service.questionnaire_data.get("questions", {}).get(
+            questions_key, []
+        )
+
+        # Encontrar la siguiente pregunta no respondida
+        for question in questions:
+            if question["id"] not in state.answers:
+                return question
+
+        # Si todas las preguntas han sido respondidas, no hay siguiente pregunta
+        return None
 
     async def generate_response(
         self,
@@ -429,53 +584,28 @@ class AIWithQuestionnaireService(AIService):
     def _update_conversation_state(
         self, conversation: Conversation, user_message: str
     ) -> None:
-        """Actualiza el estado de la conversación basado en la respuesta del usuario"""
-        conversation_id = conversation.id
-        state = self.conversation_states[conversation_id]
-        current_stage = state["current_stage"]
+        """Actualiza el estado del cuestionario basado en la respuesta del usuario"""
+        state = conversation.questionnaire_state
 
-        # Procesar respuesta según la etapa actual
-        if current_stage == "GREETING":
-            # Si el usuario responde al saludo, avanzar a sector
-            state["current_stage"] = "SECTOR"
+        # Si hay una pregunta actual, procesar la respuesta
+        if state.current_question_id:
+            # Si es selección de sector
+            if state.current_question_id == "sector_selection":
+                sector = self._extract_sector(user_message)
+                if sector:
+                    state.sector = sector
+                    state.answers[state.current_question_id] = sector
 
-        elif current_stage == "SECTOR":
-            # Extraer sector de la respuesta
-            sector = self._extract_sector(user_message)
-            if sector:
-                state["sector"] = sector
-                conversation.questionnaire_state.sector = sector
-                state["current_stage"] = "SUBSECTOR"
+            # Si es selección de subsector
+            elif state.current_question_id == "subsector_selection":
+                subsector = self._extract_subsector(user_message, state.sector)
+                if subsector:
+                    state.subsector = subsector
+                    state.answers[state.current_question_id] = subsector
 
-        elif current_stage == "SUBSECTOR":
-            # Extraer subsector de la respuesta
-            subsector = self._extract_subsector(user_message, state["sector"])
-            if subsector:
-                state["subsector"] = subsector
-                conversation.questionnaire_state.subsector = subsector
-                state["current_stage"] = "QUESTIONNAIRE"
-                state["current_question_index"] = 0
-
-        elif current_stage == "QUESTIONNAIRE":
-            # Guardar respuesta a la pregunta actual
-            if state["current_question_index"] >= 0:
-                questions = self._get_questions_for_sector_subsector(
-                    state["sector"], state["subsector"]
-                )
-                if state["current_question_index"] < len(questions):
-                    current_question = questions[state["current_question_index"]]
-                    question_id = current_question["id"]
-
-                    # Guardar la respuesta en el estado del cuestionario
-                    conversation.questionnaire_state.answers[question_id] = user_message
-                    state["asked_questions"].append(question_id)
-
-                    # Avanzar a la siguiente pregunta
-                    state["current_question_index"] += 1
-
-                    # Si llegamos al final del cuestionario, preparar diagnóstico
-                    if state["current_question_index"] >= len(questions):
-                        state["current_stage"] = "DIAGNOSIS"
+            # Para cualquier otra pregunta, guardar la respuesta directamente
+            else:
+                state.answers[state.current_question_id] = user_message
 
     def _extract_sector(self, message: str) -> Optional[str]:
         """Extrae el sector industrial de la respuesta del usuario"""
