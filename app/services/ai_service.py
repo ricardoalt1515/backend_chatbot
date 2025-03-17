@@ -4,9 +4,9 @@ from typing import List, Dict, Any, Optional, Tuple
 import httpx
 import time
 
-from app.config import settings
-from app.models.conversation import Conversation
-from app.services.questionnaire_service import questionnaire_service
+from config import settings
+from models.conversation import Conversation
+from services.questionnaire_service import questionnaire_service
 from services import document_service
 
 # Intento importar el contador de tokens si está disponible
