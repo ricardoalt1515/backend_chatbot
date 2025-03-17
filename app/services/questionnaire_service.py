@@ -341,10 +341,8 @@ siguientes preguntas!"**
         document_insights = []
 
         try:
-            document_insights = (
-                await document_service.get_document_insights_for_convesation(
-                    conversation.id
-                )
+            document_insights = document_service.get_insights_for_conversation_sync(
+                conversation.id
             )
         except Exception as e:
             logger.error(f"Error al obtener insights de documentos: {str(e)}")
