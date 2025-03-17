@@ -7,7 +7,7 @@ import re
 import string
 from typing import Dict, Any, Optional, List, Tuple
 
-from routes import documents
+from app.routes import documents
 
 # Verificar dependencias disponibles para generación de PDF
 PDF_GENERATORS = []
