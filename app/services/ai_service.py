@@ -7,6 +7,7 @@ import time
 from app.config import settings
 from app.models.conversation import Conversation
 from app.services.questionnaire_service import questionnaire_service
+from services import document_service
 
 # Intento importar el contador de tokens si está disponible
 try:
@@ -87,6 +88,17 @@ class AIService:
         # Determinar la fase actual basada en el progreso del cuestionario
         phase = self._determine_conversation_phase(conversation)
 
+        # Obtener insights de documentos para esta conversacion
+        document_insights = ""
+        from app.services.document_service import document_service
+
+        conversation_id = conversation.id
+        if conversation_id:
+            # Inyectar insights de documentos en el contexto
+            document_insights = await document_service.get_document_insights_summary(
+                conversation_id
+            )
+
         # Si el cuestionario está activo, manejar de forma específica
         if conversation.is_questionnaire_active():
             # Procesar la respuesta a la pregunta actual si existe
@@ -136,6 +148,10 @@ class AIService:
 
         # 3. Preparar los mensajes para el modelo de IA
         messages_for_ai = [{"role": "system", "content": stage_prompt}]
+
+        # Añadir insights de documentos si existen
+        if document_insights:
+            messages_for_ai.append({"role": "system", "content": document_insights})
 
         # 4. Añadir contexto relevante según la etapa
         if current_stage in ["QUESTIONNAIRE", "ANALYSIS", "PROPOSAL"]:
@@ -980,6 +996,39 @@ class AIService:
         if q_type in ["multiple_choice", "multiple_select"] and "options" in question:
             for i, option in enumerate(question["options"], 1):
                 message += f"{i}. {option}\n"
+
+        # Añadir sugerencia de documentos para preguntas especificas
+        question_id = question.get("id", "")
+
+        # Lista de preguntas donde sugerir documentos
+        document_suggestion_questions = [
+            "sistema_existente",
+            "descripcion_sistema",
+            "parametros_agua",
+            "agua_potable_analisis",
+            "recibos agua",
+            "ubicacion",
+        ]
+
+        if question_id in document_suggestion_questions:
+            document_suggestion = ""
+
+            if (
+                question_id == "sistema_existente"
+                or question_id == "descripcion_sistema"
+            ):
+                document_suggestion = "\n\n*Si dispones de algún diagrama, imagen o documento técnico de tu sistema actual, puedes compartirlo para un análisis más preciso.*"
+            elif (
+                question_id == "parametros_agua"
+                or question_id == "agua_potable_analisis"
+            ):
+                document_suggestion = "\n\n*Si cuentas con análisis de laboratorio o informes técnicos de la calidad del agua, puedes adjuntarlos para un diseño más exacto de la solución.*"
+            elif question_id == "recibos_agua":
+                document_suggestion = "\n\n*Puedes adjuntar una foto o escaneo de tus recibos de agua para un cálculo más preciso del potencial ahorro.*"
+            elif question_id == "ubicacion":
+                document_suggestion = "\n\n*Si tienes un plano o imagen de las instalaciones, puedes compartirlo para ayudarnos a entender mejor el contexto.*"
+
+            message += document_suggestion
 
         return message
 

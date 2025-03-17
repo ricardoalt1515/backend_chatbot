@@ -7,6 +7,8 @@ import re
 import string
 from typing import Dict, Any, Optional, List, Tuple
 
+from routes import documents
+
 # Verificar dependencias disponibles para generación de PDF
 PDF_GENERATORS = []
 try:
@@ -332,6 +334,57 @@ siguientes preguntas!"**
         # Extraer información básica
         client_name = answers.get("nombre_empresa", "Cliente")
         location = answers.get("ubicacion", "No especificada")
+
+        # incorporar informacion de documentos si existe
+        from app.services.document_service import document_service
+
+        document_insights = []
+
+        try:
+            document_insights = (
+                await document_service.get_document_insights_for_convesation(
+                    conversation.id
+                )
+            )
+        except Exception as e:
+            logger.error(f"Error al obtener insights de documentos: {str(e)}")
+
+        # Añadir sección de documentos a la propuesta
+        document_section = {
+            "provided": False,
+            "count": 0,
+            "types": [],
+            "relevant_info": [],
+        }
+
+        if document_insights:
+            documents_section["provided"] = True
+            documents_section["count"] = len(document_insights)
+            documents_section["types"] = list(
+                set(
+                    doc["insights"].get("document_type", "unknown")
+                    for doc in document_insights
+                )
+            )
+
+            # Recopilar información relevante de los documentos
+            for doc in document_insights:
+                insights = doc.get("insights", {})
+                if insights.get("relevance_to_water_treatment") in [
+                    "highly_relevant",
+                    "likely_technical_document",
+                    "likely_data_source",
+                ]:
+                    documents_section["relevant_info"].append(
+                        {
+                            "filename": doc["filename"],
+                            "summary": insights.get("summary", ""),
+                            "key_points": insights.get("key_points", []),
+                        }
+                    )
+
+            # Añadir a la propuesta
+        proposal["documents"] = document_section
 
         # Determinar los objetivos del proyecto
         objectives = []
@@ -1052,7 +1105,31 @@ Si tiene preguntas adicionales sobre esta propuesta, no dude en consultarnos.
         </html>
         """
 
-        return html
+        # Añadir sección de documentos analizados si existen
+        documents_section = ""
+        documents_data = proposal.get("documents", {"provided": False})
+
+        if documents_data.get("provided", False) and documents_data.get("count", 0) > 0:
+            documents_section = """
+            <div class="section">
+                <h1>Material Proporcionado por el Cliente</h1>
+                <p>El cliente ha proporcionado los siguientes documentos para complementar la información del cuestionario:</p>
+            
+                <ul>
+            """
+            for info in documents_data.get("relevant_info", []):
+                documents_section += f"""
+                <li><strong>{info.get('filename', '')}</strong> - {info.get('summary', '')}</li>
+                """
+
+            documents_section += """
+                </ul>
+            
+                <p>La información relevante de estos documentos ha sido considerada en esta propuesta.</p>
+            </div>
+            """
+
+        return html_content_with_documents
 
     def _generate_project_background_table(self, proposal: Dict[str, Any]) -> str:
         """Genera la tabla de antecedentes del proyecto"""

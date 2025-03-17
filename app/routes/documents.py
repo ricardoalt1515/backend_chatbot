@@ -37,7 +37,7 @@ async def upload_document(
                 detail=f"El archivo excede el tamaño máximo permitido ({settings.MAX_UPLOAD_SIZE/1024/1024} MB)",
             )
 
-        # Guardar documento
+        # Guardar documento y obtener insights preliminares
         doc_info = await document_service.save_document(file, conversation_id)
 
         # Si hay un mensaje del usuario, añadirlo a la conversación
@@ -50,33 +50,60 @@ async def upload_document(
         )
         await storage_service.add_message_to_conversation(conversation_id, user_message)
 
-        # Respuesta inicial
-        initial_response = f"He recibido tu documento '{file.filename}'. "
+        # Generar respuesta basada en los insights del documento
+        insights = doc_info.get("insights", {})
+        doc_type = insights.get("document_type", "unknown")
+        relevance = insights.get("relevance_to_water_treatment", "unknown")
 
-        # En el MVP usamos una respuesta simple para documentos
-        # En el futuro se implementará procesamiento y análisis de documentos
-        if file.content_type.startswith("image/"):
+        # Personalizar respuestas segun el tipo de documento
+        if doc_type == "image":
             response_text = (
-                initial_response
-                + "Veo que has compartido una imagen. ¿Hay algo específico que quieras saber sobre ella en relación con nuestras soluciones de reciclaje de agua?"
+                f"Gracias por compartir esta imagen. He recibido tu archivo '{file.filename}'. "
+                f"Las imágenes son muy útiles para entender visualmente los problemas o instalaciones actuales. "
+                f"¿Podrías describir brevemente qué muestra esta imagen y por qué es relevante para tu proyecto de tratamiento de agua?"
             )
-        elif file.content_type == "application/pdf":
+        elif doc_type == "pdf":
             response_text = (
-                initial_response
-                + "Revisaré el PDF que has compartido. ¿Hay alguna sección o información específica que te interese discutir sobre nuestros sistemas de reciclaje de agua?"
+                f"He recibido tu documento PDF '{file.filename}'. "
+                f"Los documentos técnicos son muy valiosos para entender mejor tus necesidades específicas. "
+                f"¿Este documento contiene información sobre tus instalaciones actuales, especificaciones técnicas, o estudios previos relacionados con el agua?"
             )
-        elif "spreadsheet" in file.content_type or file.filename.endswith(
-            (".xlsx", ".xls", ".csv")
-        ):
+        elif doc_type == "spreadsheet":
             response_text = (
-                initial_response
-                + "Has compartido una hoja de cálculo. ¿Estás analizando datos sobre consumo o tratamiento de agua? Puedo ayudarte a interpretar esa información."
+                f"Gracias por compartir la hoja de cálculo '{file.filename}'. "
+                f"Los datos numéricos son fundamentales para dimensionar correctamente una solución de tratamiento de agua. "
+                f"¿Esta hoja de cálculo contiene datos de consumo, parámetros de calidad, o costos relacionados con el agua?"
             )
+        elif doc_type == "text_document" or doc_type == "text":
+            if relevance == "highly_relevant":
+                key_points = insights.get("key_points", [])
+                point_text = ""
+                if key_points:
+                    point_text = "\n\nHe identificado algunos puntos relevantes en el documento:\n"
+                    for point in key_points[:3]:
+                        point_text += f"- {point}\n"
+
+                response_text = (
+                    f"He recibido y analizado tu documento '{file.filename}'. "
+                    f"Parece contener información relevante sobre sistemas de tratamiento de agua. {point_text}\n\n"
+                    f"¿Hay algún aspecto específico del documento sobre el que quieras que nos enfoquemos en la propuesta?"
+                )
+            else:
+                response_text = (
+                    f"He recibido tu documento '{file.filename}'. "
+                    f"Utilizaré la información relevante para personalizar mejor la propuesta. "
+                    f"¿Hay algo específico en este documento que quieras destacar para nuestra solución de tratamiento de agua?"
+                )
         else:
             response_text = (
-                initial_response
-                + "¿Hay algo específico sobre este documento con lo que pueda ayudarte en relación a nuestras soluciones de reciclaje de agua?"
+                f"He recibido tu archivo '{file.filename}'. "
+                f"Lo tendré en cuenta durante nuestro proceso de evaluación. "
+                f"¿Podrías indicarme qué tipo de información contiene este archivo y cómo se relaciona con tu proyecto de tratamiento de agua?"
             )
+
+        # Si el cuestionario esta activo, añadir sugerencia para continuar
+        if conversation.is_questionnaire_active():
+            response_text += "\n\nPodemos continuar con el cuestionario en cualquier momento para completar la recopilación de información para tu propuesta."
 
         # Crear y añadir mensaje del asistente
         assistant_message = Message.assistant(response_text)
@@ -84,7 +111,7 @@ async def upload_document(
             conversation_id, assistant_message
         )
 
-        # Programar limpieza de conversaciones antiguas (tarea en segundo plano)
+        # Programar limpieza de conversaciones antiguas (tareas en segundo plano)
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
         return MessageResponse(
