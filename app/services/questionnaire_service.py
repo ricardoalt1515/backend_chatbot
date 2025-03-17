@@ -178,58 +178,63 @@ class QuestionnaireService:
         """
         if not subsector:
             # Si no hay subsector, devolver solo preguntas comunes
-            return = [
+            return [
                 {
                     "id": "subsector_selection",
-                    "text": f"¿Cual es el subsector especifico dentro de {sector}?",
+                    "text": f"¿Cuál es el subsector específico dentro de {sector}?",
                     "type": "multiple_choice",
                     "options": self.get_subsectors(sector),
-                    "explanation": "Cada subsector tiene características y necesidades especificas."
-
+                    "explanation": "Cada subsector tiene características y necesidades específicas.",
                 },
             ]
+
         # Obtener todas las preguntas para este sector/subsector
         questions_key = f"{sector}_{subsector}"
         return self.questionnaire_data.get("questions", {}).get(questions_key, [])
 
-    def format_question_for_display(self, question: Dict[str, Any], include_fact: bool = True) -> str:
+    def format_question_for_display(
+        self, question: Dict[str, Any], include_fact: bool = True
+    ) -> str:
         """Formatea una pregunta para presentarla al usuario con un formato amigable"""
         # Obtener información básica de la pregunta
         q_text = question.get("text", "")
         q_explanation = question.get("explanation", "")
         q_type = question.get("type", "")
-    
+
         # Construir el mensaje
         message = ""
-    
+
         # 1. Añadir dato interesante si está disponible y se solicita
         if include_fact:
-            fact = self.get_random_fact(None, None)  # Obtener un dato general si no hay específico
+            fact = self.get_random_fact(
+                None, None
+            )  # Obtener un dato general si no hay específico
             if fact:
                 message += f"*Dato interesante: {fact}*\n\n"
-    
+
         # 2. Añadir explicación de por qué es importante esta pregunta
         if q_explanation:
             message += f"{q_explanation}\n\n"
-    
+
         # 3. Presentar la pregunta claramente
         message += f"**PREGUNTA: {q_text}**\n\n"
-    
+
         # 4. Añadir opciones numeradas para preguntas de selección
         if q_type in ["multiple_choice", "multiple_select"] and "options" in question:
             for i, option in enumerate(question["options"], 1):
                 message += f"{i}. {option}\n"
-    
+
         return message
-        
-        
-    def generate_proposal_summary(self, proposal: Dict[str, Any], conversation_id: str = None) -> str:
+
+    def generate_proposal_summary(
+        self, proposal: Dict[str, Any], conversation_id: str = None
+    ) -> str:
         """Genera un resumen de la propuesta en formato markdown siguiendo la estructura especificada"""
         client_info = proposal.get("client_info", {})
         sector = client_info.get("sector", "")
         subsector = client_info.get("subsector", "")
         name = client_info.get("name", "Cliente")
-    
+
         summary = f"""
     # PROPUESTA DE SOLUCIÓN DE TRATAMIENTO DE AGUAS RESIDUALES PARA {name.upper()}
 
@@ -285,7 +290,6 @@ class QuestionnaireService:
         """
 
         return summary
-
 
     def get_introduction(self) -> Tuple[str, str]:
         """
