@@ -344,46 +344,20 @@ class DocumentService:
 
         # Patrones mejorados para parámetros comunes de agua
         patterns = {
-            "ph": r"pH\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "dbo": r"(?:DBO|BOD)[5]?\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "dqo": r"(?:DQO|COD)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "sst": r"(?:SST|TSS)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "sdt": r"(?:SDT|TDS)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "conductividad": r"(?:[Cc]onductividad|[Cc]onductivity)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "turbidez": r"(?:[Tt]urbidez|[Tt]urbidity)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "pH": r"pH\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "DBO": r"DBO\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "DQO": r"DQO\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "SST": r"SST\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "conductividad": r"[Cc]onductividad\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "alcalinidad": r"[Aa]lcalinidad\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "dureza": r"[Dd]ureza\s*[:=]?\s*(\d+(?:\.\d+)?)",
             "color": r"[Cc]olor\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "grasas_aceites": r"(?:[Gg]rasas y aceites|[Oo]il and [Gg]rease)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "nitrogeno": r"(?:[Nn]itrógeno|[Nn]itrogen)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "fosforo": r"(?:[Ff]ósforo|[Pp]hosphorus)\s*[:=]?\s*(\d+(?:\.\d+)?)",
-            "cloro": r"(?:[Cc]loro|[Cc]hlorine)\s*[:=]?\s*(\d+(?:\.\d+)?)",
         }
 
-        # Extraer unidades junto con valores cuando sea posible
-        unit_pattern = r"(\d+(?:\.\d+)?)\s*(mg/[lL]|µS/cm|NTU|Pt-Co)"
-        unit_matches = re.findall(unit_pattern, text)
-        for value, unit in unit_matches:
-            # Determinar el parámetro basado en la unidad
-            if unit == "NTU":
-                parameters["turbidez"] = f"{value} {unit}"
-            elif unit == "Pt-Co":
-                parameters["color"] = f"{value} {unit}"
-            elif unit == "µS/cm":
-                parameters["conductividad"] = f"{value} {unit}"
-
-        # Buscar patrones específicos
         for param, pattern in patterns.items():
             matches = re.findall(pattern, text)
             if matches:
-                # Si ya tenemos este parámetro con unidad, no lo sobreescribimos
-                if param not in parameters:
-                    parameters[param] = matches[0]
-
-        # Buscar patrones de consumo de agua
-        flow_pattern = r"(?:caudal|consumo|flujo|flow|consumption).{0,30}?(\d+(?:[\.,]\d+)?)\s*(m3/d|m³/día|m3/día|litros/día|l/d)"
-        flow_matches = re.findall(flow_pattern, text, re.IGNORECASE)
-        if flow_matches:
-            value, unit = flow_matches[0]
-            parameters["caudal"] = f"{value.replace(',', '.')} {unit}"
+                parameters[param] = matches[0]
 
         return parameters
 
@@ -507,7 +481,7 @@ class DocumentService:
         Returns:
             Texto de resumen formateado
         """
-        insights = self.conversation_document_insights.get(conversation_id, [])
+        insights = await self.get_document_insights_for_conversation(conversation_id)
 
         if not insights:
             return ""
@@ -515,45 +489,118 @@ class DocumentService:
         summary = "INFORMACIÓN DE DOCUMENTOS PROPORCIONADOS POR EL USUARIO:\n\n"
 
         for i, doc in enumerate(insights, 1):
-            doc_insights = doc["insights"]
-            summary += f"Documento {i}: {doc['filename']}\n"
+            doc_insights = doc.get("insights", {})
+            summary += f"Documento {i}: {doc.get('filename', '')}\n"
             summary += f"Tipo: {doc_insights.get('document_type', 'desconocido')}\n"
+            summary += f"Resumen: {doc_insights.get('summary', '')}\n"
 
             # Añadir parámetros encontrados
-            parameters = doc_insights.get("parameters", {})
-            if parameters:
+            key_parameters = doc_insights.get("key_parameters", {})
+            if key_parameters:
                 summary += "Parámetros detectados:\n"
-                for param, value in parameters.items():
+                for param, value in key_parameters.items():
                     summary += f"- {param}: {value}\n"
 
-            # Incluir puntos clave si existen
-            key_points = doc_insights.get("key_points", [])
-            if key_points:
-                summary += "Información relevante identificada:\n"
-                for point in key_points[:3]:  # Limitar a 3 puntos por documento
-                    summary += f"- {point}\n"
-
-            # Incluir parte del texto extraído si existe
-            extracted_text = doc_insights.get("extracted_text", "")
-            if extracted_text and len(extracted_text) > 100:
-                summary += "Extracto del texto:\n"
-                summary += f'"{extracted_text[:150]}..."\n'
-
             summary += "\n"
-
-        # Añadir resumen de datos clave para todos los documentos
-        all_parameters = {}
-        for doc in insights:
-            all_parameters.update(doc["insights"].get("parameters", {}))
-
-        if all_parameters:
-            summary += (
-                "RESUMEN DE PARÁMETROS CLAVE ENCONTRADOS EN TODOS LOS DOCUMENTOS:\n"
-            )
-            for param, value in all_parameters.items():
-                summary += f"- {param}: {value}\n"
-
         return summary
+
+    async def nalyze_document_content(
+        self, file_path: str, content_type: str, filename: str
+    ) -> Dict[str, Any]:
+        """Analiza el contenido de un documento para extraer información relevante"""
+        insights = {
+            "summary": "",
+            "document_type": "unknown",
+            "extracted_text": "",
+            "key_parameters": {},
+            "relevance": "unknown",
+        }
+
+        try:
+            # Determinar tipo de documento
+            if content_type.startswith("image/"):
+                insights["document_type"] = "image"
+                insights["summary"] = (
+                    "Imagen proporcionada por el usuario que podría mostrar instalaciones existentes o problemas actuales."
+                )
+
+            elif content_type == "application/pdf":
+                insights["document_type"] = "pdf"
+                # Intentar extraer texto si tienes una biblioteca para ello
+                insights["summary"] = (
+                    "Documento PDF que podría contener especificaciones técnicas o análisis de laboratorio."
+                )
+
+            elif content_type == "text/csv" or filename.endswith(".csv"):
+                # Leer archivo CSV
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        csv_content = f.read(5000)  # Leer los primeros 5000 caracteres
+
+                    insights["document_type"] = "csv"
+                    insights["extracted_text"] = csv_content
+                    insights["summary"] = (
+                        "Archivo CSV con datos que podrían incluir mediciones o parámetros de calidad del agua."
+                    )
+
+                    # Buscar encabezados relacionados con parámetros de agua
+                    water_params = [
+                        "pH",
+                        "DBO",
+                        "DQO",
+                        "SST",
+                        "conductividad",
+                        "turbidez",
+                        "color",
+                    ]
+                    found_params = []
+
+                    for param in water_params:
+                        if param in csv_content:
+                            found_params.append(param)
+
+                    if found_params:
+                        insights["key_parameters"] = found_params
+                        insights["relevance"] = "highly_relevant"
+                except Exception as e:
+                    logger.warning(f"Error al leer CSV: {str(e)}")
+
+            elif content_type.startswith("text/") or filename.endswith(
+                (".txt", ".log")
+            ):
+                # Leer archivo de texto
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        text_content = f.read(
+                            10000
+                        )  # Leer los primeros 10000 caracteres
+
+                    insights["document_type"] = "text"
+                    insights["extracted_text"] = text_content
+                    insights["summary"] = (
+                        "Documento de texto que podría contener información sobre el proyecto o las necesidades del cliente."
+                    )
+
+                    # Extraer parámetros de agua
+                    params = self._extract_water_parameters(text_content)
+                    if params:
+                        insights["key_parameters"] = params
+                        insights["relevance"] = "relevant"
+
+                        params_summary = ", ".join(
+                            [f"{k}: {v}" for k, v in params.items()]
+                        )
+                        insights["summary"] = (
+                            f"Documento con parámetros de calidad del agua: {params_summary}"
+                        )
+                except Exception as e:
+                    logger.warning(f"Error al leer texto: {str(e)}")
+
+            return insights
+
+        except Exception as e:
+            logger.error(f"Error al analizar documento: {str(e)}")
+            return insights
 
     async def delete_document(self, doc_id: str) -> bool:
         """Elimina un documento"""

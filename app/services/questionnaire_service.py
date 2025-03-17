@@ -178,75 +178,114 @@ class QuestionnaireService:
         """
         if not subsector:
             # Si no hay subsector, devolver solo preguntas comunes
-            basic_questions = [
+            return = [
                 {
-                    "id": "sector",
-                    "text": "¿En qué sector opera tu empresa?",
-                    "type": "multiple_choice",
-                    "options": self.get_sectors(),
-                },
-                {
-                    "id": "subsector",
-                    "text": f"¿Cuál es el subsector específico dentro de {sector}?",
+                    "id": "subsector_selection",
+                    "text": f"¿Cual es el subsector especifico dentro de {sector}?",
                     "type": "multiple_choice",
                     "options": self.get_subsectors(sector),
+                    "explanation": "Cada subsector tiene características y necesidades especificas."
+
                 },
             ]
-            return basic_questions
+        # Obtener todas las preguntas para este sector/subsector
+        questions_key = f"{sector}_{subsector}"
+        return self.questionnaire_data.get("questions", {}).get(questions_key, [])
 
-        # Con sector y subsector, obtener preguntas específicas
-        question_key = f"{sector}_{subsector}"
-        all_questions = self.questionnaire_data.get("questions", {}).get(
-            question_key, []
-        )
+    def format_question_for_display(self, question: Dict[str, Any], include_fact: bool = True) -> str:
+        """Formatea una pregunta para presentarla al usuario con un formato amigable"""
+        # Obtener información básica de la pregunta
+        q_text = question.get("text", "")
+        q_explanation = question.get("explanation", "")
+        q_type = question.get("type", "")
+    
+        # Construir el mensaje
+        message = ""
+    
+        # 1. Añadir dato interesante si está disponible y se solicita
+        if include_fact:
+            fact = self.get_random_fact(None, None)  # Obtener un dato general si no hay específico
+            if fact:
+                message += f"*Dato interesante: {fact}*\n\n"
+    
+        # 2. Añadir explicación de por qué es importante esta pregunta
+        if q_explanation:
+            message += f"{q_explanation}\n\n"
+    
+        # 3. Presentar la pregunta claramente
+        message += f"**PREGUNTA: {q_text}**\n\n"
+    
+        # 4. Añadir opciones numeradas para preguntas de selección
+        if q_type in ["multiple_choice", "multiple_select"] and "options" in question:
+            for i, option in enumerate(question["options"], 1):
+                message += f"{i}. {option}\n"
+    
+        return message
+        
+        
+    def generate_proposal_summary(self, proposal: Dict[str, Any], conversation_id: str = None) -> str:
+        """Genera un resumen de la propuesta en formato markdown siguiendo la estructura especificada"""
+        client_info = proposal.get("client_info", {})
+        sector = client_info.get("sector", "")
+        subsector = client_info.get("subsector", "")
+        name = client_info.get("name", "Cliente")
+    
+        summary = f"""
+    # PROPUESTA DE SOLUCIÓN DE TRATAMIENTO DE AGUAS RESIDUALES PARA {name.upper()}
 
-        # Si no hay preguntas específicas, usar preguntas genéricas
-        if not all_questions:
-            return [
-                {
-                    "id": "nombre_empresa",
-                    "text": "¿Cuál es el nombre de tu empresa o proyecto?",
-                    "type": "text",
-                },
-                {
-                    "id": "ubicacion",
-                    "text": "¿Cuál es la ubicación de tu empresa?",
-                    "type": "text",
-                },
-                {
-                    "id": "cantidad_agua_consumida",
-                    "text": "¿Qué cantidad de agua consumes?",
-                    "type": "text",
-                },
-                {
-                    "id": "cantidad_agua_residual",
-                    "text": "¿Qué cantidad de aguas residuales generas?",
-                    "type": "text",
-                },
-            ]
+    ## 1. Introducción a Hydrous Management Group
 
-        # Seleccionar solo las preguntas más importantes para este sector/subsector
-        key_question_ids = [
-            "nombre_empresa",
-            "ubicacion",
-            "costo_agua",
-            "cantidad_agua_consumida",
-            "cantidad_agua_residual",
-            "parametros_agua",
-            "objetivo_principal",
-            "objetivo_reuso",
-        ]
+    Hydrous Management Group se especializa en **soluciones personalizadas de tratamiento de aguas residuales** para clientes {sector.lower()}es, con enfoque en el subsector {subsector}. Nuestra experiencia en gestión del agua ayuda a las empresas a lograr **cumplimiento normativo, reducción de costos y reutilización sostenible**.
 
-        key_questions = []
-        for q in all_questions:
-            if q["id"] in key_question_ids:
-                key_questions.append(q)
+    ## 2. Antecedentes del Proyecto
 
-        # Si no hay preguntas clave, devolver las primeras 5 preguntas
-        if not key_questions and all_questions:
-            key_questions = all_questions[: min(5, len(all_questions))]
+    **Cliente**: {name}  
+    **Sector**: {sector} - {subsector}  
+    **Ubicación**: {client_info.get('location', 'No especificada')}  
+    **Consumo actual de agua**: {proposal.get('water_consumption', 'No especificado')}  
+    **Generación de aguas residuales**: {proposal.get('wastewater_generation', 'No especificado')}
 
-        return key_questions
+    ## 3. Objetivo del Proyecto
+
+    {self._generate_objectives_section(proposal)}
+
+    ## 4. Supuestos Clave de Diseño
+
+    {self._generate_assumptions_section(proposal)}
+
+    ## 5. Diseño de Procesos y Alternativas de Tratamiento
+
+    {self._generate_treatment_process_section(proposal)}
+
+    ## 6. Equipo y Tamaño Sugeridos
+
+    {self._generate_equipment_section(proposal)}
+
+    ## 7. Estimación de CAPEX y OPEX
+
+    {self._generate_cost_section(proposal)}
+
+    ## 8. Análisis del Retorno de la Inversión (ROI)
+
+    {self._generate_roi_section(proposal)}
+
+    ## 9. Preguntas y Respuestas
+
+    Si tiene cualquier pregunta sobre esta propuesta, no dude en consultarnos.
+    """
+
+        # Agregar enlace de descarga si tenemos ID de conversación
+        if conversation_id:
+            summary += f"""
+        **Para obtener esta propuesta detallada en formato PDF, simplemente haga clic en el siguiente enlace:**
+
+        [📥 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation_id}/download-proposal-pdf)
+
+        *Esta propuesta es preliminar y se basa en la información proporcionada. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio.*
+        """
+
+        return summary
+
 
     def get_introduction(self) -> Tuple[str, str]:
         """
