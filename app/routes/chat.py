@@ -239,6 +239,8 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
 
         # Generar la propuesta y el PDF/HTML
         proposal = questionnaire_service.generate_proposal(conversation)
+
+        # intentar generar el PDF - aqui es donde fallaria si hay problema
         file_path = questionnaire_service.generate_proposal_pdf(proposal)
 
         if not file_path or not os.path.exists(file_path):
@@ -247,10 +249,27 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
             <html>
                 <head>
                     <title>Propuesta Hydrous</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; padding: 30px; line-height: 1.6; }}
+                        h1 {{ color: #2c3e50; }}
+                        .container {{ max-width: 800px; margin: 0 auto; background: #f9f9f9; padding: 30px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                        .error {{ color: #e74c3c; }}
+                        .btn {{ display: inline-block; background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
+                    </style>
                 </head>
                 <body>
-                    <h1>Error al generar documento</h1>
-                    <p>No se pudo generar el documento de propuesta. Por favor intente nuevamente o contacte con soporte.</p>
+                    <div class="container">
+                        <h1>Error al generar documento</h1>
+                        <p>No se pudo generar el documento de propuesta. Esto puede deberse a una de las siguientes razones:</p>
+                        <ul>
+                            <li>La información proporcionada está incompleta</li>
+                            <li>Ocurrió un problema técnico durante la generación</li>
+                            <li>El servicio de generación de PDF no está disponible actualmente</li>
+                        </ul>
+                        <p>Por favor intente nuevamente o contacte con soporte proporcionando el siguiente código:</p>
+                        <p class="error"><strong>Referencia: {datetime.datetime.now().strftime('%Y%m%d%H%M%S')}</strong></p>
+                        <a href="/chat/{conversation_id}" class="btn">Volver a la conversación</a>
+                    </div>
                 </body>
             </html>
             """
@@ -260,7 +279,7 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
         # Obtener el nombre del cliente para el nombre del archivo
         client_name = proposal["client_info"]["name"].replace(" ", "_")
 
-        # Determinar tipo de archivo basado en la extension
+        # Determinar tipo de archivo basado en la extensión
         is_pdf = file_path.lower().endswith(".pdf")
         if is_pdf:
             filename = f"Propuesta_Hydrous_{client_name}.pdf"
@@ -269,20 +288,64 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
             filename = f"Propuesta_Hydrous_{client_name}.html"
             media_type = "text/html"
 
+        # Mejorar manejo de la descarga
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Registrar éxito
+        logger.info(f"Descarga exitosa: {filename} para conversación {conversation_id}")
+
         # Devolver el archivo
         return FileResponse(
             path=file_path,
             filename=filename,
             media_type=media_type,
-            background=BackgroundTasks(),
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error al descargar propuesta: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error al generar el documento {str(e)}"
-        )
+
+        # Pagina de error con instrucciones claras
+        error_html = f"""
+        <html>
+            <head>
+                <title>Error de Descarga - Hydrous</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; padding: 0; margin: 0; background: #f5f5f5; }}
+                    .container {{ max-width: 800px; margin: 40px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 15px rgba(0,0,0,0.1); }}
+                    h1 {{ color: #2c3e50; margin-top: 0; }}
+                    .error-code {{ background: #f8d7da; padding: 15px; border-radius: 5px; margin: 20px 0; color: #721c24; }}
+                    .actions {{ margin-top: 30px; }}
+                    .btn {{ display: inline-block; background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Error al generar el documento</h1>
+                    <p>Ha ocurrido un problema técnico al procesar la propuesta. Disculpe las molestias.</p>
+                    
+                    <div class="error-code">
+                        <p><strong>Código de referencia:</strong> {datetime.datetime.now().strftime('%Y%m%d%H%M%S')}</p>
+                        <p><strong>Detalle técnico:</strong> {str(e)[:100]}...</p>
+                    </div>
+                    
+                    <p>Este error ha sido registrado automáticamente. Por favor, intente las siguientes opciones:</p>
+                    
+                    <ul>
+                        <li>Vuelva a la conversación y solicite nuevamente la descarga</li>
+                        <li>Asegúrese de completar todas las preguntas del cuestionario</li>
+                        <li>Contacte a nuestro equipo de soporte si el problema persiste</li>
+                    </ul>
+                    
+                    <div class="actions">
+                        <a href="/chat/{conversation_id}" class="btn">Volver a la conversación</a>
+                    </div>
+                </div>
+            </body>
+        </html>
+        """
+        return Response(content=error_html, media_type="text/html", status_code=500)
 
 
 @router.get("/{conversation_id}/questionnaire/status")
