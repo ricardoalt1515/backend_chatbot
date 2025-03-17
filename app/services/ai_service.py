@@ -84,14 +84,19 @@ class AIService:
         if conversation.is_questionnaire_active():
             # Procesar la respuesta del usuario para la pregunta actual
             if conversation.questionnaire_state.current_question_id:
-                self._process_user_answer(conversation, user_message)
+                self._update_questionnaire_state(conversation, user_message, "")
 
             # Obtener la siguiente pregunta
             next_question = questionnaire_service.get_next_question(
                 conversation.questionnaire_state
             )
             if next_question:
-                # Establecer sector y subsecor actuales para contextualizacion
+                # Actualizar estado para la proxima pregunta
+                conversation.questionnaire_state.current_question_id = next_question[
+                    "id"
+                ]
+
+                # Guardar referencias para contextualizacion
                 self.current_sector = conversation.questionnaire_state.sector
                 self.current_subsector = conversation.questionnaire_state.subsector
 
@@ -99,11 +104,13 @@ class AIService:
                 return self._format_question(next_question)
             else:
                 # si no hay mas preguntas, generar la propuesta
-                if not conversation.is_questionnaire_completed():
-                    conversation.complete_questionnaire()
+                conversation.complete_questionnaire()
 
+                # Generar propuesta
                 proposal = questionnaire_service.generate_proposal(conversation)
-                return questionnaire_service.format_proposal_summary(proposal)
+                return questionnaire_service.format_proposal_summary(
+                    proposal, conversation.id
+                )
 
         # 1. Determinar la etapa actual de la conversación
         current_stage = self._determine_conversation_stage(conversation)
@@ -721,6 +728,14 @@ class AIService:
 
         # Iniciar con una introduccion amigable
         message = ""
+
+        # Obtener un dato interesante relacionado con el sector/subsector
+        sector = getattr(self, "current_sector", None)
+        subsector = getattr(self, "current_subsector", None)
+        if sector and subsector:
+            fact = questionnaire_service.get_random_fact(sector, subsector)
+            if fact:
+                message += f"*{fact}*\n\n"
 
         # Añadir explicación si existe (antes de la pregunta)
         if q_explanation:
