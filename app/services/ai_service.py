@@ -61,7 +61,7 @@ class AIService:
                     "subsector": None,
                     "current_question_index": -1,
                     "asked_questions": [],
-                    "ready_for_proposal": False
+                    "ready_for_proposal": False,
                 }
 
             # Actualizar el estado con la respuesta del usuario
@@ -77,35 +77,40 @@ class AIService:
             message = [
                 {"role": "system", "content": settings.SYSTEM_PROMPT},
                 {"role": "system", "content": context},
-                {"role": "system", "content": instruction}
+                {"role": "system", "content": instruction},
             ]
 
             # Incluir historial de mensajes relevante
             recent_messages = self._get_recent_messages(conversation)
             messages.extend(recent_messages)
-        
+
             # Incluir el mensaje actual del usuario
             messages.append({"role": "user", "content": user_message})
-        
+
             # Generar respuesta
             response = await self.generate_response(messages, temperature=0.7)
-        
+
             # Verificar si debemos avanzar a la siguiente etapa
             self._update_stage_if_needed(conversation_id, response)
-        
-            return response
 
-    def _update_conversation_state(self, conversation: Conversation, user_message: str) -> None:
+            return response
+        except Exception as e:
+            logger.error(f"Erro al manejar la conversacion: {str(e)}")
+            return "Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intente nuevamente"
+
+    def _update_conversation_state(
+        self, conversation: Conversation, user_message: str
+    ) -> None:
         """Actualiza el estado de la conversacion basado en la respuesta del usuario"""
         conversation_id = conversation.id
         state = self.conversation_states[conversation_id]
         current_stage = state["current_stage"]
-        
+
         # Procesar respuesta según la etapa actual
         if current_stage == "GREETING":
             # Si el usuario responde al saludo, avanzar a sector
             state["current_stage"] = "SECTOR"
-            
+
         elif current_stage == "SECTOR":
             # Extraer sector de la respuesta
             sector = self._extract_sector(user_message)
@@ -113,7 +118,7 @@ class AIService:
                 state["sector"] = sector
                 conversation.questionnaire_state.sector = sector
                 state["current_stage"] = "SUBSECTOR"
-                
+
         elif current_stage == "SUBSECTOR":
             # Extraer subsector de la respuesta
             subsector = self._extract_subsector(user_message, state["sector"])
@@ -122,120 +127,145 @@ class AIService:
                 conversation.questionnaire_state.subsector = subsector
                 state["current_stage"] = "QUESTIONNAIRE"
                 state["current_question_index"] = 0
-                
+
         elif current_stage == "QUESTIONNAIRE":
             # Guardar respuesta a la pregunta actual
             if state["current_question_index"] >= 0:
-                questions = self._get_questions_for_sector_subsector(state["sector"], state["subsector"])
+                questions = self._get_questions_for_sector_subsector(
+                    state["sector"], state["subsector"]
+                )
                 if state["current_question_index"] < len(questions):
                     current_question = questions[state["current_question_index"]]
                     question_id = current_question["id"]
-                    
+
                     # Guardar la respuesta en el estado del cuestionario
                     conversation.questionnaire_state.answers[question_id] = user_message
                     state["asked_questions"].append(question_id)
-                    
+
                     # Avanzar a la siguiente pregunta
                     state["current_question_index"] += 1
-                    
+
                     # Si llegamos al final del cuestionario, preparar diagnóstico
                     if state["current_question_index"] >= len(questions):
                         state["current_stage"] = "DIAGNOSIS"
-    
+
     def extract_sector(self, message: str) -> Optional[str]:
         """Extrae el sector industrial de la respuesta del usuario"""
         message = message.lower()
         sectors = ["industrial", "comercial", "municipal", "residencial"]
-        
+
         # Verificar respuesta numérica (1-4)
         if message.strip() in ["1", "2", "3", "4"]:
             index = int(message.strip()) - 1
             if 0 <= index < len(sectors):
                 return sectors[index].capitalize()
-        
+
         # Buscar coincidencia textual
         for i, sector in enumerate(sectors, 1):
             if sector in message:
                 return sector.capitalize()
-        
+
         return None
 
     def _extract_subsector(self, message: str, sector: str) -> Optional[str]:
         """Extrae el subsector de la respuesta del usuario"""
         message = message.lower()
-        
+
         # Obtener subsectores para el sector seleccionado
         subsectors = questionnaire_service.get_subsectors(sector)
-        
+
         # Verificar respuesta numérica
         if message.strip().isdigit():
             index = int(message.strip()) - 1
             if 0 <= index < len(subsectors):
                 return subsectors[index]
-        
+
         # Buscar coincidencia textual
         for subsector in subsectors:
             if subsector.lower() in message:
                 return subsector
-        
+
         return None
 
     async def _prepare_context(self, conversation: Conversation) -> str:
         """Prepara el contexto relevante para el modelo"""
         conversation_id = conversation.id
         state = self.conversation_states[conversation_id]
-        
+
         context_parts = []
-        
+
         # Incluir documentos si existen
         try:
             from app.services.document_service import document_service
-            documents_context = await document_service.get_document_insights_summary(conversation_id)
+
+            documents_context = await document_service.get_document_insights_summary(
+                conversation_id
+            )
             if documents_context:
-                context_parts.append(f"INFORMACIÓN DE DOCUMENTOS PROPORCIONADOS:\n{documents_context}")
+                context_parts.append(
+                    f"INFORMACIÓN DE DOCUMENTOS PROPORCIONADOS:\n{documents_context}"
+                )
         except Exception as e:
             logger.warning(f"Error al obtener contexto de documentos: {str(e)}")
-        
+
         # Incluir contexto según la etapa
-        if state["current_stage"] == "QUESTIONNAIRE" and state["sector"] and state["subsector"]:
+        if (
+            state["current_stage"] == "QUESTIONNAIRE"
+            and state["sector"]
+            and state["subsector"]
+        ):
             # Obtener información de las preguntas
-            questions = self._get_questions_for_sector_subsector(state["sector"], state["subsector"])
-            
+            questions = self._get_questions_for_sector_subsector(
+                state["sector"], state["subsector"]
+            )
+
             if state["current_question_index"] < len(questions):
                 current_question = questions[state["current_question_index"]]
-                
+
                 # Incluir la pregunta actual y su contexto
                 question_context = f"PREGUNTA ACTUAL:\n"
                 question_context += f"ID: {current_question.get('id', '')}\n"
                 question_context += f"Texto: {current_question.get('text', '')}\n"
-                
+
                 if current_question.get("explanation"):
-                    question_context += f"Explicación: {current_question.get('explanation')}\n"
-                
-                if current_question.get("type") in ["multiple_choice", "multiple_select"] and "options" in current_question:
+                    question_context += (
+                        f"Explicación: {current_question.get('explanation')}\n"
+                    )
+
+                if (
+                    current_question.get("type")
+                    in ["multiple_choice", "multiple_select"]
+                    and "options" in current_question
+                ):
                     question_context += "Opciones:\n"
                     for i, option in enumerate(current_question["options"], 1):
                         question_context += f"{i}. {option}\n"
-                
+
                 context_parts.append(question_context)
-                
+
                 # Añadir un dato interesante relevante
-                interesting_fact = questionnaire_service.get_random_fact(state["sector"], state["subsector"])
+                interesting_fact = questionnaire_service.get_random_fact(
+                    state["sector"], state["subsector"]
+                )
                 if interesting_fact:
-                    context_parts.append(f"DATO INTERESANTE PARA COMPARTIR:\n{interesting_fact}")
-        
+                    context_parts.append(
+                        f"DATO INTERESANTE PARA COMPARTIR:\n{interesting_fact}"
+                    )
+
         # Para etapa de diagnóstico o propuesta, incluir resumen de respuestas
         if state["current_stage"] in ["DIAGNOSIS", "PROPOSAL"]:
             answers_summary = self._generate_answers_summary(conversation)
-            context_parts.append(f"RESUMEN DE INFORMACIÓN RECOPILADA:\n{answers_summary}")
-        
+            context_parts.append(
+                f"RESUMEN DE INFORMACIÓN RECOPILADA:\n{answers_summary}"
+            )
+
         return "\n\n".join(context_parts)
 
     def _get_stage_instruction(self, conversation_id: str) -> str:
         """Obtiene instrucción específica para la etapa actual"""
         state = self.conversation_states[conversation_id]
         current_stage = state["current_stage"]
-        
+
         if current_stage == "GREETING":
             return """
             INSTRUCCIÓN: Inicia la conversación con el saludo estándar indicado en tu configuración. 
@@ -248,7 +278,7 @@ class AIService:
             
             IMPORTANTE: Asegúrate de SOLO preguntar por el sector en este mensaje, sin formular preguntas adicionales.
             """
-            
+
         elif current_stage == "SECTOR":
             return """
             INSTRUCCIÓN: El usuario está respondiendo a la pregunta sobre su sector. 
@@ -257,7 +287,7 @@ class AIService:
             
             IMPORTANTE: SOLO pregunta por el subsector en este mensaje, sin añadir preguntas adicionales.
             """
-            
+
         elif current_stage == "SUBSECTOR":
             return """
             INSTRUCCIÓN: El usuario está respondiendo a la pregunta sobre su subsector.
@@ -272,7 +302,7 @@ class AIService:
             
             IMPORTANTE: SOLO UNA pregunta por mensaje.
             """
-            
+
         elif current_stage == "QUESTIONNAIRE":
             return """
             INSTRUCCIÓN: El usuario está respondiendo al cuestionario.
@@ -286,7 +316,7 @@ class AIService:
             
             IMPORTANTE: SOLO UNA pregunta por mensaje. No avances a la siguiente hasta recibir respuesta.
             """
-            
+
         elif current_stage == "DIAGNOSIS":
             return """
             INSTRUCCIÓN: El cuestionario ha sido completado. Presenta un diagnóstico preliminar basado en la información recopilada.
@@ -300,7 +330,7 @@ class AIService:
             
             Concluye preguntando si desea proceder con la generación de una propuesta detallada.
             """
-            
+
         elif current_stage == "PROPOSAL":
             return """
             INSTRUCCIÓN: Genera una propuesta completa siguiendo el formato oficial de Hydrous:
@@ -317,7 +347,7 @@ class AIService:
             
             Incluye un enlace para descargar la propuesta en PDF y un descargo de responsabilidad.
             """
-            
+
         else:  # FOLLOWUP
             return """
             INSTRUCCIÓN: Responde a las preguntas adicionales del usuario sobre la propuesta.
@@ -325,23 +355,29 @@ class AIService:
             Si el usuario solicita modificaciones, explica qué aspectos pueden ajustarse y cómo afectarían al diseño o los costos.
             """
 
-    def _get_questions_for_sector_subsector(self, sector: str, subsector: str) -> List[Dict[str, Any]]:
+    def _get_questions_for_sector_subsector(
+        self, sector: str, subsector: str
+    ) -> List[Dict[str, Any]]:
         """Obtiene las preguntas para un sector/subsector específico"""
         # Construir la clave para acceder a las preguntas
         questions_key = f"{sector}_{subsector}"
-        
+
         # Obtener las preguntas del cuestionario
-        return questionnaire_service.questionnaire_data.get("questions", {}).get(questions_key, [])
+        return questionnaire_service.questionnaire_data.get("questions", {}).get(
+            questions_key, []
+        )
 
     def _get_recent_messages(self, conversation: Conversation) -> List[Dict[str, str]]:
         """Obtiene los mensajes recientes de la conversación"""
         # Incluir solo los últimos 8 mensajes para mantener el contexto relevante
         recent_messages = []
-        messages = [msg for msg in conversation.messages if msg.role in ["user", "assistant"]]
-        
+        messages = [
+            msg for msg in conversation.messages if msg.role in ["user", "assistant"]
+        ]
+
         for msg in messages[-8:]:
             recent_messages.append({"role": msg.role, "content": msg.content})
-        
+
         return recent_messages
 
     def _generate_answers_summary(self, conversation: Conversation) -> str:
@@ -349,39 +385,51 @@ class AIService:
         answers = conversation.questionnaire_state.answers
         sector = conversation.questionnaire_state.sector
         subsector = conversation.questionnaire_state.subsector
-        
+
         if not answers:
             return "No se ha recopilado información suficiente."
-        
-        summary = f"Sector: {sector}\nSubsector: {subsector}\n\nRespuestas proporcionadas:\n"
-        
+
+        summary = (
+            f"Sector: {sector}\nSubsector: {subsector}\n\nRespuestas proporcionadas:\n"
+        )
+
         # Obtener preguntas para este sector/subsector
         questions_key = f"{sector}_{subsector}"
-        questions = questionnaire_service.questionnaire_data.get("questions", {}).get(questions_key, [])
-        
+        questions = questionnaire_service.questionnaire_data.get("questions", {}).get(
+            questions_key, []
+        )
+
         # Crear un mapeo de ID a texto de pregunta
         question_texts = {q["id"]: q["text"] for q in questions}
-        
+
         # Añadir cada respuesta al resumen
         for question_id, answer in answers.items():
             question_text = question_texts.get(question_id, question_id)
             summary += f"- {question_text}: {answer}\n"
-        
+
         return summary
 
     def _update_stage_if_needed(self, conversation_id: str, response: str) -> None:
         """Actualiza la etapa si la respuesta indica que debemos avanzar"""
         state = self.conversation_states[conversation_id]
-        
+
         # Avanzar de diagnóstico a propuesta si el usuario lo solicita
-        if state["current_stage"] == "DIAGNOSIS" and any(keyword in response.lower() for keyword in ["generar propuesta", "ver propuesta", "proceder", "continuar"]):
+        if state["current_stage"] == "DIAGNOSIS" and any(
+            keyword in response.lower()
+            for keyword in [
+                "generar propuesta",
+                "ver propuesta",
+                "proceder",
+                "continuar",
+            ]
+        ):
             state["current_stage"] = "PROPOSAL"
-            
+
         # Avanzar de propuesta a seguimiento después de mostrar la propuesta completa
-        elif state["current_stage"] == "PROPOSAL" and "PROPUESTA DE SOLUCIÓN" in response:
+        elif (
+            state["current_stage"] == "PROPOSAL" and "PROPUESTA DE SOLUCIÓN" in response
+        ):
             state["current_stage"] = "FOLLOWUP"
-
-
 
     def _detect_questionnaire_intent(self, message: str) -> bool:
         """Detecta si el usuario quiere iniciar un cuestionario o solicitar ayuda"""
