@@ -26,41 +26,18 @@ class AIService:
     def __init__(self):
         self.provider = settings.AI_PROVIDER
 
-        # En caso de que las bibliotecas groq y openai no estén instaladas,
-        # utilizaremos httpx para hacer las solicitudes directamente
-        self.groq_api_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.openai_api_url = "https://api.openai.com/v1/chat/completions"
-
+        # Configuración básica según el proveedor
         if self.provider == "groq":
-            if not settings.GROQ_API_KEY:
-                logger.warning(
-                    "GROQ_API_KEY no configurada. Las llamadas a la API fallarán."
-                )
             self.api_key = settings.GROQ_API_KEY
             self.model = settings.GROQ_MODEL
-            self.api_url = self.groq_api_url
-
-        elif self.provider == "openai":
-            if not settings.OPENAI_API_KEY:
-                logger.warning(
-                    "OPENAI_API_KEY no configurada. Las llamadas a la API fallarán."
-                )
+            self.api_url = "https://api.groq.com/openai/v1/chat/completions"
+        else:  # openai por defecto
             self.api_key = settings.OPENAI_API_KEY
             self.model = settings.OPENAI_MODEL
-            self.api_url = self.openai_api_url
+            self.api_url = "https://api.openai.com/v1/chat/completions"
 
-        else:
-            # Si el proveedor no está configurado correctamente, usamos un modo de "fallback"
-            logger.warning(
-                f"Proveedor de IA no soportado: {self.provider}. Usando respuestas pre-configuradas."
-            )
-            self.api_key = None
-            self.model = None
-            self.api_url = None
-
-        # Atributos para mantener el contexto entre llamadas
-        self.current_sector = None
-        self.current_subsector = None
+        # Registro de información recopilada por conversación
+        self.collected_info = {}
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
@@ -68,172 +45,191 @@ class AIService:
         """
         Maneja la conversación de manera optimizada, reduciendo tokens y mejorando la calidad
 
-        Args:
-            conversation: Objeto de conversación actual
-            user_message: Mensaje del usuario
-
-        Returns:
-            str: Respuesta generada para el usuario
         """
-        # Verificar si debemos iniciar un cuestionario basado en el mensaje del usuario
-        should_start = False
-        if (
-            not conversation.is_questionnaire_active()
-            and not conversation.is_questionnaire_completed()
-        ):
-            should_start = self._should_start_questionnaire(user_message)
-            if should_start:
+        conversation_id = conversation.id
+
+        # Inicializar seguimiento de informacion para esta conversacion
+        if conversation_id not in self.collected_info:
+            self.collected_info[conversation_id] = {
+                "sector": None,
+                "subsector": None,
+                "key_parameters": {},
+                "has_sufficient_info": False,
+                "documens_analyzed": [],
+            }
+
+            # Verificar si debemos iniciar cuestionario basado en la intencion del usuario
+            should_start = self._detect_questionnaire_intent(user_message)
+            if should_start and not conversation.is_questionnaire_active():
                 conversation.start_questionnaire()
 
-        # Determinar la fase actual basada en el progreso del cuestionario
-        phase = self._determine_conversation_phase(conversation)
+            # Obtener informacion de documentos si existen
+            document_insights = await self._get_document_insights(conversation.id)
 
-        # Obtener insights de documentos para esta conversacion
-        document_insights = ""
-        try:
-            from app.services.document_service import document_service
-
-            conversation_id = conversation.id
-            if conversation_id:
-                # Inyectar insights de documentos en el contexto
-                document_insights = (
-                    await document_service.get_document_insights_summary(
-                        conversation_id
-                    )
-                )
-        except Exception as e:
-            logger.error(f"Error al obtener insights de documentos: {str(e)}")
-
-        # Si el cuestionario está activo, manejar de forma específica
-        if conversation.is_questionnaire_active():
-            # Procesar la respuesta a la pregunta actual si existe
-            if conversation.questionnaire_state.current_question_id:
-                self._update_questionnaire_state(conversation, user_message, "")
-
-            # Verificar si es momento de mostrar un resumen intermedio
-            if self._should_show_summary(conversation):
-                return self._generate_interim_summary(conversation)
-
-            # Obtener siguiente pregunta
-            next_question = questionnaire_service.get_next_question(
-                conversation.questionnaire_state
+            # Preparar mensajes para el modelo
+            messages = self._prepare_conversation_messages(
+                conversation, document_insights
             )
 
-            if next_question:
-                # Establecer como pregunta actual y formatear
-                conversation.questionnaire_state.current_question_id = next_question[
-                    "id"
-                ]
-                self.current_sector = conversation.questionnaire_state.sector
-                self.current_subsector = conversation.questionnaire_state.subsector
+            # añadir el mensaje actual del usuario
+            messages.append({"role": "user", "content": user_message})
 
-                return self._format_question(next_question)
-            else:
-                # Cambiar a fase de propuesta si no hay más preguntas
-                conversation.complete_questionnaire()
-                return self._generate_preliminary_analysis(conversation)
+            # Generar respuesta
+            response = await self.generate_response(messages)
 
-        # Si el cuestionario está completo, manejar la fase de propuesta
-        if conversation.is_questionnaire_completed():
-            if "propuesta" in user_message.lower() or "pdf" in user_message.lower():
-                # Generar la propuesta completa
-                proposal = questionnaire_service.generate_proposal(conversation)
-                return questionnaire_service.format_proposal_summary(
-                    proposal, conversation.id
-                )
-            else:
-                # Responder preguntas sobre la propuesta
-                return self._handle_post_questionnaire(conversation, user_message)
+            # Actualizar informacion recopilada
+            self._update_collected_info(conversation_id, user_message, response)
 
-        # 1. Determinar la etapa actual de la conversación (para casos no cubiertos arriba)
-        current_stage = self._determine_conversation_stage(conversation)
+            # verificar si tenemos suficiente informacion para una propuesta
+            info = self.collected_info[conversation_id]
+            if elf._check_sufficient_info(info) and not info["has_sufficient_info"]:
+                info["has_sufficient_info"] = True
+                # Podríamos añadir un mensaje adicional ofreciendo generar propuesta
 
-        # 2. Obtener el prompt adecuado para la etapa
-        stage_prompt = self._get_prompt_for_stage(current_stage)
+            return response
 
-        # 3. Preparar los mensajes para el modelo de IA
-        messages_for_ai = [{"role": "system", "content": stage_prompt}]
+    def _detect_questionnaire_intent(self, message: str) -> bool:
+        """Detecta si el usuario quiere iniciar un cuestionario o solicitar ayuda"""
+        message = message.lower()
+        intent_keywords = [
+            "ayuda",
+            "solución",
+            "sistema",
+            "tratamiento",
+            "agua",
+            "residual",
+            "reciclaje",
+            "propuesta",
+            "necesito",
+            "quiero",
+            "información",
+        ]
 
-        # Añadir insights de documentos si existen
+        # Si contiene al menos 2 palabras clave, consideramos que hay intención
+        keyword_count = sum(1 for word in intent_keywords if word in message)
+        return keyword_count >= 2
+
+    def _prepare_conversation_messages(
+        self, conversation: Conversation, document_insights: str
+    ) -> List[Dict[str, str]]:
+        """Prepara los mensajes para enviar al modelo de IA"""
+        # Mensaje del sistema con el prompt base
+        messages = [{"role": "system", "content": settings.SYSTEM_PROMPT}]
+
+        # Añadir información de documentos si existe
         if document_insights:
-            messages_for_ai.append({"role": "system", "content": document_insights})
-
-        # 4. Añadir contexto relevante según la etapa
-        if current_stage in ["QUESTIONNAIRE", "ANALYSIS", "PROPOSAL"]:
-            # Obtener solo las preguntas relevantes (actual y siguientes)
-            relevant_questions = self._get_relevant_questions_context(conversation)
-            if relevant_questions:
-                messages_for_ai.append(
-                    {"role": "system", "content": relevant_questions}
-                )
-
-            # Añadir resumen compacto de respuestas anteriores
-            answers_summary = self._get_compact_answers_summary(conversation)
-            if answers_summary:
-                messages_for_ai.append({"role": "system", "content": answers_summary})
-
-        # 5. Añadir ejemplo de few-shot si está disponible para esta etapa
-        few_shot_example = self._get_few_shot_example(current_stage)
-        if few_shot_example:
-            messages_for_ai.append({"role": "system", "content": few_shot_example})
-
-        # 6. Añadir historial comprimido de la conversación
-        compressed_history = self._compress_conversation_history(conversation)
-        messages_for_ai.extend(compressed_history)
-
-        # 7. Añadir el mensaje actual del usuario si no está incluido en el historial
-        if (
-            not compressed_history
-            or compressed_history[-1]["role"] != "user"
-            or compressed_history[-1]["content"] != user_message
-        ):
-            messages_for_ai.append({"role": "user", "content": user_message})
-
-        # 8. Instrucción final si acabamos de iniciar el cuestionario
-        if should_start:
-            messages_for_ai.append(
+            messages.append(
                 {
                     "role": "system",
-                    "content": "El usuario ha mostrado interés en soluciones de tratamiento de agua. Comienza con el saludo estándar y la primera pregunta sobre el sector.",
+                    "content": f"INFORMACIÓN DE DOCUMENTOS ANALIZADOS:\n{document_insights}",
                 }
             )
 
-        # 9. Optimización: Calcular tokens aproximados y registrar para análisis
-        if token_counter_available:
-            try:
-                token_count = count_tokens(messages_for_ai, self.model)
-                cost_estimate = estimate_cost(token_count, self.model)
-                logger.info(
-                    f"Tokens enviados: {token_count} en etapa {current_stage} (est. costo: ${cost_estimate:.5f})"
-                )
-            except Exception as e:
-                logger.warning(f"Error al contar tokens: {str(e)}")
-                # Aproximación rápida
-                total_tokens = sum(
-                    len(msg["content"].split()) * 1.35 for msg in messages_for_ai
-                )
-                logger.info(
-                    f"Tokens aproximados: {int(total_tokens)} en etapa {current_stage}"
-                )
-        else:
-            # Aproximación rápida si no está disponible el contador de tokens
-            total_tokens = sum(
-                len(msg["content"].split()) * 1.35 for msg in messages_for_ai
-            )
-            logger.info(
-                f"Tokens aproximados enviados al modelo: {int(total_tokens)} en etapa {current_stage}"
-            )
+        # Añadir contexto relevante del cuestionario si está activo
+        if conversation.is_questionnaire_active():
+            sector = conversation.questionnaire_state.sector
+            subsector = conversation.questionnaire_state.subsector
 
-        # 10. Generar respuesta con el modelo de IA
-        start_time = time.time()
-        response = await self.generate_response(messages_for_ai)
-        elapsed_time = time.time() - start_time
-        logger.info(f"Respuesta generada en {elapsed_time:.2f} segundos")
+            if sector:
+                questions_context = self._get_sector_questions(sector, subsector)
+                messages.append({"role": "system", "content": questions_context})
 
-        # 11. Actualizar el estado del cuestionario basado en la interacción
-        self._update_questionnaire_state(conversation, user_message, response)
+        # Añadir historial de mensajes reciente (últimos 10 mensajes)
+        recent_messages = [
+            msg
+            for msg in conversation.messages[-10:]
+            if msg.role in ["user", "assistant"]
+        ]
+        for msg in recent_messages:
+            messages.append({"role": msg.role, "content": msg.content})
 
-        return response
+        return messages
+
+    def _get_sector_questions(self, sector: str, subsector: str = None) -> str:
+        """Obtiene preguntas relevantes para el sector/subsector como contexto"""
+        # Simplificación: cargamos solo las preguntas más importantes para este sector
+        relevant_questions = questionnaire_service.get_key_questions(sector, subsector)
+
+        context = f"PREGUNTAS CLAVE PARA {sector}"
+        if subsector:
+            context += f" - {subsector}"
+        context += ":\n\n"
+
+        for q in relevant_questions:
+            context += f"- {q['text']}\n"
+
+        return context
+
+    async def _get_document_insights(self, conversation_id: str) -> str:
+        """Obtiene insights de documentos asociados a la conversación"""
+        try:
+            from app.services.document_service import document_service
+
+            return await document_service.get_document_insights_summary(conversation_id)
+        except Exception as e:
+            logger.error(f"Error al obtener insights de documentos: {str(e)}")
+            return ""
+
+    def _update_collected_info(
+        self, conversation_id: str, user_message: str, ai_response: str
+    ) -> None:
+        """Actualiza la información recopilada basada en la interacción"""
+        info = self.collected_info[conversation_id]
+
+        # Detectar sector (simplificado)
+        if not info["sector"]:
+            sectors = ["Industrial", "Comercial", "Municipal", "Residencial"]
+            for sector in sectors:
+                if sector.lower() in user_message.lower():
+                    info["sector"] = sector
+                    break
+
+        # Detectar subsector si ya tenemos sector
+        elif info["sector"] and not info["subsector"]:
+            subsectors = questionnaire_service.get_subsectors(info["sector"])
+            for subsector in subsectors:
+                if subsector.lower() in user_message.lower():
+                    info["subsector"] = subsector
+                    break
+
+        # Detectar parámetros clave (simplificado)
+        self._extract_key_parameters(info, user_message)
+
+    def _extract_key_parameters(self, info: Dict[str, Any], message: str) -> None:
+        """Extrae parámetros clave del mensaje del usuario"""
+        # Simplificado: detectar valores numéricos con unidades
+        import re
+
+        # Buscar patrones de consumo de agua
+        water_pattern = (
+            r"(\d+(?:\.\d+)?)\s*(?:m3|m³|metros cúbicos|litros)/(?:día|dia|mes)"
+        )
+        water_matches = re.findall(water_pattern, message, re.IGNORECASE)
+        if water_matches and "water_consumption" not in info["key_parameters"]:
+            info["key_parameters"]["water_consumption"] = water_matches[0]
+
+        # Buscar patrones de parámetros de calidad de agua (pH, DBO, etc.)
+        ph_pattern = r"ph\s*(?:de|:)?\s*(\d+(?:\.\d+)?)"
+        ph_matches = re.findall(ph_pattern, message, re.IGNORECASE)
+        if ph_matches and "ph" not in info["key_parameters"]:
+            info["key_parameters"]["ph"] = ph_matches[0]
+
+    def _check_sufficient_info(self, info: Dict[str, Any]) -> bool:
+        """Determina si tenemos suficiente información para generar una propuesta"""
+        # Criterios simplificados
+        if not info["sector"]:
+            return False
+
+        # Necesitamos al menos 3 parámetros clave
+        if len(info["key_parameters"]) < 3:
+            return False
+
+        return True
+
+    async def generate_response(self, messages: List[Dict[str, str]]) -> str:
+        """Genera respuesta usando la API del proveedor configurado"""
+        # Este método puede permanecer similar al original
+        # Añadir lógica para manejar errores y reintentos
 
     def _should_show_summary(self, conversation: Conversation) -> bool:
         """Determina si es momento de mostrar un resumen intermedio"""

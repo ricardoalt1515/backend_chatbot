@@ -1,12 +1,10 @@
-# Mejoras para app/services/document_service.py
-
 import os
 import logging
 import uuid
+import re
 from typing import Optional, Dict, Any, List
 from fastapi import UploadFile
 import shutil
-import re
 import json
 
 from app.config import settings
@@ -15,7 +13,7 @@ logger = logging.getLogger("hydrous-backend")
 
 
 class DocumentService:
-    """Servicio para gestionar y procesar documentos subidos por los usuarios"""
+    """Servicio mejorado para gestionar y analizar documentos subidos por los usuarios"""
 
     def __init__(self):
         # Asegurarse de que exista el directorio de uploads
@@ -29,7 +27,7 @@ class DocumentService:
         self, file: UploadFile, conversation_id: str
     ) -> Dict[str, Any]:
         """
-        Guarda un documento subido por el usuario y extrae información preliminar
+        Guarda un documento subido por el usuario y extrae información detallada
 
         Args:
             file: Archivo subido
@@ -70,8 +68,8 @@ class DocumentService:
             if conversation_id not in self.conversation_document_insights:
                 self.conversation_document_insights[conversation_id] = []
 
-            # Extraer información preliminar según el tipo de archivo
-            insights = await self._extract_preliminary_insights(
+            # Extraer información detallada del documento
+            insights = await self.extract_document_insights(
                 file_path, file.content_type, file.filename
             )
             doc_info["insights"] = insights
@@ -93,11 +91,11 @@ class DocumentService:
             logger.error(f"Error al guardar documento: {str(e)}")
             raise
 
-    async def _extract_preliminary_insights(
+    async def extract_document_insights(
         self, file_path: str, content_type: str, filename: str
     ) -> Dict[str, Any]:
         """
-        Extrae información preliminar de un archivo según su tipo
+        Extrae información detallada de documentos con análisis mejorado
 
         Args:
             file_path: Ruta al archivo guardado
@@ -112,131 +110,323 @@ class DocumentService:
             "document_type": "unknown",
             "extracted_text": "",
             "key_points": [],
-            "relevance_to_water_treatment": "unknown",
+            "parameters": {},
+            "relevance": "unknown",
         }
 
         try:
-            # Detectar tipo de documento
+            # Determinar tipo de documento y procesar según su tipo
             if content_type.startswith("image/"):
                 insights["document_type"] = "image"
                 insights["summary"] = (
-                    f"Imagen que podría mostrar instalaciones, problemas de agua o equipos de tratamiento."
+                    "Imagen que podría mostrar instalaciones, problemas de agua o equipos de tratamiento."
                 )
-                insights["relevance_to_water_treatment"] = "potential_visual_evidence"
+                insights["relevance"] = "potential_visual"
 
             elif content_type == "application/pdf":
-                # Extraer texto de PDF - aquí podrías usar PyPDF2 o similares
-                # Para el MVP, solo indicamos que es un PDF
                 insights["document_type"] = "pdf"
-                insights["summary"] = (
-                    f"Documento PDF que podría contener especificaciones técnicas, informes o datos de la empresa."
-                )
-                insights["relevance_to_water_treatment"] = "likely_technical_document"
+                # Intentar extraer texto del PDF si está disponible PyPDF2
+                try:
+                    import PyPDF2
+
+                    with open(file_path, "rb") as pdf_file:
+                        pdf_reader = PyPDF2.PdfReader(pdf_file)
+                        text = ""
+                        for page_num in range(
+                            min(5, len(pdf_reader.pages))
+                        ):  # Primeras 5 páginas
+                            text += pdf_reader.pages[page_num].extract_text() + "\n"
+
+                        if text.strip():
+                            insights["extracted_text"] = text[
+                                :5000
+                            ]  # Limitar a 5000 caracteres
+                            insights["key_points"] = self._extract_key_points(text)
+                            insights["parameters"] = self._extract_water_parameters(
+                                text
+                            )
+
+                            if insights["parameters"]:
+                                insights["relevance"] = "highly_relevant"
+                                insights["summary"] = (
+                                    f"Documento técnico con información sobre calidad del agua. Se encontraron {len(insights['parameters'])} parámetros relevantes."
+                                )
+                            else:
+                                insights["relevance"] = "potentially_relevant"
+                                insights["summary"] = (
+                                    "Documento PDF que podría contener especificaciones técnicas o información sobre sistemas de agua."
+                                )
+                except ImportError:
+                    insights["summary"] = (
+                        "Documento PDF que podría contener especificaciones técnicas o información sobre sistemas de agua."
+                    )
+                    insights["relevance"] = "likely_technical"
+                except Exception as e:
+                    logger.warning(f"Error al procesar PDF: {str(e)}")
+                    insights["summary"] = (
+                        "Documento PDF recibido pero no se pudo procesar completamente."
+                    )
+                    insights["relevance"] = "likely_technical"
 
             elif "spreadsheet" in content_type or filename.endswith(
                 (".xlsx", ".xls", ".csv")
             ):
                 insights["document_type"] = "spreadsheet"
-                insights["summary"] = (
-                    f"Hoja de cálculo que podría contener datos de consumo de agua, parámetros de calidad o costos."
-                )
-                insights["relevance_to_water_treatment"] = "likely_data_source"
 
-            elif (
-                content_type == "application/msword"
-                or content_type
-                == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                # Procesar CSV si es posible
+                if filename.endswith(".csv"):
+                    try:
+                        import csv
+
+                        with open(file_path, "r", encoding="utf-8") as csv_file:
+                            reader = csv.reader(csv_file)
+                            rows = list(reader)
+
+                            # Extraer encabezados y primeras filas para análisis
+                            if rows:
+                                headers = rows[0]
+                                data_sample = rows[1 : min(6, len(rows))]
+
+                                # Verificar si contiene datos de agua
+                                water_related_headers = [
+                                    h
+                                    for h in headers
+                                    if any(
+                                        kw in h.lower()
+                                        for kw in [
+                                            "agua",
+                                            "ph",
+                                            "conductividad",
+                                            "dbo",
+                                            "dqo",
+                                            "sst",
+                                            "sólidos",
+                                            "solidos",
+                                            "consumo",
+                                            "caudal",
+                                            "flow",
+                                            "water",
+                                        ]
+                                    )
+                                ]
+
+                                if water_related_headers:
+                                    insights["relevance"] = "highly_relevant"
+                                    insights["summary"] = (
+                                        f"Hoja de cálculo con datos relacionados con agua. Columnas relevantes: {', '.join(water_related_headers[:3])}"
+                                    )
+
+                                    # Extraer algunos valores de ejemplo
+                                    parameters = {}
+                                    for header in water_related_headers[
+                                        :5
+                                    ]:  # Limitar a 5 columnas
+                                        header_index = headers.index(header)
+                                        sample_values = [
+                                            row[header_index]
+                                            for row in data_sample
+                                            if len(row) > header_index
+                                        ]
+                                        if sample_values:
+                                            # Guardar solo valores numéricos
+                                            numeric_values = []
+                                            for val in sample_values:
+                                                try:
+                                                    numeric_values.append(
+                                                        float(val.replace(",", "."))
+                                                    )
+                                                except:
+                                                    pass
+
+                                            if numeric_values:
+                                                avg_value = sum(numeric_values) / len(
+                                                    numeric_values
+                                                )
+                                                parameters[header.lower()] = (
+                                                    f"{avg_value:.2f}"
+                                                )
+
+                                    insights["parameters"] = parameters
+                                else:
+                                    insights["relevance"] = "potentially_relevant"
+                                    insights["summary"] = (
+                                        "Hoja de cálculo que podría contener datos relacionados con consumo de agua o parámetros de calidad."
+                                    )
+                    except Exception as e:
+                        logger.warning(f"Error al procesar CSV: {str(e)}")
+                        insights["summary"] = (
+                            "Hoja de cálculo que podría contener datos de consumo de agua o parámetros de calidad."
+                        )
+                        insights["relevance"] = "likely_data"
+                else:
+                    insights["summary"] = (
+                        "Hoja de cálculo que podría contener datos de consumo de agua o parámetros de calidad."
+                    )
+                    insights["relevance"] = "likely_data"
+
+            elif content_type.startswith("text/") or filename.endswith(
+                (".txt", ".md", ".log")
             ):
-                insights["document_type"] = "text_document"
-                insights["summary"] = (
-                    f"Documento de texto que podría contener información sobre la empresa, procesos o especificaciones."
-                )
-                insights["relevance_to_water_treatment"] = "likely_descriptive_content"
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        text_content = f.read(10000)  # Limitar a 10000 caracteres
+
+                    insights["document_type"] = "text"
+                    insights["extracted_text"] = text_content[:2000] + (
+                        "..." if len(text_content) > 2000 else ""
+                    )
+
+                    # Extraer parámetros clave del texto
+                    insights["parameters"] = self._extract_water_parameters(
+                        text_content
+                    )
+                    insights["key_points"] = self._extract_key_points(text_content)
+
+                    # Determinar relevancia basada en parámetros encontrados
+                    if insights["parameters"]:
+                        insights["relevance"] = "highly_relevant"
+                        insights["summary"] = (
+                            f"Documento con información técnica sobre calidad del agua. Encontrados {len(insights['parameters'])} parámetros relevantes."
+                        )
+                    else:
+                        water_keywords = [
+                            "agua",
+                            "tratamiento",
+                            "residual",
+                            "reciclaje",
+                            "filtración",
+                            "consumo",
+                        ]
+                        keyword_count = sum(
+                            1 for kw in water_keywords if kw in text_content.lower()
+                        )
+
+                        if keyword_count >= 3:
+                            insights["relevance"] = "potentially_relevant"
+                            insights["summary"] = (
+                                "Documento de texto con posible información sobre tratamiento de agua."
+                            )
+                        else:
+                            insights["relevance"] = "unknown"
+                            insights["summary"] = "Documento de texto recibido."
+                except Exception as e:
+                    logger.warning(f"Error al leer texto: {str(e)}")
+                    insights["summary"] = (
+                        "Documento de texto que no se pudo procesar completamente."
+                    )
+                    insights["relevance"] = "unknown"
 
             else:
-                # Intentar leer como texto si es pequeño (menos de 1MB)
-                file_size = os.path.getsize(file_path)
-                if file_size < 1024 * 1024 and content_type.startswith("text/"):
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            text_content = f.read(
-                                10000
-                            )  # Leer solo los primeros 10000 caracteres
-
-                        insights["document_type"] = "text"
-                        insights["extracted_text"] = (
-                            text_content[:500] + "..."
-                            if len(text_content) > 500
-                            else text_content
-                        )
-                        insights["summary"] = (
-                            f"Documento de texto con información que podría ser relevante para el proyecto."
-                        )
-                        insights["relevance_to_water_treatment"] = (
-                            "potential_information"
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"No se pudo leer el archivo como texto: {str(e)}"
-                        )
-
-            # Detectar palabras clave relacionadas con tratamiento de agua
-            water_keywords = [
-                "agua",
-                "residual",
-                "tratamiento",
-                "filtración",
-                "pH",
-                "DBO",
-                "DQO",
-                "sólidos",
-                "efluente",
-                "contaminantes",
-                "reutilización",
-                "reciclaje",
-                "consumo",
-                "descarga",
-                "osmosis",
-                "membrana",
-                "biológico",
-            ]
-
-            if insights["extracted_text"]:
-                # Contar palabras clave en el texto extraído
-                keyword_count = sum(
-                    1
-                    for keyword in water_keywords
-                    if keyword.lower() in insights["extracted_text"].lower()
+                # Para otros tipos de archivo, información básica
+                insights["summary"] = (
+                    f"Archivo {content_type} que podría contener información relevante para el proyecto de agua."
                 )
-
-                if keyword_count > 3:
-                    insights["relevance_to_water_treatment"] = "highly_relevant"
-                    insights["key_points"] = self._extract_key_points(
-                        insights["extracted_text"], water_keywords
-                    )
+                insights["relevance"] = "unknown"
 
             return insights
 
         except Exception as e:
-            logger.error(f"Error al extraer información del archivo: {str(e)}")
-            return {
-                "summary": f"Archivo recibido pero no se pudo procesar: {str(e)}",
-                "document_type": "unknown",
-                "relevance_to_water_treatment": "unknown",
-            }
+            logger.error(f"Error al procesar documento: {str(e)}")
+            insights["summary"] = f"Archivo recibido pero no se pudo procesar: {str(e)}"
+            return insights
 
-    def _extract_key_points(self, text: str, keywords: List[str]) -> List[str]:
+    def _extract_water_parameters(self, text: str) -> Dict[str, str]:
         """
-        Extrae frases clave que contienen palabras relacionadas con tratamiento de agua
+        Extrae parámetros de calidad del agua de un texto con patrones mejorados
 
         Args:
             text: Texto del documento
-            keywords: Lista de palabras clave a buscar
+
+        Returns:
+            Dict con parámetros de agua y sus valores
+        """
+        parameters = {}
+
+        # Patrones mejorados para parámetros comunes de agua
+        patterns = {
+            "ph": r"pH\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "dbo": r"(?:DBO|BOD)[5]?\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "dqo": r"(?:DQO|COD)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "sst": r"(?:SST|TSS)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "sdt": r"(?:SDT|TDS)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "conductividad": r"(?:[Cc]onductividad|[Cc]onductivity)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "turbidez": r"(?:[Tt]urbidez|[Tt]urbidity)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "color": r"[Cc]olor\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "grasas_aceites": r"(?:[Gg]rasas y aceites|[Oo]il and [Gg]rease)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "nitrogeno": r"(?:[Nn]itrógeno|[Nn]itrogen)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "fosforo": r"(?:[Ff]ósforo|[Pp]hosphorus)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+            "cloro": r"(?:[Cc]loro|[Cc]hlorine)\s*[:=]?\s*(\d+(?:\.\d+)?)",
+        }
+
+        # Extraer unidades junto con valores cuando sea posible
+        unit_pattern = r"(\d+(?:\.\d+)?)\s*(mg/[lL]|µS/cm|NTU|Pt-Co)"
+        unit_matches = re.findall(unit_pattern, text)
+        for value, unit in unit_matches:
+            # Determinar el parámetro basado en la unidad
+            if unit == "NTU":
+                parameters["turbidez"] = f"{value} {unit}"
+            elif unit == "Pt-Co":
+                parameters["color"] = f"{value} {unit}"
+            elif unit == "µS/cm":
+                parameters["conductividad"] = f"{value} {unit}"
+
+        # Buscar patrones específicos
+        for param, pattern in patterns.items():
+            matches = re.findall(pattern, text)
+            if matches:
+                # Si ya tenemos este parámetro con unidad, no lo sobreescribimos
+                if param not in parameters:
+                    parameters[param] = matches[0]
+
+        # Buscar patrones de consumo de agua
+        flow_pattern = r"(?:caudal|consumo|flujo|flow|consumption).{0,30}?(\d+(?:[\.,]\d+)?)\s*(m3/d|m³/día|m3/día|litros/día|l/d)"
+        flow_matches = re.findall(flow_pattern, text, re.IGNORECASE)
+        if flow_matches:
+            value, unit = flow_matches[0]
+            parameters["caudal"] = f"{value.replace(',', '.')} {unit}"
+
+        return parameters
+
+    def _extract_key_points(self, text: str) -> List[str]:
+        """
+        Extrae frases clave relevantes para tratamiento de agua
+
+        Args:
+            text: Texto del documento
 
         Returns:
             Lista de frases clave encontradas
         """
         key_points = []
+
+        # Palabras clave relacionadas con tratamiento de agua
+        water_keywords = [
+            "agua",
+            "residual",
+            "tratamiento",
+            "filtración",
+            "ph",
+            "dbo",
+            "dqo",
+            "sólidos",
+            "efluente",
+            "contaminantes",
+            "reutilización",
+            "reciclaje",
+            "consumo",
+            "descarga",
+            "osmosis",
+            "membrana",
+            "biológico",
+            "clarificación",
+            "sistema",
+            "planta",
+            "proceso",
+            "caudal",
+            "flujo",
+            "normativa",
+            "regulación",
+        ]
 
         # Dividir en oraciones
         sentences = re.split(r"[.!?]+", text)
@@ -247,14 +437,19 @@ class DocumentService:
                 continue
 
             # Verificar si la oración contiene alguna palabra clave
-            if any(keyword.lower() in sentence.lower() for keyword in keywords):
+            keyword_count = sum(
+                1 for keyword in water_keywords if keyword in sentence.lower()
+            )
+
+            if keyword_count >= 2:  # Debe contener al menos 2 palabras clave
                 # Limitar longitud de la oración
-                if len(sentence) > 100:
-                    sentence = sentence[:100] + "..."
+                if len(sentence) > 150:
+                    sentence = sentence[:150] + "..."
+
                 key_points.append(sentence)
 
-                # Limitar a 5 puntos clave
-                if len(key_points) >= 5:
+                # Limitar a 8 puntos clave
+                if len(key_points) >= 8:
                     break
 
         return key_points
@@ -287,6 +482,20 @@ class DocumentService:
         """
         return self.conversation_document_insights.get(conversation_id, [])
 
+    def get_insights_for_conversation_sync(
+        self, conversation_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Versión sincrónica de get_document_insights_for_conversation para uso interno
+
+        Args:
+            conversation_id: ID de la conversación
+
+        Returns:
+            Lista de insights de documentos para esta conversación
+        """
+        return self.conversation_document_insights.get(conversation_id, [])
+
     async def get_document_insights_summary(self, conversation_id: str) -> str:
         """
         Genera un resumen de los insights de documentos para una conversación,
@@ -306,24 +515,43 @@ class DocumentService:
         summary = "INFORMACIÓN DE DOCUMENTOS PROPORCIONADOS POR EL USUARIO:\n\n"
 
         for i, doc in enumerate(insights, 1):
+            doc_insights = doc["insights"]
             summary += f"Documento {i}: {doc['filename']}\n"
-            summary += f"Tipo: {doc['insights'].get('document_type', 'desconocido')}\n"
-            summary += f"Resumen: {doc['insights'].get('summary', '')}\n"
+            summary += f"Tipo: {doc_insights.get('document_type', 'desconocido')}\n"
+
+            # Añadir parámetros encontrados
+            parameters = doc_insights.get("parameters", {})
+            if parameters:
+                summary += "Parámetros detectados:\n"
+                for param, value in parameters.items():
+                    summary += f"- {param}: {value}\n"
 
             # Incluir puntos clave si existen
-            key_points = doc["insights"].get("key_points", [])
+            key_points = doc_insights.get("key_points", [])
             if key_points:
-                summary += "Puntos clave identificados:\n"
-                for point in key_points:
+                summary += "Información relevante identificada:\n"
+                for point in key_points[:3]:  # Limitar a 3 puntos por documento
                     summary += f"- {point}\n"
 
             # Incluir parte del texto extraído si existe
-            extracted_text = doc["insights"].get("extracted_text", "")
-            if extracted_text:
+            extracted_text = doc_insights.get("extracted_text", "")
+            if extracted_text and len(extracted_text) > 100:
                 summary += "Extracto del texto:\n"
-                summary += f'"{extracted_text[:200]}..."\n'
+                summary += f'"{extracted_text[:150]}..."\n'
 
             summary += "\n"
+
+        # Añadir resumen de datos clave para todos los documentos
+        all_parameters = {}
+        for doc in insights:
+            all_parameters.update(doc["insights"].get("parameters", {}))
+
+        if all_parameters:
+            summary += (
+                "RESUMEN DE PARÁMETROS CLAVE ENCONTRADOS EN TODOS LOS DOCUMENTOS:\n"
+            )
+            for param, value in all_parameters.items():
+                summary += f"- {param}: {value}\n"
 
         return summary
 
