@@ -142,89 +142,17 @@ class Settings(BaseSettings):
     Evita realizar afirmaciones legalmente vinculantes y fomenta la verificación profesional de todas las estimaciones y recomendaciones.
     """
 
-    # Prompts por etapas para optimizar tokens
-    CONVERSATION_STAGES = {
-        "GREETING": "Saludo inicial y explicación del propósito",
-        "SECTOR": "Identificación del sector industrial",
-        "SUBSECTOR": "Identificación del subsector específico",
-        "QUESTIONNAIRE": "Recopilación de datos siguiendo el cuestionario específico",
-        "DIAGNOSIS": "Diagnóstico preliminar basado en los datos recopilados",
-        "PROPOSAL": "Presentación de la propuesta completa",
-        "FOLLOWUP": "Preguntas adicionales y conclusión",
-    }
 
-    # Few-shot examples para mejorar la calidad de las respuestas
-    FEW_SHOT_EXAMPLES: Dict[str, str] = {
-        "QUESTIONNAIRE": """
-        EJEMPLO DE INTERACCIÓN IDEAL:
-        
-        [Usuario]: ¿Qué información necesitan para ayudarme con mi planta de tratamiento?
-        
-        [Asistente]: Soy el Diseñador de Soluciones de Agua con IA de Hydrous, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarlo paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro, cumplimiento normativo y sostenibilidad.
-
-        Para desarrollar la mejor solución para sus instalaciones, necesito recopilar algunos datos importantes.
-
-        **PREGUNTA: ¿En qué sector opera su empresa?**
-        1. Industrial
-        2. Comercial
-        3. Municipal
-        4. Residencial
-        
-        [Usuario]: Industrial
-        
-        [Asistente]: Gracias por indicarme que su empresa opera en el sector Industrial. Cada subsector tiene desafíos y requisitos específicos en cuanto al tratamiento de aguas residuales, lo que me ayudará a ofrecerle soluciones más precisas.
-
-        **PREGUNTA: ¿Cuál es el subsector específico de su empresa?**
-        1. Alimentos y Bebidas
-        2. Textil
-        3. Petroquímica
-        4. Farmacéutica
-        5. Minería
-        6. Petróleo y Gas
-        7. Metal/Automotriz
-        8. Cemento
-        
-        [Usuario]: Textil
-        
-        [Asistente]: Excelente. El sector textil presenta desafíos únicos en el tratamiento de agua debido a los colorantes, productos químicos y otros contaminantes específicos de sus procesos.
-
-        *Dato interesante: Las plantas textiles modernas pueden reciclar hasta el 70% del agua utilizada en sus procesos mediante sistemas avanzados de tratamiento, reduciendo significativamente los costos operativos.*
-
-        Para comenzar a diseñar una solución adecuada para su empresa, necesito algunos datos básicos.
-
-        **PREGUNTA: ¿Podría proporcionarme el nombre de su empresa o proyecto?**
-        """,
-        "PROPOSAL": """
-        EJEMPLO DE PROPUESTA FINAL:
-        
-        # PROPUESTA DE TRATAMIENTO DE AGUAS RESIDUALES PARA TEXTILES MODERNOS SA
-        
-        ## 1. Introducción a Hydrous Management Group
-        
-        Hydrous Management Group se especializa en soluciones personalizadas de tratamiento de agua y aguas residuales para clientes industriales y comerciales. Nuestro enfoque integra tecnologías innovadoras con décadas de experiencia práctica para ofrecer sistemas eficientes, económicos y sostenibles.
-        
-        ## 2. Antecedentes del Proyecto
-        
-        Textiles Modernos SA, ubicada en León, Guanajuato, opera una planta textil con un consumo de agua de aproximadamente 450 m³/día y genera 380 m³/día de aguas residuales. El costo actual del agua es de $35 MXN/m³, resultando en un gasto mensual aproximado de $472,500 MXN.
-        
-        Las aguas residuales contienen principalmente colorantes, pH variable (5.5-9), DQO elevada (800 mg/L) y sólidos suspendidos (350 mg/L).
-        
-        ## 3. Objetivo del Proyecto
-        
-        El objetivo principal es diseñar e implementar un sistema de tratamiento que permita:
-        - Cumplir con las normativas ambientales para descarga
-        - Reutilizar al menos el 60% del agua en procesos internos
-        - Lograr un retorno de inversión en menos de 3 años
-        
-        [Continúa con el resto de las secciones de la propuesta...]
-        
-        **Para obtener esta propuesta en formato PDF, simplemente haz clic en el siguiente enlace o escribe 'descargar propuesta':**
-        
-        [📥 DESCARGAR PROPUESTA EN PDF](/api/chat/abc123/download-proposal-pdf)
-        
-        *Esta propuesta es preliminar y se basa en la información proporcionada. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio.*
-        """,
-    }
+# Prompts por etapas para optimizar tokens
+CONVERSATION_STAGES = {
+    "GREETING": "Saludo inicial y explicación del propósito",
+    "SECTOR": "Identificación del sector industrial",
+    "SUBSECTOR": "Identificación del subsector específico",
+    "QUESTIONNAIRE": "Recopilación de datos siguiendo el cuestionario específico",
+    "DIAGNOSIS": "Diagnóstico preliminar basado en los datos recopilados",
+    "PROPOSAL": "Presentación de la propuesta completa",
+    "FOLLOWUP": "Preguntas adicionales y conclusión",
+}
 
 
 # Crear instancia de configuración
