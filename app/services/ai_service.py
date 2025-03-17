@@ -80,6 +80,31 @@ class AIService:
             if should_start:
                 conversation.start_questionnaire()
 
+        # Si estamos en el cuestionario, asegurarnos de enviar solo una pregunta
+        if conversation.is_questionnaire_active():
+            # Procesar la respuesta del usuario para la pregunta actual
+            if conversation.questionnaire_state.current_question_id:
+                self._process_user_answer(conversation, user_message)
+
+            # Obtener la siguiente pregunta
+            next_question = questionnaire_service.get_next_question(
+                conversation.questionnaire_state
+            )
+            if next_question:
+                # Establecer sector y subsecor actuales para contextualizacion
+                self.current_sector = conversation.questionnaire_state.sector
+                self.current_subsector = conversation.questionnaire_state.subsector
+
+                # Formatear solo una pregunta
+                return self._format_question(next_question)
+            else:
+                # si no hay mas preguntas, generar la propuesta
+                if not conversation.is_questionnaire_completed():
+                    conversation.complete_questionnaire()
+
+                proposal = questionnaire_service.generate_proposal(conversation)
+                return questionnaire_service.format_proposal_summary(proposal)
+
         # 1. Determinar la etapa actual de la conversación
         current_stage = self._determine_conversation_stage(conversation)
 
