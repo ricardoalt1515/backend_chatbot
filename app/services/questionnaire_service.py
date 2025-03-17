@@ -453,68 +453,57 @@ siguientes preguntas!"**
         """Formatea un resumen de la propuesta para presentar al usuario,
         Incluyendo enlace de descarga si se proporciona el ID de conversacion."""
         client_info = proposal["client_info"]
-        project_details = proposal["project_details"]
-        treatment = proposal["recommended_treatment"]
-        costs = proposal["cost_estimation"]
-        roi = proposal["roi_analysis"]
-
-        # Formatear resumen con Markdown mejorado
 
         summary = f"""
-    # 🌊 PROPUESTA DE SOLUCIÓN HYDROUS
+    # PROPUESTA DE SOLUCIÓN DE RECICLAJE DE AGUAS RESIDUALES
 
-    ## 📋 DATOS DEL PROYECTO
-    - **Cliente**: {client_info['name']}
-    - **Ubicación**: {client_info['location']}
-    - **Sector**: {client_info['sector']} - {client_info['subsector']}
-    - **Flujo de agua a tratar**: {project_details.get('flow_rate', 'No especificado')}
+    ## 1. Introducción al Grupo de Gestión Hidráulica
 
-    ## 🎯 OBJETIVOS PRINCIPALES
-    {"- " + "- ".join(project_details['objectives']) if project_details.get('objectives') else "No especificados"}
+    Hydrous Management Group es una empresa especializada en soluciones personalizadas de tratamiento y reciclaje de agua para industrias. Nuestro enfoque integra tecnologías de vanguardia con décadas de experiencia práctica.
 
-    ## ♻️ OBJETIVOS DE REÚSO
-    {"- " + "- ".join(project_details['reuse_objectives']) if project_details.get('reuse_objectives') else "No especificados"}
+    ## 2. Antecedentes del Proyecto
 
-    ## ⚙️ SOLUCIÓN TECNOLÓGICA RECOMENDADA
-    - **Pretratamiento**: {", ".join(treatment['pretratamiento']['tecnologias']) if 'pretratamiento' in treatment and treatment['pretratamiento'] and 'tecnologias' in treatment['pretratamiento'] else "No requerido"}
-    - **Tratamiento primario**: {", ".join(treatment['primario']['tecnologias']) if 'primario' in treatment and treatment['primario'] and 'tecnologias' in treatment['primario'] else "No requerido"}
-    - **Tratamiento secundario**: {", ".join(treatment['secundario']['tecnologias']) if 'secundario' in treatment and treatment['secundario'] and 'tecnologias' in treatment['secundario'] else "No requerido"}
-    - **Tratamiento terciario**: {", ".join(treatment['terciario']['tecnologias']) if 'terciario' in treatment and treatment['terciario'] and 'tecnologias' in treatment['terciario'] else "No requerido"}
+    **Cliente**: {client_info['name']}
+    **Ubicación**: {client_info['location']}
+    **Sector**: {client_info['sector']} - {client_info['subsector']}
 
-    ## 💰 ANÁLISIS ECONÓMICO
-    - **Inversión inicial estimada**: ${costs['capex']['total']:,.2f} USD
-    - **Costo operativo anual**: ${costs['opex']['total_anual']:,.2f} USD/año
-    - **Costo operativo mensual**: ${costs['opex']['total_mensual']:,.2f} USD/mes
+    {self._format_project_background(proposal)}
 
-    ## 📈 RETORNO DE INVERSIÓN
-    - **Ahorro anual estimado**: ${roi['ahorro_anual']:,.2f} USD/año
-    - **Periodo de recuperación**: {roi['periodo_recuperacion']:.1f} años
-    - **ROI a 5 años**: {roi['roi_5_anos']:.1f}%
+    ## 3. Objetivo del Proyecto
 
-    ## 🌱 BENEFICIOS AMBIENTALES
-    - Reducción de la huella hídrica de tu operación
-    - Disminución de la descarga de contaminantes al medio ambiente
-    - Cumplimiento con normativas ambientales vigentes
-    - Contribución a la sostenibilidad del recurso hídrico
-    """
+    {self._format_project_objectives(proposal)}
 
-        # Añadir enlace de descarga si tenemos ID de conversación
-        if conversation_id:
-            download_url = f"/api/chat/{conversation_id}/download-proposal-pdf"
-            summary += f"""
-        ## 📥 DESCARGA TU PROPUESTA COMPLETA
+    ## 4. Supuestos Clave de Diseño
 
-        **[👉 DESCARGAR PROPUESTA EN PDF]({download_url})**
+    {self._format_design_assumptions(proposal)}
 
-        *Guarda esta propuesta personalizada en tu dispositivo para compartirla con tu equipo o revisarla cuando lo necesites.*
-        """
+    ## 5. Diseño de Procesos y Alternativas de Tratamiento
 
-        summary += """
-        ## PRÓXIMOS PASOS
-        ¿Te gustaría programar una reunión con nuestros especialistas para revisar en detalle esta recomendación y resolver cualquier duda específica?
+    {self._format_treatment_process(proposal)}
 
-        También puedes escribir "descargar propuesta" para obtener esta información en formato PDF.
-        """
+    ## 6. Equipo y Tamaño Sugeridos
+
+    {self._format_equipment_sizing(proposal)}
+
+    ## 7. Estimación de CAPEX y OPEX
+
+    {self._format_cost_estimation(proposal)}
+
+    ## 8. Análisis del Retorno de la Inversión (ROI)
+
+    {self._format_roi_analysis(proposal)}
+
+    ## 9. Preguntas y Respuestas
+
+    {self._format_qa_section(proposal)}
+
+    ## Descargar Propuesta Completa
+
+    **Para obtener esta propuesta en formato PDF, simplemente haz clic en el siguiente enlace:**
+
+    [📥 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation_id}/download-proposal-pdf)
+
+    *Esta propuesta es preliminar y se basa en la información proporcionada. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio.*        """
         return summary
 
     def generate_proposal_pdf(self, proposal: Dict[str, Any]) -> str:
