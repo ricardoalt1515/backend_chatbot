@@ -82,7 +82,7 @@ class AIService:
 
             # verificar si tenemos suficiente informacion para una propuesta
             info = self.collected_info[conversation_id]
-            if elf._check_sufficient_info(info) and not info["has_sufficient_info"]:
+            if self._check_sufficient_info(info) and not info["has_sufficient_info"]:
                 info["has_sufficient_info"] = True
                 # Podríamos añadir un mensaje adicional ofreciendo generar propuesta
 
