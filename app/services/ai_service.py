@@ -90,14 +90,19 @@ class AIService:
 
         # Obtener insights de documentos para esta conversacion
         document_insights = ""
-        from app.services.document_service import document_service
+        try:
+            from app.services.document_service import document_service
 
-        conversation_id = conversation.id
-        if conversation_id:
-            # Inyectar insights de documentos en el contexto
-            document_insights = await document_service.get_document_insights_summary(
-                conversation_id
-            )
+            conversation_id = conversation.id
+            if conversation_id:
+                # Inyectar insights de documentos en el contexto
+                document_insights = (
+                    await document_service.get_document_insights_summary(
+                        conversation_id
+                    )
+                )
+        except Exception as e:
+            logger.error(f"Error al obtener insights de documentos: {str(e)}")
 
         # Si el cuestionario está activo, manejar de forma específica
         if conversation.is_questionnaire_active():

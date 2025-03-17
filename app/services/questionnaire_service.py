@@ -7,7 +7,6 @@ import re
 import string
 from typing import Dict, Any, Optional, List, Tuple
 
-from app.routes import documents
 
 # Verificar dependencias disponibles para generación de PDF
 PDF_GENERATORS = []
@@ -341,6 +340,8 @@ siguientes preguntas!"**
         document_insights = []
 
         try:
+            from app.services.document_service import document_service
+
             document_insights = document_service.get_insights_for_conversation_sync(
                 conversation.id
             )

@@ -4,7 +4,6 @@ from typing import Optional, List
 
 from app.services.document_service import document_service
 from app.services.storage_service import storage_service
-from app.services.ai_service import ai_service
 from app.models.message import Message, MessageResponse
 from app.config import settings
 
