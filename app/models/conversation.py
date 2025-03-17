@@ -9,14 +9,12 @@ from app.models.message import Message
 class QuestionnaireState(BaseModel):
     """Estado del cuestionario dentro de una conversación"""
 
-    def __init__(self):
-        self.active: bool = False
-        self.completed: bool = False
-        self.sector: Optional[str] = None
-        self.subsector: Optional[str] = None
-        self.current_question_id: Optional[str] = None
-        self.answers: Dict[str, Any] = {}
-        self.section_intros_shown: Dict[str, bool] = {}
+    sector: Optional[str] = None
+    subsector: Optional[str] = None
+    current_question_id: Optional[str] = None
+    answers: Dict[str, Any] = Field(default_factory=dict)
+    completed: bool = False
+    active: bool = Field(default_factory=bool)
 
 
 class Conversation(BaseModel):
