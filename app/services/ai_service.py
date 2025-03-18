@@ -9,6 +9,7 @@ from datetime import datetime
 from app.config import settings
 from app.models.conversation import Conversation
 from app.services.questionnaire_service import questionnaire_service
+from routes import documents
 
 # Intento importar el contador de tokens si está disponible
 try:
@@ -121,10 +122,8 @@ class AIService:
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
-        """
-        Maneja la conversación básica (este método será sobrescrito en la clase derivada)
-        """
-        # Si no esta activo el cuestionario iniciarlo  (esto es opcional, depende de tu preferencia)
+        """Maneja la conversación siguiendo el enfoque estructurado del cuestionario"""
+        # Si no está activo el cuestionario, iniciarlo si detectamos intención
         if (
             not conversation.is_questionnaire_active()
             and not conversation.is_questionnaire_completed()
@@ -132,17 +131,90 @@ class AIService:
             if self._detect_questionnaire_intent(user_message):
                 conversation.start_questionnaire()
 
-        # Procesar la respuesta del usuario si el cuestionario esta activo
+        # Procesar la respuesta del usuario si el cuestionario está activo
         if conversation.is_questionnaire_active():
+            # Actualizar estado con la respuesta actual
             self._update_questionnaire_state(conversation, user_message)
+
+            # Verificar si completamos el cuestionario con esta respuesta
+            next_question = self._get_next_question(conversation)
+            if not next_question:
+                # Marcar como recopilación completa pero aún no finalizado
+                conversation.questionnaire_state.recopilacion_completa = True
+                # Generar diagnóstico preliminar
+                return questionnaire_service.generate_preliminary_diagnosis(
+                    conversation
+                )
+
+            # Verificar si acabamos de responder el diagnóstico preliminar
+            if getattr(
+                conversation.questionnaire_state, "recopilacion_completa", False
+            ) and not getattr(
+                conversation.questionnaire_state, "confirmacion_mostrada", False
+            ):
+                # Verificar si el usuario quiere proceder con la propuesta
+                if any(
+                    keyword in user_message.lower()
+                    for keyword in [
+                        "proceder",
+                        "generar",
+                        "propuesta",
+                        "continuar",
+                        "siguiente",
+                        "sí",
+                        "si",
+                    ]
+                ):
+                    # Mostrar pantalla de confirmación final
+                    conversation.questionnaire_state.confirmacion_mostrada = True
+                    return self.generate_final_confirmation(conversation)
+                else:
+                    # El usuario tiene preguntas o dudas sobre el diagnóstico
+                    return self._handle_diagnosis_questions(conversation, user_message)
+
+            # Verificar si estamos en la fase de confirmación final
+            if (
+                getattr(
+                    conversation.questionnaire_state, "confirmacion_mostrada", False
+                )
+                and not conversation.is_questionnaire_completed()
+            ):
+                # Si el usuario confirma, completar cuestionario y generar propuesta
+                if any(
+                    keyword in user_message.lower()
+                    for keyword in [
+                        "generar propuesta",
+                        "proceder",
+                        "continuar",
+                        "adelante",
+                        "confirmo",
+                    ]
+                ):
+                    conversation.complete_questionnaire()
+                    # Generar propuesta final
+                    proposal = questionnaire_service.generate_proposal(conversation)
+                    return questionnaire_service.format_proposal_summary(
+                        proposal, conversation.id
+                    )
+                else:
+                    # El usuario quiere proporcionar información adicional
+                    return self._handle_additional_information(
+                        conversation, user_message
+                    )
 
             # Verificar si es momento de mostrar un resumen intermedio
             answers_count = len(conversation.questionnaire_state.answers)
-            if answers_count > 0 and answers_count % 5 == 0:  # Cada 5 preguntas
+            if (
+                answers_count > 0
+                and answers_count % 5 == 0
+                and not getattr(conversation.questionnaire_state, "last_summary", 0)
+                == answers_count
+            ):
+                # Almacenar que ya mostramos resumen para este número de respuestas
+                conversation.questionnaire_state.last_summary = answers_count
                 return questionnaire_service.generate_interim_summary(conversation)
 
-            # Obtener la siguiente pregunta
-            next_question = self._get_next_question(conversation)
+            # Proceder con la siguiente pregunta del cuestionario
             if next_question:
                 # Determinar si debemos sugerir carga de documentos
                 document_suggestion = ""
@@ -190,15 +262,6 @@ class AIService:
                 )
 
                 return response
-            else:
-                # Si no hay más preguntas, completar el cuestionario
-                conversation.complete_questionnaire()
-
-                # Generar propuesta
-                proposal = questionnaire_service.generate_proposal(conversation)
-                return questionnaire_service.format_proposal_summary(
-                    proposal, conversation.id
-                )
 
         # Si el cuestionario está completo, manejar preguntas sobre la propuesta
         if conversation.is_questionnaire_completed():
@@ -243,6 +306,102 @@ class AIService:
 
         # Generar respuesta
         return await self.generate_response(messages)
+
+    def _handle_diagnosis_questions(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
+        """Maneja preguntas o comentarios sobre el diagnóstico preliminar"""
+        # Preparar mensaje para el modelo
+        messages = [
+            {"role": "system", "content": settings.SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": """
+            El usuario está haciendo preguntas o comentarios sobre el diagnóstico preliminar que acabas de presentar.
+            Responde sus preguntas de forma informativa, centrándote en aclarar dudas técnicas o explicar mejor el proceso.
+            Si el usuario parece satisfecho con el diagnóstico, pregúntale si desea proceder con la generación de una propuesta detallada.
+            """,
+            },
+        ]
+
+        # Añadir contexto de últimos mensajes
+        recent_messages = [
+            msg
+            for msg in conversation.messages[-6:]
+            if msg.role in ["user", "assistant"]
+        ]
+        for msg in recent_messages:
+            messages.append({"role": msg.role, "content": msg.content})
+
+        # Añadir mensaje actual
+        messages.append({"role": "user", "content": user_message})
+
+        # Generar respuesta
+        return await self.generate_response(messages)
+
+    def _handle_additional_information(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
+        """Procesa información adicional proporcionada después de la confirmación"""
+        # Analizar el mensaje para identificar información adicional
+        additional_info = self._extract_additional_information(
+            user_message, conversation
+        )
+
+        # Si se encontró información adicional, confirmarla
+        if additional_info:
+            # Actualizar datos en el estado del cuestionario
+            for key, value in additional_info.items():
+                conversation.questionnaire_state.answers[key] = value
+
+            return f"""
+        Gracias por proporcionar esta información adicional. He actualizado los siguientes datos en su perfil:
+
+        {chr(10).join([f"- **{k}**: {v}" for k, v in additional_info.items()])}
+
+        ¿Desea proporcionar algún otro dato o prefiere proceder con la generación de la propuesta?
+        """
+
+        # Si no se identificó información estructurada, preguntar si desea proceder
+        return """
+        He tomado nota de sus comentarios. ¿Desea proceder ahora con la generación de la propuesta técnica y económica detallada?
+
+        Para continuar, simplemente indique "Generar propuesta" o proporcione cualquier información adicional específica que considere relevante.
+        """
+
+    def _extract_additional_information(
+        self, message: str, conversation: Conversation
+    ) -> Dict[str, Any]:
+        """Extrae información adicional del mensaje del usuario"""
+        additional_info = {}
+
+        # Patrones para detectar información
+        patterns = {
+            "costo_agua": r"(?:costo|precio).*agua.*(\d+(?:\.\d+)?)",
+            "cantidad_agua_consumida": r"(?:consumo|gasto).*agua.*(\d+(?:\.\d+)?)",
+            "cantidad_agua_residual": r"(?:agua residual|efluente).*(\d+(?:\.\d+)?)",
+            "presupuesto": r"(?:presupuesto|inversión).*(\d+(?:\.\d+)?)",
+        }
+
+        # Buscar coincidencias
+        for key, pattern in patterns.items():
+            import re
+
+            matches = re.search(pattern, message, re.IGNORECASE)
+            if matches:
+                additional_info[key] = matches.group(0)
+
+        # Detectar restricciones o preferencias generales
+        if any(word in message.lower() for word in ["espacio", "área", "terreno"]):
+            additional_info["restricciones"] = "Restricciones de espacio mencionadas"
+
+        if any(
+            word in message.lower()
+            for word in ["tiempo", "urgente", "pronto", "rápido"]
+        ):
+            additional_info["tiempo_proyecto"] = "Restricciones de tiempo mencionadas"
+
+        return additional_info
 
     def _determine_conversation_phase(self, conversation: Conversation) -> str:
         """Determina la fase actual de la conversación según el progreso"""
@@ -580,6 +739,152 @@ class AIWithQuestionnaireService(AIService):
             logger.error(f"Error al manejar la conversación: {str(e)}")
             # Fallback a respuesta simple en caso de error
             return "Lo siento, tuve un problema procesando tu mensaje. ¿Podrías reformularlo o intentar de nuevo?"
+
+    def generate_final_confirmation(self, conversation: Conversation) -> str:
+        """Genera un mensaje de confirmación final antes de generar la propuesta"""
+        state = conversation.questionnaire_state
+        answers = state.answers
+
+        confirmation = f"""
+        # Confirmación Final antes de Generar Propuesta
+
+        Gracias por proporcionar información sobre su proyecto de tratamiento de agua para {state.sector} - {state.subsector}. Antes de proceder con la generación de la propuesta técnica y económica detallada, me gustaría verificar lo siguiente:
+
+        ## Información Clave Recopilada
+        """
+
+        # Lista de verificación de datos críticos
+        essential_data = [
+            ("nombre_empresa", "Nombre de la empresa/proyecto"),
+            ("ubicacion", "Ubicación"),
+            ("costo_agua", "Costo actual del agua"),
+            ("cantidad_agua_consumida", "Consumo de agua"),
+            ("cantidad_agua_residual", "Generación de agua residual"),
+        ]
+
+        # Verificar cuáles tenemos y cuáles faltan
+        have_data = []
+        missing_data = []
+
+        for key, label in essential_data:
+            if key in answers and answers[key]:
+                have_data.append(f"✅ **{label}**: {answers[key]}")
+            else:
+                missing_data.append(f"❌ **{label}**: Información no proporcionada")
+
+        # Información técnica específica según sector
+        if state.subsector == "Textil":
+            tech_data = [
+                ("parametros_agua", "Parámetros del agua (pH, DQO, color, etc.)"),
+                ("objetivo_reuso", "Objetivos de reúso del agua tratada"),
+                (
+                    "sistema_existente",
+                    "Información sobre sistema existente (si aplica)",
+                ),
+            ]
+        else:
+            tech_data = [
+                ("parametros_agua", "Parámetros del agua (pH, DQO, SST, etc.)"),
+                ("objetivo_reuso", "Objetivos de reúso del agua tratada"),
+                (
+                    "sistema_existente",
+                    "Información sobre sistema existente (si aplica)",
+                ),
+            ]
+
+        # Verificar información técnica
+        for key, label in tech_data:
+            if key in answers and answers[key]:
+                if (
+                    key == "parametros_agua"
+                    and isinstance(answers[key], dict)
+                    and answers[key]
+                ):
+                    params = ", ".join([f"{k}: {v}" for k, v in answers[key].items()])
+                    have_data.append(f"✅ **{label}**: {params}")
+                else:
+                    have_data.append(f"✅ **{label}**: Proporcionado")
+            else:
+                missing_data.append(
+                    f"⚠️ **{label}**: Información no proporcionada (recomendable pero no crítica)"
+                )
+
+        # Añadir datos disponibles
+        if have_data:
+            confirmation += (
+                """
+        ### Información Disponible:
+    """
+                + "\n".join(have_data)
+                + "\n"
+            )
+
+        # Añadir datos faltantes y recomendaciones
+        if missing_data:
+            confirmation += (
+                """
+    ### Información Faltante:
+    """
+                + "\n".join(missing_data)
+                + "\n"
+            )
+
+            confirmation += """
+        ### Recomendaciones:
+        - Los datos faltantes marcados con ❌ son importantes para generar una propuesta precisa
+        - La información marcada con ⚠️ mejoraría la calidad de la propuesta, pero no es crítica
+        - Puede proporcionar esta información ahora o podemos proceder con estimaciones basadas en estándares de la industria
+    """
+
+        # Suposiciones que se harán
+        confirmation += """
+        ## Suposiciones para la Propuesta
+
+        Para generar la propuesta, se utilizarán las siguientes suposiciones donde falte información específica:
+    """
+
+        assumptions = []
+
+        if "parametros_agua" not in answers or not isinstance(
+            answers["parametros_agua"], dict
+        ):
+            if state.subsector == "Textil":
+                assumptions.append(
+                    "- Se utilizarán valores típicos de DQO (800-1,500 mg/L), SST (200-600 mg/L) y pH (6.0-9.0) para efluentes textiles"
+                )
+            elif state.subsector == "Alimentos y Bebidas":
+                assumptions.append(
+                    "- Se utilizarán valores típicos de DQO (1,200-3,000 mg/L), DBO (600-1,800 mg/L) y SST (400-800 mg/L) para el sector alimentario"
+                )
+            else:
+                assumptions.append(
+                    "- Se utilizarán parámetros estándar para aguas residuales industriales de su sector"
+                )
+
+        if "costo_agua" not in answers:
+            assumptions.append("- Se asumirá un costo promedio del agua para su región")
+
+        if not assumptions:
+            assumptions.append(
+                "- La propuesta se basará exclusivamente en la información proporcionada sin suposiciones significativas"
+            )
+
+        confirmation += "\n".join(assumptions) + "\n"
+
+        # Preguntas finales antes de proceder
+        confirmation += """
+        ## Preguntas Finales
+
+        Antes de proceder con la generación de la propuesta:
+
+        1. ¿Desea proporcionar alguna información adicional que considere relevante?
+        2. ¿Hay algún aspecto específico que le gustaría que enfatizáramos en la propuesta?
+        3. ¿Tiene alguna restricción particular de espacio, presupuesto o tiempo de implementación?
+
+        Por favor, responda a estas preguntas o simplemente indique "Generar propuesta" si desea proceder con la información actual.
+        """
+
+        return confirmation
 
     def _update_conversation_state(
         self, conversation: Conversation, user_message: str

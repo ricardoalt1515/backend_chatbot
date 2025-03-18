@@ -1002,70 +1002,501 @@ class QuestionnaireService:
     def format_proposal_summary(
         self, proposal: Dict[str, Any], conversation_id: str = None
     ) -> str:
-        """
-        Formatea un resumen de la propuesta para presentar al usuario
+        """Formatea la propuesta final siguiendo exactamente la estructura especificada"""
+        client_info = proposal.get("client_info", {})
+        sector = client_info.get("sector", "")
+        subsector = client_info.get("subsector", "")
+        name = client_info.get("name", "Cliente")
 
-        Args:
-            proposal: Datos de la propuesta
-            conversation_id: ID de conversación para incluir enlace de descarga
-
-        Returns:
-            Resumen de la propuesta en formato markdown
-        """
-        client_info = proposal["client_info"]
-        project_details = proposal.get("project_details", {})
-        solution = proposal.get("recommended_solution", {})
-        economics = proposal.get("economic_analysis", {})
-
-        # Crear resumen en formato markdown
+        # 1. Introducción a Hydrous Management Group
         summary = f"""
-# PROPUESTA DE SOLUCIÓN DE TRATAMIENTO DE AGUAS RESIDUALES
+    # PROPUESTA DE SOLUCIÓN DE TRATAMIENTO DE AGUAS RESIDUALES PARA {name.upper()}
 
-## 1. Resumen Ejecutivo
+    ## 1. Introducción al Grupo de Gestión Hidráulica
 
-Basado en la información proporcionada para **{client_info["name"]}** en el sector **{client_info["sector"]}**, hemos diseñado una solución personalizada de tratamiento de aguas residuales que permitirá:
+    Hydrous Management Group es una empresa líder especializada en soluciones personalizadas de tratamiento de aguas residuales para clientes industriales y comerciales. Con más de 15 años de experiencia en el sector, hemos desarrollado sistemas eficientes y económicamente viables para una amplia gama de industrias.
 
-* Tratar eficientemente un caudal de aproximadamente **{economics.get("flow_rate", "N/A")} m³/día**
-* Recuperar hasta un **{int(economics.get("reuse_efficiency", 0.5) * 100)}%** del agua para reúso
-* Lograr un retorno de inversión estimado en **{economics.get("roi", "N/A")} años**
+    Nuestra misión es **optimizar el uso del agua** a través de tecnologías innovadoras y sostenibles, ayudando a nuestros clientes a:
+    - Cumplir con la normativa ambiental vigente
+    - Reducir costos operativos asociados al consumo de agua
+    - Mejorar su perfil de sostenibilidad y responsabilidad ambiental
+    - Explorar nuevas oportunidades de negocio a través del reúso del agua
 
-## 2. Solución Técnica Propuesta
+    ## 2. Antecedentes del Proyecto
 
-La solución incluye un sistema integral con las siguientes etapas:
+    **Cliente**: {name}  
+    **Sector**: {sector} - {subsector}  
+    **Ubicación**: {client_info.get('location', 'No especificada')}
 
-1. **Pretratamiento**: {solution.get("pretreatment", "No especificado")}
-2. **Tratamiento Primario**: {solution.get("primary", "No especificado")}
-3. **Tratamiento Secundario**: {solution.get("secondary", "No especificado")}
-4. **Tratamiento Terciario**: {solution.get("tertiary", "No especificado")}
+    **Situación actual**:
+    - Consumo actual de agua: {proposal.get('water_consumption', 'No especificado')}
+    - Generación de aguas residuales: {proposal.get('wastewater_generation', 'No especificado')}
+    - Costo actual del agua: {client_info.get('costo_agua', 'No especificado')}
+    """
 
-## 3. Beneficios Destacados
+        # Añadir sistema existente si existe
+        if (
+            "sistema_existente" in client_info
+            and client_info["sistema_existente"] == "Sí"
+        ):
+            summary += f"- Sistema de tratamiento existente: {client_info.get('descripcion_sistema', 'Sistema básico')}\n"
+        else:
+            summary += "- No cuenta con sistema de tratamiento de aguas residuales actualmente\n"
 
-* **Ahorro económico**: Aproximadamente ${economics.get("annual_savings", 0):,.2f} USD anuales
-* **Reducción de la huella hídrica**: Menor consumo de agua potable
-* **Cumplimiento normativo**: Descarga de agua tratada dentro de parámetros legales
-* **Sostenibilidad**: {solution.get("description", "Solución adaptada a sus necesidades específicas")}
+        # 3. Objetivo del Proyecto
+        summary += """
+    ## 3. Objetivo del Proyecto
 
-## 4. Análisis Económico
+    El objetivo principal de este proyecto es diseñar e implementar un sistema de tratamiento de aguas residuales que permita:
+    """
 
-| Concepto | Valor Estimado |
-|----------|----------------|
-| Inversión inicial (CAPEX) | ${economics.get("capex", 0):,.2f} USD |
-| Costos operativos (OPEX) | ${economics.get("opex_monthly", 0):,.2f} USD/mes |
-| Ahorro mensual estimado | ${economics.get("monthly_savings", 0):,.2f} USD/mes |
-| Periodo de recuperación | {economics.get("roi", "N/A")} años |
+        # Objetivos específicos según la información
+        objectives = []
+
+        if "objetivo_principal" in client_info:
+            objetivo = client_info["objetivo_principal"]
+            if "normativo" in objetivo.lower():
+                objectives.append(
+                    "- **Garantizar el cumplimiento normativo** de los parámetros de descarga establecidos por la legislación local"
+                )
+            elif "costo" in objetivo.lower() or "ahorro" in objetivo.lower():
+                objectives.append(
+                    "- **Optimizar costos operativos** a través de la reducción del consumo de agua fresca y las tarifas de descarga"
+                )
+            elif "ambiente" in objetivo.lower() or "ambiental" in objetivo.lower():
+                objectives.append(
+                    "- **Mejorar el perfil ambiental** de la instalación y reducir su huella hídrica"
+                )
+        else:
+            objectives.append(
+                "- **Optimizar la gestión del agua** en la instalación para lograr beneficios económicos y ambientales"
+            )
+
+        # Objetivos de reúso
+        if "objetivo_reuso" in client_info:
+            objetivo_reuso = client_info["objetivo_reuso"]
+            if isinstance(objetivo_reuso, list):
+                for reuso in objetivo_reuso:
+                    if "sanitarios" in reuso.lower():
+                        objectives.append(
+                            "- **Reutilizar el agua tratada en instalaciones sanitarias**, reduciendo el consumo de agua potable"
+                        )
+                    elif "riego" in reuso.lower():
+                        objectives.append(
+                            "- **Aprovechar el agua tratada para riego de áreas verdes**, mejorando la sostenibilidad del sitio"
+                        )
+                    elif "industrial" in reuso.lower():
+                        objectives.append(
+                            "- **Reincorporar el agua tratada en procesos industriales**, creando un ciclo más cerrado"
+                        )
+            else:
+                if "sanitarios" in objetivo_reuso.lower():
+                    objectives.append(
+                        "- **Reutilizar el agua tratada en instalaciones sanitarias**, reduciendo el consumo de agua potable"
+                    )
+                elif "riego" in objetivo_reuso.lower():
+                    objectives.append(
+                        "- **Aprovechar el agua tratada para riego de áreas verdes**, mejorando la sostenibilidad del sitio"
+                    )
+                elif "industrial" in objetivo_reuso.lower():
+                    objectives.append(
+                        "- **Reincorporar el agua tratada en procesos industriales**, creando un ciclo más cerrado"
+                    )
+
+        # Añadir ROI si hay información de costos
+        if "costo_agua" in client_info:
+            objectives.append(
+                f"- **Lograr un retorno de inversión atractivo** dentro de un periodo estimado de {self._calculate_roi_years(proposal)} años"
+            )
+
+        # Añadir objetivos generales si no hay específicos
+        if not objectives:
+            objectives = [
+                "- **Cumplir con la normativa ambiental** aplicable para descarga de aguas residuales",
+                "- **Reducir el consumo de agua fresca** mediante la implementación de sistemas de reúso",
+                "- **Optimizar costos operativos** relacionados con el manejo del agua",
+                "- **Mejorar la sostenibilidad** de las operaciones a través de una gestión más eficiente del agua",
+            ]
+
+        summary += "\n".join(objectives) + "\n"
+
+        # 4. Supuestos Clave de Diseño
+        summary += """
+    ## 4. Supuestos Clave de Diseño y Comparación con Estándares de la Industria
+
+    ### Parámetros de Diseño
+    """
+
+        # Crear tabla de parámetros
+        summary += """
+|   Parámetro | Valor Actual | Estándar de la Industria | Objetivo de Tratamiento |
+|   -----------|--------------|--------------------------|-------------------------|
+    """
+
+        # Añadir parámetros específicos según subsector
+        water_params = proposal.get("water_parameters", {})
+
+        if subsector == "Textil":
+            params_list = [
+                (
+                    "DQO (mg/L)",
+                    water_params.get("dqo", "800-1,500*"),
+                    "800-2,500",
+                    "<150",
+                ),
+                ("SST (mg/L)", water_params.get("sst", "350-600*"), "300-800", "<50"),
+                (
+                    "Color",
+                    water_params.get("color", "Intenso*"),
+                    "Variable según colorantes",
+                    "No aparente",
+                ),
+                ("pH", water_params.get("ph", "6.0-9.0*"), "5.5-10.0", "6.5-8.5"),
+            ]
+        elif subsector == "Alimentos y Bebidas":
+            params_list = [
+                (
+                    "DQO (mg/L)",
+                    water_params.get("dqo", "1,200-3,000*"),
+                    "800-5,000",
+                    "<150",
+                ),
+                (
+                    "DBO (mg/L)",
+                    water_params.get("dbo", "700-1,800*"),
+                    "500-2,500",
+                    "<30",
+                ),
+                ("SST (mg/L)", water_params.get("sst", "400-800*"), "250-1,000", "<50"),
+                (
+                    "Grasas y Aceites (mg/L)",
+                    water_params.get("grasas_aceites", "50-250*"),
+                    "50-500",
+                    "<15",
+                ),
+                ("pH", water_params.get("ph", "4.5-8.0*"), "4.0-11.0", "6.5-8.5"),
+            ]
+        else:
+            params_list = [
+                (
+                    "DQO (mg/L)",
+                    water_params.get("dqo", "Variable*"),
+                    "Según subsector",
+                    "<150",
+                ),
+                (
+                    "SST (mg/L)",
+                    water_params.get("sst", "Variable*"),
+                    "Según subsector",
+                    "<50",
+                ),
+                ("pH", water_params.get("ph", "Variable*"), "6.0-9.0", "6.5-8.5"),
+            ]
+
+        for param, actual, industry, target in params_list:
+            summary += f"| {param} | {actual} | {industry} | {target} |\n"
+
+        # Añadir nota sobre valores estimados
+        if not water_params:
+            summary += "\n*Valores estimados basados en estándares de la industria. Se recomienda realizar análisis específicos.\n"
+
+        # 5. Diseño de Procesos y Alternativas
+        summary += """
+    ## 5. Diseño de Procesos y Alternativas de Tratamiento
+
+    ### Diagrama de Proceso Recomendado
+Agua Residual → [PRETRATAMIENTO] → [TRATAMIENTO PRIMARIO] → [TRATAMIENTO SECUNDARIO] → [TRATAMIENTO TERCIARIO] → Agua Tratada
+↓                      ↓                       ↓                        ↓
+Cribado              Coagulación             Tratamiento              Filtración
+Homogeneización         Floculación              Biológico             Desinfección
+
+### Detalle de Etapas de Tratamiento
 """
+
+        # Detallar etapas según subsector
+        if subsector == "Textil":
+            summary += """
+#### Pretratamiento
+- **Sistema de cribado automático**: Elimina sólidos gruesos y protege equipos posteriores.
+- **Tanque de homogeneización**: Capacidad para 8-12 horas de retención, con sistema de agitación y control de pH.
+- **Justificación**: Neutraliza las variaciones de pH típicas del sector textil y estabiliza el flujo para procesos posteriores.
+
+#### Tratamiento Primario
+- **Sistema DAF (Flotación por Aire Disuelto)**: Remoción de sólidos suspendidos y parte del color mediante microburbujas y coagulantes.
+- **Dosificación química optimizada**: Incluye coagulantes y floculantes específicos para la industria textil.
+- **Justificación**: Elimina hasta el 80% de los sólidos suspendidos y 30-40% del color, preparando el agua para el tratamiento biológico.
+
+#### Tratamiento Secundario
+- **Reactor Biológico de Membrana (MBR)**: Combina degradación biológica y filtración por membrana en un solo paso.
+- **Alternativa**: Reactor de Biopelícula de Lecho Móvil (MBBR) si se prefiere menor complejidad operativa.
+- **Justificación**: Degrada eficientemente la materia orgánica (>95% DBO) y proporciona excelente calidad de efluente sin clarificador secundario.
+
+#### Tratamiento Terciario
+- **Sistema de Oxidación Avanzada**: Elimina color residual y compuestos recalcitrantes mediante ozono o UV/peróxido.
+- **Filtración por Carbón Activado**: Adsorción de compuestos orgánicos residuales y mejora de calidad final.
+- **Justificación**: Necesario para remoción efectiva de colorantes y compuestos difíciles de biodegradar, permitiendo el reúso del agua.
+"""
+        elif subsector == "Alimentos y Bebidas":
+            summary += """
+#### Pretratamiento
+- **Sistema de cribado fino**: Elimina sólidos y residuos de alimentos.
+- **Trampa de grasas y aceites**: Remoción de grasas mediante flotación natural.
+- **Tanque de ecualización**: Capacidad para 8-12 horas, con sistema de mezcla para prevenir sedimentación.
+- **Justificación**: Crucial para manejar las altas cargas de grasas y sólidos característicos del sector alimentario.
+
+#### Tratamiento Primario
+- **Flotación por Aire Disuelto (DAF)**: Remoción eficiente de grasas residuales y sólidos suspendidos.
+- **Alternativa**: Sedimentación primaria con remoción de lodos.
+- **Justificación**: Elimina hasta el 90% de grasas y aceites, preparando el agua para tratamiento biológico.
+
+#### Tratamiento Secundario
+- **Sistema Anaerobio-Aerobio**: Reactor UASB seguido de lodos activados para alta eficiencia.
+- **Alternativa**: Lodos activados de aireación extendida para instalaciones más pequeñas.
+- **Justificación**: El tratamiento anaerobio inicial reduce significativamente la carga orgánica y genera biogás aprovechable.
+
+#### Tratamiento Terciario
+- **Filtración multimedia**: Remoción de sólidos residuales.
+- **Desinfección UV**: Eliminación de patógenos sin subproductos químicos.
+- **Justificación**: Asegura cumplimiento normativo y permite reúso seguro en diversas aplicaciones.
+"""
+        else:
+            summary += """
+#### Pretratamiento
+- **Sistema de cribado**: Diseñado según las características específicas del agua residual.
+- **Tanque de homogeneización**: Con capacidad adecuada para estabilizar flujos y cargas.
+- **Justificación**: Fundamental para asegurar condiciones estables en procesos posteriores.
+
+#### Tratamiento Primario
+- **Sistema físico-químico**: Adaptado a contaminantes específicos de su sector.
+- **Justificación**: Elimina contaminantes particulados y prepara el agua para tratamiento biológico.
+
+#### Tratamiento Secundario
+- **Sistema biológico optimizado**: Seleccionado según carga orgánica y características específicas.
+- **Justificación**: Degrada eficientemente la materia orgánica biodegradable.
+
+#### Tratamiento Terciario
+- **Filtración avanzada**: Asegura remoción de sólidos residuales.
+- **Tratamiento específico adicional**: Según requerimientos particulares de reúso o descarga.
+- **Justificación**: Garantiza la calidad final requerida para su aplicación específica.
+"""
+
+        # 6. Equipo y tamaño sugeridos
+        summary += """
+## 6. Equipo y Tamaño Sugeridos
+
+El dimensionamiento preliminar de los equipos se ha realizado considerando los flujos reportados y las características del agua residual.
+
+### Dimensiones Aproximadas de Equipos Principales
+"""
+
+        # Calcular dimensiones según flujo
+        flow_value = 100  # valor por defecto en m³/día
+        flow_text = proposal.get("water_consumption", "100 m³/día")
+
+        if isinstance(flow_text, str):
+            import re
+
+            match = re.search(r"(\d+(?:\.\d+)?)", flow_text)
+            if match:
+                flow_value = float(match.group(1))
+
+        # Tabla de equipos
+        summary += """
+    | Equipo | Capacidad/Dimensión | Características Principales | Cantidad |
+    |--------|---------------------|----------------------------|----------|
+    """
+
+        # Equipos según subsector
+        if subsector == "Textil":
+            summary += f"""| Tanque de homogeneización | {round(flow_value * 0.4, 1)} m³ | Tiempo retención 8-10h, agitación, ajuste pH | 1 |
+| Sistema DAF | {round(flow_value / 20, 1)} m³/h | Incluye sistema dosificación química | 1 |
+| Reactor MBR | {round(flow_value * 0.25, 1)} m³ | Membranas sumergidas, sopladores | 1 |
+| Sistema oxidación avanzada | {round(flow_value / 24, 1)} m³/h | UV/Ozono combinado | 1 |
+| Filtros carbón activado | {round(flow_value * 0.02, 1)} m² | Múltiples cartuchos, automatizado | 1 set |
+| Tanque agua tratada | {round(flow_value * 0.5, 1)} m³ | Incluye sistema bombeo | 1 |
+    """
+        elif subsector == "Alimentos y Bebidas":
+            summary += f"""| Trampa de grasas | {round(flow_value * 0.15, 1)} m³ | Diseño optimizado, limpieza automatizada | 1 |
+| Tanque ecualización | {round(flow_value * 0.35, 1)} m³ | Tiempo retención 8h, agitación | 1 |
+| Sistema DAF | {round(flow_value / 20, 1)} m³/h | Alta eficiencia remoción grasas | 1 |
+| Reactor UASB | {round(flow_value * 0.2, 1)} m³ | Incluye sistema captación biogás | 1 |
+| Tanque aireación | {round(flow_value * 0.3, 1)} m³ | Difusores burbuja fina, sopladores | 1 |
+| Clarificador secundario | {round(flow_value * 0.15, 1)} m³ | Diseño cónico, extracción lodos | 1 |
+| Sistema filtración | {round(flow_value / 24, 1)} m³/h | Multimedia con retrolavado automático | 1 |
+| Sistema UV | {round(flow_value / 24, 1)} m³/h | Certificado para reúso | 1 |
+    """
+        else:
+            summary += f"""| Pretratamiento | {round(flow_value / 20, 1)} m³/h | Diseñado según características específicas | 1 set |
+| Tratamiento primario | {round(flow_value * 0.25, 1)} m³ | Adaptado a contaminantes específicos | 1 set |
+| Tratamiento secundario | {round(flow_value * 0.35, 1)} m³ | Sistema biológico optimizado | 1 set |
+| Tratamiento terciario | {round(flow_value / 24, 1)} m³/h | Según requerimientos de reúso/descarga | 1 set |
+| Tanque agua tratada | {round(flow_value * 0.5, 1)} m³ | Incluye sistema bombeo | 1 |
+    """
+
+        # 7. Estimación de CAPEX y OPEX
+        summary += """
+## 7. Estimación de CAPEX y OPEX
+
+### Inversión Inicial (CAPEX)
+    """
+
+        # Tabla de CAPEX
+        summary += """
+    | Concepto | Costo Estimado (USD) | Observaciones |
+    |----------|----------------------|---------------|
+    """
+
+        # Calcular costos según flujo y subsector
+        base_cost = flow_value * 1000  # $1000 USD por m³/día - base general
+
+        if subsector == "Textil":
+            equipment_cost = round(base_cost * 0.65, 0)
+            installation_cost = round(base_cost * 0.20, 0)
+            engineering_cost = round(base_cost * 0.10, 0)
+            extras_cost = round(base_cost * 0.05, 0)
+        elif subsector == "Alimentos y Bebidas":
+            equipment_cost = round(base_cost * 0.60, 0)
+            installation_cost = round(base_cost * 0.25, 0)
+            engineering_cost = round(base_cost * 0.10, 0)
+            extras_cost = round(base_cost * 0.05, 0)
+        else:
+            equipment_cost = round(base_cost * 0.65, 0)
+            installation_cost = round(base_cost * 0.20, 0)
+            engineering_cost = round(base_cost * 0.10, 0)
+            extras_cost = round(base_cost * 0.05, 0)
+
+        total_capex = (
+            equipment_cost + installation_cost + engineering_cost + extras_cost
+        )
+
+        summary += f"""| Equipos principales | ${equipment_cost:,.2f} | Incluye todos los equipos listados en sección anterior |
+    |Instalación y montaje | ${installation_cost:,.2f} | Obra civil, montaje, tuberías, instrumentación |
+    | Ingeniería y permisos | ${engineering_cost:,.2f} | Diseño detallado, gestión de proyecto, permisos |
+    | Puesta en marcha y capacitación | ${extras_cost:,.2f} | Incluye pruebas, ajustes, entrenamiento personal |
+    | **TOTAL CAPEX** | **${total_capex:,.2f}** | **Inversión total estimada** |
+    """
+
+        summary += """
+    ### Costos Operativos (OPEX)
+    """
+
+        # Tabla de OPEX
+        summary += """
+    | Concepto | Costo Mensual (USD) | Observaciones |
+    |----------|---------------------|---------------|
+    """
+
+        # Calcular OPEX
+        energy_cost = round(flow_value * 2.5, 0)
+        chemical_cost = round(flow_value * 1.5, 0)
+        maintenance_cost = round(total_capex * 0.005, 0)  # 0.5% del CAPEX mensual
+        labor_cost = 1500 if flow_value < 200 else 2500
+        sludge_cost = round(flow_value * 1.0, 0)
+
+        total_monthly = (
+            energy_cost + chemical_cost + maintenance_cost + labor_cost + sludge_cost
+        )
+        total_annual = total_monthly * 12
+
+        summary += f"""| Energía eléctrica | ${energy_cost:,.2f} | Basado en consumo estimado de equipos |
+    | Productos químicos | ${chemical_cost:,.2f} | Coagulantes, floculantes, otros insumos |
+    | Mantenimiento | ${maintenance_cost:,.2f} | Repuestos, servicios técnicos |
+    | Mano de obra | ${labor_cost:,.2f} | Personal operador y supervisión |
+    | Gestión de lodos | ${sludge_cost:,.2f} | Disposición adecuada de residuos |
+    | **TOTAL MENSUAL** | **${total_monthly:,.2f}** | **Costo operativo mensual** |
+    | **TOTAL ANUAL** | **${total_annual:,.2f}** | **Costo operativo anual** |
+    """
+
+        # 8. Análisis de ROI
+        summary += """
+    ## 8. Análisis del Retorno de la Inversión (ROI)
+
+    ### Proyección de Ahorros
+    """
+
+        # Tabla de ahorros
+        summary += """
+    | Concepto | Ahorro Mensual (USD) | Ahorro Anual (USD) |
+    |----------|----------------------|-------------------|
+    """
+
+        # Calcular ahorros según consumo y costos
+        water_cost = 2.0  # valor por defecto en USD/m³
+        water_cost_text = client_info.get("costo_agua", "2.0 USD/m³")
+
+        if isinstance(water_cost_text, str):
+            import re
+
+            match = re.search(r"(\d+(?:\.\d+)?)", water_cost_text)
+            if match:
+                water_cost = float(match.group(1))
+
+        # Calcular ahorros
+        water_reduction = flow_value * 0.6 * 30 * water_cost  # 60% reducción, 30 días
+        discharge_reduction = (
+            flow_value * 0.4 * 30 * water_cost * 0.5
+        )  # 40% reducción, 50% del costo
+        operational_benefits = flow_value * 30 * 0.2  # Beneficios adicionales
+
+        total_monthly_savings = (
+            water_reduction + discharge_reduction + operational_benefits
+        )
+        total_annual_savings = total_monthly_savings * 12
+
+        summary += f"""| Reducción consumo agua | ${water_reduction:,.2f} | ${water_reduction*12:,.2f} |
+    | Reducción costos descarga | ${discharge_reduction:,.2f} | ${discharge_reduction*12:,.2f} |
+    | Beneficios operacionales | ${operational_benefits:,.2f} | ${operational_benefits*12:,.2f} |
+    | **TOTAL AHORROS** | **${total_monthly_savings:,.2f}** | **${total_annual_savings:,.2f}** |
+    """
+
+        # Cálculo ROI
+        summary += """
+    ### Retorno de la Inversión
+    """
+
+        roi_years = total_capex / total_annual_savings
+        roi_months = roi_years * 12
+
+        summary += f"""- **Periodo de recuperación simple**: {roi_years:.1f} años ({int(roi_months)} meses)
+    - **ROI a 5 años**: {(total_annual_savings * 5 - total_capex) / total_capex * 100:.1f}%
+    - **Ahorros acumulados a 10 años**: ${total_annual_savings * 10:,.2f}
+
+    *Nota: El análisis no considera el valor del dinero en el tiempo, inflación o posibles incrementos en el costo del agua.*
+    """
+
+        # 9. Preguntas y Respuestas
+        summary += """
+    ## 9. Preguntas y Respuestas
+
+    ### Preguntas Frecuentes
+
+    **P: ¿Cuánto espacio se requiere para la instalación?**  
+    R: El sistema completo requiere aproximadamente 100-150 m² para una instalación típica de este tamaño, pero puede optimizarse según restricciones específicas del sitio.
+
+    **P: ¿Cuál es el tiempo estimado de implementación?**  
+    R: El proyecto completo, desde aprobación hasta puesta en marcha, tiene un cronograma típico de 4-6 meses.
+
+    **P: ¿Qué mantenimiento requiere el sistema?**  
+    R: El sistema requiere mantenimiento preventivo regular (diario, semanal y mensual) y revisiones mayores semestrales. Se proporcionará un manual detallado y capacitación al personal.
+
+    **P: ¿Requiere personal especializado?**  
+    R: Se recomienda contar con un operador capacitado. Hydrous ofrece programas de capacitación completos para su personal.
+    """
+
+        # Añadir descargo de responsabilidad y enlace para descargar
+        summary += """
+    ### Descargo de Responsabilidad
+
+    Esta propuesta se basa en la información proporcionada y estándares de la industria. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio y análisis específicos del agua residual. Hydrous Management Group recomienda realizar pruebas piloto para validar el diseño final.
+    """
 
         # Agregar enlace de descarga si tenemos ID de conversación
         if conversation_id:
             summary += f"""
-## 5. Descargar Propuesta Detallada
+    **Para obtener esta propuesta detallada en formato PDF, simplemente haga clic en el siguiente enlace:**
 
-Para obtener la propuesta completa con todos los detalles técnicos y económicos, puede descargarla en formato PDF:
-
-**[📥 DESCARGAR PROPUESTA COMPLETA](/api/chat/{conversation_id}/download-proposal-pdf)**
-
-*Esta propuesta es preliminar y se basa en la información proporcionada. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio.*
-"""
+    [📥 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation_id}/download-proposal-pdf)
+    """
 
         return summary
 
