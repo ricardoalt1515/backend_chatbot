@@ -307,7 +307,7 @@ class AIService:
         # Generar respuesta
         return await self.generate_response(messages)
 
-    def _handle_diagnosis_questions(
+    async def _handle_diagnosis_questions(
         self, conversation: Conversation, user_message: str
     ) -> str:
         """Maneja preguntas o comentarios sobre el diagnóstico preliminar"""
@@ -339,7 +339,7 @@ class AIService:
         # Generar respuesta
         return await self.generate_response(messages)
 
-    def _handle_additional_information(
+    async def _handle_additional_information(
         self, conversation: Conversation, user_message: str
     ) -> str:
         """Procesa información adicional proporcionada después de la confirmación"""
