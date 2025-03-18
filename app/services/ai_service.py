@@ -9,7 +9,7 @@ from datetime import datetime
 from app.config import settings
 from app.models.conversation import Conversation
 from app.services.questionnaire_service import questionnaire_service
-from routes import documents
+from app.routes import documents
 
 # Intento importar el contador de tokens si está disponible
 try:
