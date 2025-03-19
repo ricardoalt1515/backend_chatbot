@@ -163,6 +163,146 @@ class QuestionnaireService:
 
         return random.choice(facts) if facts else None
 
+    def enerate_preliminary_diagnosis(self, conversation: Conversation) -> str:
+        """Genera un diagnóstico preliminar basado en las respuestas del cuestionario"""
+        state = conversation.questionnaire_state
+        answers = state.answers
+        sector = state.sector
+        subsector = state.subsector
+
+        # Obtener información clave
+        nombre_empresa = answers.get("nombre_empresa", "su empresa")
+        ubicacion = answers.get("ubicacion", "su ubicación")
+        consumo_agua = answers.get("cantidad_agua_consumida", "su consumo de agua")
+        agua_residual = answers.get(
+            "cantidad_agua_residual", "la cantidad de agua residual generada"
+        )
+
+        diagnosis = f"""
+    ## Diagnóstico Preliminar para {nombre_empresa}
+
+    Hemos completado la recopilación de información clave sobre sus necesidades de tratamiento de agua. Basándonos en los datos proporcionados, podemos ofrecer el siguiente diagnóstico preliminar:
+
+    ### Factores Críticos Identificados
+
+    """
+
+        # Añadir factores críticos según el sector/subsector
+        if subsector == "Textil":
+            diagnosis += """
+- **Alta carga de colorantes y compuestos orgánicos** típica de la industria textil
+- **Variabilidad en la composición** del agua residual según ciclos de producción
+- **Potencial presencia de metales pesados** provenientes de tintes y procesos
+- **Necesidad de tratamiento especializado** para remoción de color
+    """
+        elif subsector == "Alimentos y Bebidas":
+            diagnosis += """
+- **Elevada carga orgánica biodegradable** (DBO/DQO)
+- **Presencia significativa de grasas y aceites**
+- **Sólidos suspendidos** de origen alimentario
+- **Potencial variabilidad estacional** según ciclos de producción
+    """
+        elif sector == "Comercial":
+            diagnosis += """
+- **Aguas grises** de uso sanitario y limpieza
+- **Carga orgánica moderada**
+- **Potencial para reutilización** en aplicaciones no potables
+- **Requisitos de espacio optimizado** para instalaciones comerciales
+    """
+        else:
+            diagnosis += """
+- **Perfil de contaminantes específicos** de su sector industrial
+- **Necesidades de tratamiento especializado** según sus parámetros reportados
+- **Oportunidades de reúso** adaptadas a sus procesos
+- **Consideraciones de espacio y operación** según su instalación
+    """
+
+        # Añadir pasos de proceso recomendados
+        diagnosis += """
+### Pasos de Proceso Recomendados
+
+Basado en su perfil, recomendamos un sistema de tratamiento multi-etapa que incluya:
+
+1. **Pretratamiento**
+   - Cribado para eliminar sólidos gruesos
+   - Homogeneización para estabilizar flujos y cargas
+
+2. **Tratamiento Primario**
+    """
+
+        # Personalizar tratamiento primario según subsector
+        if subsector == "Textil":
+            diagnosis += "   - Flotación por aire disuelto (DAF) con coagulación química para remoción de color y sólidos\n"
+        elif subsector == "Alimentos y Bebidas":
+            diagnosis += "   - Trampa de grasas seguida de coagulación/floculación para remoción de grasas y sólidos orgánicos\n"
+        else:
+            diagnosis += (
+                "   - Sistema físico-químico adaptado a sus contaminantes específicos\n"
+            )
+
+        diagnosis += """
+    3. **Tratamiento Secundario**
+    """
+
+        # Personalizar tratamiento secundario según subsector
+        if subsector == "Textil":
+            diagnosis += "   - Biorreactor de Membrana (MBR) para degradación biológica y filtración avanzada\n"
+        elif subsector == "Alimentos y Bebidas":
+            diagnosis += "   - Tratamiento biológico (UASB seguido de lodos activados) para remoción de materia orgánica\n"
+        else:
+            diagnosis += "   - Sistema biológico optimizado para su tipo específico de contaminantes orgánicos\n"
+
+        diagnosis += """
+    4. **Tratamiento Terciario**
+    """
+
+        # Personalizar tratamiento terciario según objetivo de reúso
+        objetivo_reuso = answers.get("objetivo_reuso", "")
+        if "riego" in str(objetivo_reuso).lower():
+            diagnosis += (
+                "   - Filtración multimedia y desinfección UV para uso en riego\n"
+            )
+        elif "sanitarios" in str(objetivo_reuso).lower():
+            diagnosis += "   - Filtración y desinfección para reúso en sanitarios\n"
+        elif "procesos" in str(objetivo_reuso).lower():
+            diagnosis += "   - Filtración avanzada, posiblemente ósmosis inversa para reúso en procesos\n"
+        else:
+            diagnosis += "   - Tratamiento avanzado según sus requisitos específicos de reúso o descarga\n"
+
+        # Estimaciones económicas preliminares
+        diagnosis += """
+### Estimaciones Económicas Preliminares
+
+Con base en la información proporcionada, podemos ofrecer las siguientes estimaciones iniciales:
+
+- **Inversión aproximada (CAPEX)**: USD $80,000 - $150,000
+- **Costos operativos mensuales (OPEX)**: USD $1,500 - $3,000
+- **Periodo estimado de retorno de inversión**: 2-4 años
+
+*Nota: Estas son estimaciones preliminares. Los valores exactos serán determinados en la propuesta detallada.*
+
+### Beneficios Principales
+
+- **Reducción del consumo de agua fresca**: 40-60%
+- **Cumplimiento normativo** con los estándares de descarga
+- **Mejora de perfil de sostenibilidad** y responsabilidad ambiental
+- **Potencial reducción de costos operativos** a mediano y largo plazo
+
+### Próximos Pasos
+
+Para avanzar con una propuesta técnica y económica detallada, necesitamos:
+
+1. Su confirmación para proceder con la generación de la propuesta
+2. Cualquier información adicional que considere relevante
+3. Preferencias específicas sobre aspectos técnicos, económicos o de implementación
+
+**PREGUNTA: ¿Desea proceder con la generación de una propuesta detallada basada en este diagnóstico preliminar?**
+1. Sí, proceder con la propuesta
+2. No, tengo algunas preguntas o información adicional
+    """
+
+        return diagnosis
+
     def get_key_questions(
         self, sector: str, subsector: str = None
     ) -> List[Dict[str, Any]]:
@@ -195,7 +335,6 @@ class QuestionnaireService:
     def generate_interim_summary(self, conversation: Conversation) -> str:
         """Genera un resumen intermedio de la informacion recopilada hasta el momento"""
         state = conversation.questionnaire_state
-
         answers = state.answers
         sector = state.sector
         subsector = state.subsector
@@ -243,10 +382,19 @@ class QuestionnaireService:
             for param, value in answers["parametros_agua"].items():
                 summary += f"- **{param}**: {value}\n"
 
+        # Dato interesante relevante
+        fact = self.get_random_fact(sector, subsector)
+        if fact:
+            summary += f"\n*{fact}*\n"
+
         # Confirmación y siguiente pregunta
         summary += """
     ¿Es correcta esta información? Si necesita realizar alguna corrección, por favor indíquelo. 
     De lo contrario, continuaremos con las siguientes preguntas para completar su perfil de necesidades.
+
+    **PREGUNTA: ¿Confirma que la información anterior es correcta?**
+    1. Si, la informacion es correcta
+    2. NO, necesito corregir algo
     """
 
         return summary
@@ -289,6 +437,13 @@ class QuestionnaireService:
     Si cuenta con análisis recientes de la calidad de su agua potable, 
     estos datos nos ayudarán a entender mejor las características específicas 
     del agua que utiliza y optimizar su tratamiento.
+    """,
+            "descripcion_sistema": """
+    ### Especificaciones Técnicas
+
+    Si cuenta con especificaciones técnicas o documentación de su sistema actual,
+    compartirlas nos permitiría entender mejor cómo integrar nuestra solución
+    de manera óptima con su infraestructura existente.
     """,
         }
 

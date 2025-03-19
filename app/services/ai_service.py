@@ -90,16 +90,21 @@ class AIService:
         options=None,
     ):
         """Formatea una rispuesta siguiendo la estructura establecida"""
+        # 1. Comentario sobre respuesta anterior
         response = f"{previous_answer_comment}\n\n"
 
+        # 2. Dato interesante en cursiva
         if interesting_fact:
             response += f"*{interesting_fact}*\n\n"
 
+        # 3. Explicacion de porque la pregunta es importante
         if question_context:
             response += f"{question_context}\n\n"
 
+        # 4. La pregunta al Final, en negrita y precedida por "PREGUNTA"
         response += f"**PREGUNTA: {question_text}**\n\n"
 
+        # 5. Opciones numeradas para preguntas de opcion multiple
         if options:
             for i, option in enumerate(options, 1):
                 response += f"{i}. {option}\n"
@@ -122,96 +127,111 @@ class AIService:
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
-        """Maneja la conversación siguiendo el enfoque estructurado del cuestionario"""
-        # Si no está activo el cuestionario, iniciarlo si detectamos intención
+        """
+        Maneja la conversación siguiendo el enfoque estructurado del cuestionario.
+        Implementa el flujo exacto especificado en el prompt original.
+        """
+        # Si no está activo el cuestionario y no está completado, evaluar si debemos iniciarlo
         if (
             not conversation.is_questionnaire_active()
             and not conversation.is_questionnaire_completed()
         ):
-            if self._detect_questionnaire_intent(user_message):
+            # Detectar si es la primera interacción o si hay intención de iniciar el cuestionario
+            if len(conversation.messages) <= 2 or self._detect_questionnaire_intent(
+                user_message
+            ):
                 conversation.start_questionnaire()
+                # Mostrar el saludo inicial obligatorio exactamente como se especifica
+                return """
+Soy el Diseñador de Soluciones de Agua con IA de Hydrous, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarlo paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro, cumplimiento normativo y sostenibilidad.
+
+Para desarrollar la mejor solución para sus instalaciones, formularé sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarle a optimizar la gestión del agua, reducir costes y explorar nuevas fuentes de ingresos con soluciones basadas en Hydrous.
+
+*Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
+
+**PREGUNTA: ¿En qué sector opera su empresa?**
+1. Industrial
+2. Comercial
+3. Municipal
+4. Residencial
+                """
 
         # Procesar la respuesta del usuario si el cuestionario está activo
         if conversation.is_questionnaire_active():
             # Actualizar estado con la respuesta actual
             self._update_questionnaire_state(conversation, user_message)
 
+            # Verificar si acabamos de responder una solicitud de confirmación de resumen
+            if getattr(
+                conversation.questionnaire_state, "awaiting_summary_confirmation", False
+            ):
+                # Resetear el estado de espera de confirmación
+                conversation.questionnaire_state.awaiting_summary_confirmation = False
+
+                # Si el usuario indica un problema con el resumen, ofrecer corrección
+                if any(
+                    word in user_message.lower()
+                    for word in ["no", "incorrecto", "error", "corregir"]
+                ):
+                    return """
+Gracias por la aclaración. Por favor, indique qué información necesita corregirse y continuaremos desde allí.
+
+**PREGUNTA: ¿Qué información específica necesita ser corregida?**
+    """
+
             # Verificar si completamos el cuestionario con esta respuesta
             next_question = self._get_next_question(conversation)
             if not next_question:
-                # Marcar como recopilación completa pero aún no finalizado
+                # Marcar como recopilación completa
                 conversation.questionnaire_state.recopilacion_completa = True
                 # Generar diagnóstico preliminar
                 return questionnaire_service.generate_preliminary_diagnosis(
                     conversation
                 )
 
-            # Verificar si acabamos de responder el diagnóstico preliminar
+            # Verificar si estamos procesando una respuesta al diagnóstico preliminar
             if getattr(
                 conversation.questionnaire_state, "recopilacion_completa", False
-            ) and not getattr(
-                conversation.questionnaire_state, "confirmacion_mostrada", False
             ):
-                # Verificar si el usuario quiere proceder con la propuesta
                 if any(
-                    keyword in user_message.lower()
-                    for keyword in [
-                        "proceder",
-                        "generar",
-                        "propuesta",
-                        "continuar",
-                        "siguiente",
-                        "sí",
-                        "si",
-                    ]
+                    word in user_message.lower()
+                    for word in ["sí", "si", "proceder", "generar", "propuesta"]
                 ):
-                    # Mostrar pantalla de confirmación final
-                    conversation.questionnaire_state.confirmacion_mostrada = True
-                    return self.generate_final_confirmation(conversation)
-                else:
-                    # El usuario tiene preguntas o dudas sobre el diagnóstico
-                    return self._handle_diagnosis_questions(conversation, user_message)
-
-            # Verificar si estamos en la fase de confirmación final
-            if (
-                getattr(
-                    conversation.questionnaire_state, "confirmacion_mostrada", False
-                )
-                and not conversation.is_questionnaire_completed()
-            ):
-                # Si el usuario confirma, completar cuestionario y generar propuesta
-                if any(
-                    keyword in user_message.lower()
-                    for keyword in [
-                        "generar propuesta",
-                        "proceder",
-                        "continuar",
-                        "adelante",
-                        "confirmo",
-                    ]
-                ):
+                    # Usuario quiere proceder con la propuesta
                     conversation.complete_questionnaire()
-                    # Generar propuesta final
+                    # Generar propuesta completa
                     proposal = questionnaire_service.generate_proposal(conversation)
                     return questionnaire_service.format_proposal_summary(
                         proposal, conversation.id
                     )
                 else:
-                    # El usuario quiere proporcionar información adicional
-                    return self._handle_additional_information(
-                        conversation, user_message
-                    )
+                    # Usuario tiene preguntas adicionales sobre el diagnóstico
+                    return """
+Gracias por su feedback. Entiendo que desea más información antes de proceder con la propuesta.
 
-            # Verificar si es momento de mostrar un resumen intermedio
+*Las empresas que implementan sistemas de tratamiento de agua suelen experimentar reducciones de costos operativos entre un 15% y un 30% en el primer año.*
+
+Su consulta es importante para asegurar que la propuesta final se ajuste perfectamente a sus necesidades.
+
+**PREGUNTA: ¿Qué aspecto específico del diagnóstico le gustaría que aclaráramos o expandiéramos?**
+    """
+
+            # Verificar si es momento de mostrar un resumen intermedio (cada 5 preguntas)
             answers_count = len(conversation.questionnaire_state.answers)
             if (
                 answers_count > 0
-                and answers_count % 5 == 0
+                and answers_count % 5 == 0  # Cada 5 preguntas
                 and not getattr(conversation.questionnaire_state, "last_summary", 0)
                 == answers_count
+                and not getattr(
+                    conversation.questionnaire_state,
+                    "awaiting_summary_confirmation",
+                    False,
+                )
             ):
                 # Almacenar que ya mostramos resumen para este número de respuestas
                 conversation.questionnaire_state.last_summary = answers_count
+                conversation.questionnaire_state.awaiting_summary_confirmation = True
                 return questionnaire_service.generate_interim_summary(conversation)
 
             # Proceder con la siguiente pregunta del cuestionario
@@ -223,16 +243,18 @@ class AIService:
                         next_question.get("id", "")
                     )
 
-                # Obtener un dato interesante relevante
+                # Obtener un dato interesante relevante para el sector/subsector
                 interesting_fact = questionnaire_service.get_random_fact(
                     conversation.questionnaire_state.sector,
                     conversation.questionnaire_state.subsector,
                 )
 
-                # Comentario sobre respuesta anterior (simplificado)
-                previous_comment = "Gracias por su respuesta."
+                # Comentario personalizado sobre la respuesta anterior
+                previous_comment = self._generate_previous_answer_comment(
+                    conversation, user_message
+                )
 
-                # Preparar el contexto de la pregunta
+                # Preparar el contexto de la pregunta (por qué es importante)
                 question_context = next_question.get("explanation", "")
 
                 # Preparar opciones si es múltiple elección
@@ -243,8 +265,8 @@ class AIService:
                 ):
                     options = next_question["options"]
 
-                # Formatear la respuesta según la estructura definida
-                response = self.format_response_with_question(
+                # Formatear la respuesta según la estructura definida exactamente
+                response = self.format_response_with_questions(
                     previous_comment,
                     interesting_fact,
                     question_context,
@@ -263,18 +285,41 @@ class AIService:
 
                 return response
 
-        # Si el cuestionario está completo, manejar preguntas sobre la propuesta
+        # Si el cuestionario está completo, manejar preguntas sobre la propuesta o solicitudes de PDF
         if conversation.is_questionnaire_completed():
-            # Preparar los mensajes para el modelo
+            # Detectar solicitud de descargar propuesta en PDF
+            if self._is_pdf_request(user_message):
+                download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
+                return f"""
+# 📄 Propuesta Lista para Descargar
+
+He preparado su propuesta personalizada basada en la información proporcionada. Puede descargarla como PDF usando el siguiente enlace:
+
+## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
+
+Este documento incluye:
+- Análisis detallado de sus necesidades específicas
+- Solución tecnológica recomendada para su caso
+- Estimación de costos y retorno de inversión
+- Pasos siguientes recomendados
+
+¿Necesita alguna aclaración adicional sobre la propuesta o tiene alguna otra pregunta?
+    """
+
+            # Para otras preguntas post-propuesta, usar el modelo con contexto adecuado
             messages = [
                 {"role": "system", "content": settings.SYSTEM_PROMPT},
                 {
                     "role": "system",
-                    "content": "El usuario ya ha completado el cuestionario y se le ha presentado una propuesta. Responde a sus preguntas adicionales sobre la propuesta, manteniendo un tono profesional y ofreciendo detalles técnicos cuando sea necesario.",
+                    "content": """
+El usuario ha completado el cuestionario y ya recibió una propuesta completa. 
+Estás en la fase de seguimiento, respondiendo preguntas específicas sobre la propuesta
+o proporcionando información adicional mientras mantienes el tono profesional y amigable.
+                    """,
                 },
             ]
 
-            # Añadir parte del historial reciente para contexto
+            # Añadir historial reciente para contexto
             recent_messages = [
                 msg
                 for msg in conversation.messages[-6:]
@@ -289,13 +334,23 @@ class AIService:
             # Generar respuesta para preguntas post-propuesta
             return await self.generate_response(messages)
 
-        # Fallback para otros casos
-        messages = [{"role": "system", "content": settings.SYSTEM_PROMPT}]
+        # Fallback para otros casos - conversar sobre tratamiento de agua en general
+        messages = [
+            {"role": "system", "content": settings.SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": """
+Responde a la consulta del usuario manteniendo el enfoque en soluciones de 
+tratamiento y reciclaje de agua. Intenta identificar si el usuario podría 
+beneficiarse del cuestionario estructurado y sugiérelo si es apropiado.
+                """,
+            },
+        ]
 
-        # Añadir parte del historial reciente
+        # Añadir historial reciente
         recent_messages = [
             msg
-            for msg in conversation.messages[-6:]
+            for msg in conversation.messages[-4:]
             if msg.role in ["user", "assistant"]
         ]
         for msg in recent_messages:
@@ -305,7 +360,81 @@ class AIService:
         messages.append({"role": "user", "content": user_message})
 
         # Generar respuesta
-        return await self.generate_response(messages)
+        response = await self.generate_response(messages)
+
+        # Sugerir el cuestionario si parece apropiado
+        if self._should_suggest_questionnaire(response, user_message):
+            response += """
+
+    ¿Le gustaría que le guíe a través de nuestro cuestionario estructurado? Esto nos permitiría recopilar información específica para desarrollar una propuesta personalizada para sus necesidades de tratamiento de agua.
+    """
+
+        return response
+
+    def _is_pdf_request(self, message: str) -> bool:
+        """Determina si el mensaje es una solicitud de PDF"""
+        message = message.lower()
+
+        # Palabras clave relacionadas con PDF
+        pdf_keywords = [
+            "pdf",
+            "descargar",
+            "propuesta",
+            "documento",
+            "guardar",
+            "archivo",
+            "exportar",
+            "bajar",
+            "obtener",
+        ]
+
+        # Frases comunes de solicitud
+        pdf_phrases = [
+            "quiero el pdf",
+            "dame la propuesta",
+            "ver el documento",
+            "obtener el archivo",
+            "descargar la propuesta",
+            "envíame el pdf",
+            "generar documento",
+            "necesito la propuesta",
+        ]
+
+        # Verificar palabras clave y frases
+        if any(keyword in message for keyword in pdf_keywords):
+            return True
+
+        if any(phrase in message for phrase in pdf_phrases):
+            return True
+
+        return False
+
+    def _should_suggest_questionnaire(self, response: str, user_message: str) -> bool:
+        """Determina si debemos sugerir iniciar el cuestionario basado en la consulta"""
+        # Si el mensaje del usuario menciona problemas o necesidades de agua
+        water_keywords = [
+            "agua",
+            "tratamiento",
+            "residual",
+            "reciclaje",
+            "efluente",
+            "purificación",
+        ]
+        need_keywords = ["necesito", "busco", "quiero", "cómo puedo", "recomendación"]
+
+        has_water_terms = any(
+            keyword in user_message.lower() for keyword in water_keywords
+        )
+        has_need_terms = any(
+            keyword in user_message.lower() for keyword in need_keywords
+        )
+
+        # Si la respuesta es relativamente genérica y podríamos beneficiarnos de más información
+        generic_response = len(response.split()) < 100
+
+        return (has_water_terms and has_need_terms) or (
+            has_water_terms and generic_response
+        )
 
     async def _handle_diagnosis_questions(
         self, conversation: Conversation, user_message: str
@@ -911,6 +1040,47 @@ class AIWithQuestionnaireService(AIService):
             # Para cualquier otra pregunta, guardar la respuesta directamente
             else:
                 state.answers[state.current_question_id] = user_message
+
+    def _generate_previous_answer_comment(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
+        """Genera un comentario personalizado sobre la respuesta anterior del usuario"""
+        # Obtener el ID de la pregunta que se acaba de responder
+        prev_question_id = conversation.questionnaire_state.current_question_id
+
+        # Comentarios específicos según el tipo de pregunta
+        if prev_question_id == "sector_selection":
+            return f"Gracias por indicar su sector. Esta información es fundamental para adaptar nuestra solución a sus necesidades específicas."
+
+        elif prev_question_id == "subsector_selection":
+            sector = conversation.questionnaire_state.sector
+            subsector = conversation.questionnaire_state.subsector
+            return f"Excelente. El subsector {subsector} dentro del sector {sector} presenta desafíos y oportunidades particulares en el tratamiento de agua."
+
+        elif prev_question_id == "nombre_empresa":
+            return "Gracias por compartir el nombre de su empresa. Esto nos ayudará a personalizar nuestra propuesta."
+
+        elif prev_question_id == "ubicacion":
+            return "Perfecto. La ubicación es un factor importante que influye en la disponibilidad de agua y las normativas aplicables."
+
+        elif prev_question_id == "costo_agua":
+            return "El costo del agua es un factor clave para calcular el retorno de inversión de las soluciones que propongamos."
+
+        elif prev_question_id == "cantidad_agua_consumida":
+            return "Gracias por compartir su consumo de agua. Este dato es esencial para dimensionar adecuadamente la solución."
+
+        elif prev_question_id == "cantidad_agua_residual":
+            return "Esta información sobre generación de aguas residuales es fundamental para el diseño del sistema de tratamiento."
+
+        elif prev_question_id == "parametros_agua":
+            return "Los parámetros que ha proporcionado son muy valiosos para determinar las tecnologías de tratamiento más adecuadas."
+
+        elif prev_question_id == "objetivo_principal":
+            return "Entendemos su objetivo principal. Esto nos ayudará a enfocar nuestra propuesta en los aspectos más relevantes para su caso."
+
+        # Para otros casos, usar un comentario general
+        else:
+            return "Gracias por su respuesta. Cada dato que proporciona nos acerca más a diseñar la solución óptima para su caso."
 
     def _extract_sector(self, message: str) -> Optional[str]:
         """Extrae el sector industrial de la respuesta del usuario"""
