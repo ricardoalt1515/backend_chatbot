@@ -127,91 +127,109 @@ class AIService:
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
-        async def handle_conversation(self, conversation: Conversation, user_message: str) -> str:
         """
         Maneja el flujo de conversación siguiendo estrictamente el cuestionario.
         Esta función es el núcleo de la lógica del chatbot.
-    
+
         Args:
-            conversation: La conversación actual
-            user_message: El mensaje enviado por el usuario
-        
-        Returns:
+                conversation: La conversación actual
+                user_message: El mensaje enviado por el usuario
+
+            Returns:
             str: La respuesta formateada según la estructura requerida
         """
         # Si no hay cuestionario activo y no está completado, iniciarlo automáticamente
-        if not conversation.is_questionnaire_active() and not conversation.is_questionnaire_completed():
+        if (
+            not conversation.is_questionnaire_active()
+            and not conversation.is_questionnaire_completed()
+        ):
             conversation.start_questionnaire()
             return self.get_initial_greeting()
-    
+
         # Si el cuestionario está activo, procesar siguiendo la estructura definida
         if conversation.is_questionnaire_active():
             # Procesar la respuesta del usuario (actualizar estado del cuestionario)
             self._update_questionnaire_state(conversation, user_message)
             conversation.questionnaire_state.questions_answered += 1
-        
+
             # Verificar si es momento de mostrar un resumen intermedio (cada 5 preguntas)
-            if (conversation.questionnaire_state.questions_answered > 0 and 
-                    conversation.questionnaire_state.questions_answered % 5 == 0 and
-                    conversation.questionnaire_state.last_summary_at != conversation.questionnaire_state.questions_answered):
+            if (
+                conversation.questionnaire_state.questions_answered > 0
+                and conversation.questionnaire_state.questions_answered % 5 == 0
+                and conversation.questionnaire_state.last_summary_at
+                != conversation.questionnaire_state.questions_answered
+            ):
                 # Actualizar cuándo se mostró el último resumen
-                conversation.questionnaire_state.last_summary_at = conversation.questionnaire_state.questions_answered
+                conversation.questionnaire_state.last_summary_at = (
+                    conversation.questionnaire_state.questions_answered
+                )
                 return self._generate_interim_summary(conversation)
-        
+
             # Obtener la siguiente pregunta
             next_question = self._get_next_question(conversation)
-        
+
             # Si no hay más preguntas, completar el cuestionario y generar propuesta
             if not next_question:
                 conversation.complete_questionnaire()
                 proposal = self._generate_proposal(conversation)
                 return self._format_proposal_summary(proposal, conversation.id)
-        
+
             # Generar elementos para la respuesta estructurada
             sector = conversation.questionnaire_state.sector
             subsector = conversation.questionnaire_state.subsector
-        
+
             # 1. Comentario sobre respuesta anterior
-            previous_comment = self._generate_previous_answer_comment(conversation, user_message)
-        
+            previous_comment = self._generate_previous_answer_comment(
+                conversation, user_message
+            )
+
             # 2. Dato interesante relacionado
             interesting_fact = questionnaire_service.get_random_fact(sector, subsector)
-        
+
             # 3. Contexto/explicación de la pregunta
             question_context = next_question.get("explanation", "")
-        
+
             # 4. Texto de la pregunta
             question_text = next_question.get("text", "")
-        
+
             # 5. Opciones (si es pregunta de selección múltiple)
             options = None
-            if next_question.get("type") in ["multiple_choice", "multiple_select"] and "options" in next_question:
+            if (
+                next_question.get("type") in ["multiple_choice", "multiple_select"]
+                and "options" in next_question
+            ):
                 options = next_question["options"]
-        
+
             # Determinar si debemos sugerir cargar documentos
             doc_suggestion = ""
             if self._should_suggest_document(next_question.get("id", "")):
-                doc_suggestion = questionnaire_service.suggest_document_upload(next_question.get("id", ""))
-        
+                doc_suggestion = questionnaire_service.suggest_document_upload(
+                    next_question.get("id", "")
+                )
+
             # Actualizar la pregunta actual en el estado
-            conversation.questionnaire_state.previous_question_id = conversation.questionnaire_state.current_question_id
-            conversation.questionnaire_state.current_question_id = next_question.get("id")
-        
+            conversation.questionnaire_state.previous_question_id = (
+                conversation.questionnaire_state.current_question_id
+            )
+            conversation.questionnaire_state.current_question_id = next_question.get(
+                "id"
+            )
+
             # Formatear respuesta siguiendo estructura exacta
             response = self.format_response_with_questions(
                 previous_comment,
                 interesting_fact,
                 question_context,
                 question_text,
-                options
+                options,
             )
-        
+
             # Añadir sugerencia de documento si corresponde
             if doc_suggestion:
                 response += f"\n\n{doc_suggestion}"
-        
+
             return response
-    
+
         # Si el cuestionario está completado, manejar consultas post-propuesta
         elif conversation.is_questionnaire_completed():
             # Detectar si es una solicitud de PDF
@@ -233,26 +251,27 @@ Este documento incluye:
 
 ¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
     """
-        
+
             # Para otras preguntas post-propuesta
             return self._handle_post_proposal_questions(conversation, user_message)
-    
+
         # Este caso no debería ocurrir con la lógica actual, pero por seguridad
         # Si llegamos aquí, reiniciar el cuestionario
         conversation.start_questionnaire()
         return self.get_initial_greeting()
 
-
-    def _update_questionnaire_state(self, conversation: Conversation, user_message: str) -> None:
+    def _update_questionnaire_state(
+        self, conversation: Conversation, user_message: str
+    ) -> None:
         """
         Actualiza el estado del cuestionario basado en la respuesta del usuario
-    
+
         Args:
             conversation: La conversación actual
             user_message: Mensaje del usuario
         """
         state = conversation.questionnaire_state
-    
+
         # Si hay una pregunta actual, procesar la respuesta
         if state.current_question_id:
             # Si es selección de sector
@@ -261,27 +280,28 @@ Este documento incluye:
                 if sector:
                     state.sector = sector
                     state.answers[state.current_question_id] = sector
-        
+
             # Si es selección de subsector
             elif state.current_question_id == "subsector_selection":
                 subsector = self._extract_subsector(user_message, state.sector)
                 if subsector:
                     state.subsector = subsector
                     state.answers[state.current_question_id] = subsector
-        
+
             # Para cualquier otra pregunta, guardar la respuesta directamente
             else:
                 state.answers[state.current_question_id] = user_message
 
-
-    def _handle_post_proposal_questions(self, conversation: Conversation, user_message: str) -> str:
+    def _handle_post_proposal_questions(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
         """
         Maneja preguntas después de generada la propuesta
-    
+
         Args:
             conversation: La conversación actual
             user_message: Mensaje del usuario
-        
+
         Returns:
             str: Respuesta a la pregunta post-propuesta
         """
@@ -297,35 +317,32 @@ Si tiene dudas específicas sobre algún aspecto técnico, económico o de imple
 ¿Hay algún aspecto particular de la propuesta sobre el que le gustaría más información?
     """
 
-
     def _generate_proposal(self, conversation: Conversation) -> dict:
         """
         Genera una propuesta basada en la información recopilada
-        
+
         Args:
             conversation: La conversación con toda la información
-            
+
         Returns:
             dict: Datos de la propuesta generada
         """
         # Usar el servicio de cuestionario para generar la propuesta
         return questionnaire_service.generate_proposal(conversation)
 
-
     def _format_proposal_summary(self, proposal: dict, conversation_id: str) -> str:
         """
         Formatea el resumen de la propuesta para presentarlo al usuario
-        
+
         Args:
             proposal: Datos de la propuesta
             conversation_id: ID de la conversación
-            
+
         Returns:
             str: Resumen formateado de la propuesta
         """
         # Usar el servicio de cuestionario para formatear el resumen
         return questionnaire_service.format_proposal_summary(proposal, conversation_id)
-
 
     def _is_pdf_request(self, message: str) -> bool:
         """
