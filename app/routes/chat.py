@@ -130,7 +130,94 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
-        # Crear y añadir mensaje del usuario
+        # SOLUCIÓN: Verificar si estamos en un loop de pregunta del sector
+        # y forzar avance si hay indicios de repetición
+        last_messages = [m for m in conversation.messages[-4:] if m.role == "assistant"]
+        user_responses = [m for m in conversation.messages[-4:] if m.role == "user"]
+
+        is_repeating_sector_question = False
+        sector_already_selected = False
+
+        # Verificar si los últimos mensajes del asistente contienen la misma pregunta sobre sector
+        sector_question_count = sum(
+            1 for m in last_messages if "¿En qué sector opera su empresa?" in m.content
+        )
+
+        # Si hay más de 1 pregunta sobre sector en los últimos mensajes, hay un loop
+        if sector_question_count > 1:
+            is_repeating_sector_question = True
+
+        # Verificar si el usuario ya respondió con un sector (1, 2, 3, 4)
+        if user_responses and any(
+            response.content.strip() in ["1", "2", "3", "4"]
+            for response in user_responses
+        ):
+            sector_already_selected = True
+
+        # Si detectamos un loop de la pregunta de sector y el usuario ya respondió,
+        # forzar el avance a la pregunta de subsector
+        if is_repeating_sector_question and sector_already_selected:
+            logger.warning("Detectado loop de pregunta sobre sector, forzando avance")
+
+            # Mapear respuesta a sector si la respuesta actual es un número del 1 al 4
+            if data.message.strip() in ["1", "2", "3", "4"]:
+                sector_map = {
+                    "1": "Industrial",
+                    "2": "Comercial",
+                    "3": "Municipal",
+                    "4": "Residencial",
+                }
+                sector = sector_map.get(data.message.strip())
+
+                if sector:
+                    # Forzar actualización del estado
+                    conversation.questionnaire_state.sector = sector
+                    conversation.questionnaire_state.answers["sector_selection"] = (
+                        sector
+                    )
+                    conversation.questionnaire_state.current_question_id = (
+                        "subsector_selection"
+                    )
+
+                    # Guardar cambios inmediatamente
+                    await storage_service.add_message_to_conversation(
+                        data.conversation_id, Message.user(data.message, data.metadata)
+                    )
+
+                    # Crear directamente un mensaje para preguntar por subsector
+                    subsector_options = questionnaire_service.get_subsectors(sector)
+                    interesting_fact = (
+                        questionnaire_service.get_random_fact(sector)
+                        or "Las soluciones de reciclaje pueden reducir costos operativos significativamente."
+                    )
+
+                    subsector_response = f"""
+Gracias por esa información. El sector {sector} presenta desafíos específicos en tratamiento de agua.
+
+*{interesting_fact}*
+
+Cada subsector tiene características y necesidades específicas para el tratamiento de agua.
+
+**PREGUNTA: ¿Cuál es el subsector específico dentro de {sector}?**
+{chr(10).join([f"{i+1}. {option}" for i, option in enumerate(subsector_options)])}
+"""
+                    # Crear y añadir mensaje del asistente
+                    assistant_message = Message.assistant(subsector_response)
+                    await storage_service.add_message_to_conversation(
+                        data.conversation_id, assistant_message
+                    )
+
+                    # Programar limpieza de conversaciones antiguas
+                    background_tasks.add_task(storage_service.cleanup_old_conversations)
+
+                    return MessageResponse(
+                        id=assistant_message.id,
+                        conversation_id=data.conversation_id,
+                        message=subsector_response,
+                        created_at=assistant_message.created_at,
+                    )
+
+        # Crear y añadir mensaje del usuario (parte original)
         user_message = Message.user(data.message, data.metadata)
         await storage_service.add_message_to_conversation(
             data.conversation_id, user_message
