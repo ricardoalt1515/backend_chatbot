@@ -12,9 +12,32 @@ class QuestionnaireState(BaseModel):
     sector: Optional[str] = None
     subsector: Optional[str] = None
     current_question_id: Optional[str] = None
+    previous_question_id: Optional[str] = (
+        None  # Nuevo: para rastrear la pregunta anterior
+    )
+    questions_answered: int = 0  # Nuevo: contador de preguntas respondidas
     answers: Dict[str, Any] = Field(default_factory=dict)
     completed: bool = False
     active: bool = Field(default_factory=bool)
+    last_summary_at: int = 0  # Nuevo: controla cuándo se mostró el último resumen
+    stage: str = "initial"  # Nuevo: indica la etapa actual del cuestionario
+
+    def increment_questions_answered(self):
+        """Incrementa el contador de preguntas respondidas"""
+        self.questions_answered += 1
+
+    def should_show_summary(self) -> bool:
+        """Determina si es momento de mostrar un resumen"""
+        # Mostrar resumen cada 5 preguntas, pero no repetir en la misma cantidad
+        return (
+            self.questions_answered > 0
+            and self.questions_answered % 5 == 0
+            and self.last_summary_at != self.questions_answered
+        )
+
+    def mark_summary_shown(self):
+        """Marca que se ha mostrado un resumen en la pregunta actual"""
+        self.last_summary_at = self.questions_answered
 
 
 class Conversation(BaseModel):
