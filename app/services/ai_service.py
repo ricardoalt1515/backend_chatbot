@@ -173,22 +173,45 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
                 current_question_id = (
                     conversation.questionnaire_state.current_question_id
                 )
+                logger.info(
+                    f"Estado antes de procesar: sector={conversation.questionnaire_state.sector}, current_question_id={current_question_id}"
+                )
 
                 # Procesar la respuesta del usuario
                 self._update_questionnaire_state(conversation, user_message)
 
+                # IMPORTANTE: Verificar que cambio despues de procesar
+                logger.info(
+                    f"Estado después de procesar: sector={conversation.questionnaire_state.sector}, current_question_id={conversation.questionnaire_state.current_question_id}"
+                )
+
                 # Verificar que el estado se haya actualizado correctamente
                 # Si parece haberse perdido, restaurarlo
                 if (
-                    not conversation.questionnaire_state.current_question_id
-                    and not conversation.is_questionnaire_completed()
+                    conversation.questionnaire_state.current_question_id
+                    == current_question_id
+                    and conversation.questionnaire_state.sector
+                    and current_question_id == "sector_selection"
                 ):
-                    logger.warning(
-                        f"Detectada pérdida potencial de estado. Restaurando ID de pregunta anterior: {current_question_id}"
-                    )
+                    logger.info("Forzando avance a pregunta de subsector")
                     conversation.questionnaire_state.current_question_id = (
-                        current_question_id
+                        "subsector_selection"
                     )
+
+                # Similar para subsector
+                if (
+                    conversation.questionnaire_state.current_question_id
+                    == current_question_id
+                    and conversation.questionnaire_state.subsector
+                    and current_question_id == "subsector_selection"
+                ):
+                    # Obtener la primera pregunta del cuestionario específico
+                    logger.info("Forzando avance a primera pregunta del cuestionario")
+                    next_q = self._get_next_question(conversation)
+                    if next_q:
+                        conversation.questionnaire_state.current_question_id = (
+                            next_q.get("id", "")
+                        )
 
                 # Verificar si es momento de mostrar un resumen intermedio (cada 5 preguntas)
                 answers_count = len(conversation.questionnaire_state.answers)
@@ -275,6 +298,30 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
                 # Si llegamos aquí, procesamos la siguiente pregunta normalmente
                 if next_question:
                     # Obtener un dato interesante relevante para el sector/subsector
+                    if (
+                        next_question.get("id")
+                        == conversation.questionnaire_state.current_question_id
+                    ):
+                        logger.warning(
+                            f"Posible bucle detectado - misma pregunta: {next_question.get('id')}"
+                        )
+
+                        # Intentar avanzar manualmente basado en el estado
+                        if (
+                            next_question.get("id") == "sector_selection"
+                            and conversation.questionnaire_state.sector
+                        ):
+                            next_question = {
+                                "id": "subsector_selection",
+                                "text": f"¿Cuál es el subsector específico dentro de {conversation.questionnaire_state.sector}?",
+                                "type": "multiple_choice",
+                                "options": questionnaire_service.get_subsectors(
+                                    conversation.questionnaire_state.sector
+                                ),
+                                "explanation": "Cada subsector tiene características y necesidades específicas.",
+                            }
+
+                    # Obtener un dato interesante relevante para el sector/subsector
                     interesting_fact = questionnaire_service.get_random_fact(
                         conversation.questionnaire_state.sector,
                         conversation.questionnaire_state.subsector,
@@ -319,6 +366,9 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
                     # Actualizar la pregunta actual
                     conversation.questionnaire_state.current_question_id = (
                         next_question.get("id", "")
+                    )
+                    logger.info(
+                        f"Pregunta actualizada a: {conversation.questionnaire_state.current_question_id}"
                     )
 
                     return response
