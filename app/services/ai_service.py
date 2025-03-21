@@ -173,6 +173,9 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
                 current_question_id = (
                     conversation.questionnaire_state.current_question_id
                 )
+                current_sector = conversation.questionnaire_state.sector
+                current_subsector = conversation.questionnaire_state.subsector
+
                 logger.info(
                     f"Estado antes de procesar: sector={conversation.questionnaire_state.sector}, current_question_id={current_question_id}"
                 )
@@ -188,30 +191,31 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
                 # Verificar que el estado se haya actualizado correctamente
                 # Si parece haberse perdido, restaurarlo
                 if (
-                    conversation.questionnaire_state.current_question_id
-                    == current_question_id
-                    and conversation.questionnaire_state.sector
-                    and current_question_id == "sector_selection"
+                    not conversation.questionnaire_state.current_question_id
+                    and not conversation.is_questionnaire_completed()
+                    and current_question_id
+                    != "sector_selection"  # No restaurar si estamos en la selección de sector
                 ):
-                    logger.info("Forzando avance a pregunta de subsector")
+                    logger.warning(
+                        f"Detectada pérdida potencial de estado. Restaurando ID de pregunta anterior: {current_question_id}"
+                    )
                     conversation.questionnaire_state.current_question_id = (
-                        "subsector_selection"
+                        current_question_id
                     )
 
                 # Similar para subsector
                 if (
                     conversation.questionnaire_state.current_question_id
-                    == current_question_id
-                    and conversation.questionnaire_state.subsector
-                    and current_question_id == "subsector_selection"
+                    == "sector_selection"
+                    and conversation.questionnaire_state.sector
+                    and conversation.questionnaire_state.sector != current_sector
                 ):
-                    # Obtener la primera pregunta del cuestionario específico
-                    logger.info("Forzando avance a primera pregunta del cuestionario")
-                    next_q = self._get_next_question(conversation)
-                    if next_q:
-                        conversation.questionnaire_state.current_question_id = (
-                            next_q.get("id", "")
-                        )
+                    logger.info(
+                        f"Avanzando automáticamente a subsector para sector: {conversation.questionnaire_state.sector}"
+                    )
+                    conversation.questionnaire_state.current_question_id = (
+                        "subsector_selection"
+                    )
 
                 # Verificar si es momento de mostrar un resumen intermedio (cada 5 preguntas)
                 answers_count = len(conversation.questionnaire_state.answers)
@@ -227,6 +231,29 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
 
                 # Verificar si hemos completado el cuestionario
                 next_question = self._get_next_question(conversation)
+
+                # CAMBIO CRÍTICO #3: Verificar si estamos repitiendo la pregunta de sector y forzar avance
+                if (
+                    next_question
+                    and next_question.get("id") == "sector_selection"
+                    and conversation.questionnaire_state.sector
+                ):
+                    logger.info(
+                        f"Detectada repetición de pregunta de sector. Forzando avance a subsector."
+                    )
+                    next_question = {
+                        "id": "subsector_selection",
+                        "text": f"¿Cuál es el subsector específico dentro de {conversation.questionnaire_state.sector}?",
+                        "type": "multiple_choice",
+                        "options": questionnaire_service.get_subsectors(
+                            conversation.questionnaire_state.sector
+                        ),
+                        "explanation": "Cada subsector tiene características y necesidades específicas para el tratamiento de agua.",
+                    }
+                    conversation.questionnaire_state.current_question_id = (
+                        "subsector_selection"
+                    )
+
                 if not next_question:
                     # Marcar como recopilación completa
                     conversation.questionnaire_state.recopilacion_completa = True
@@ -297,29 +324,27 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
 
                 # Si llegamos aquí, procesamos la siguiente pregunta normalmente
                 if next_question:
-                    # Obtener un dato interesante relevante para el sector/subsector
+                    # CAMBIO CRÍTICO #4: Verificar una última vez que no estamos repitiendo la pregunta del sector
                     if (
-                        next_question.get("id")
-                        == conversation.questionnaire_state.current_question_id
+                        next_question.get("id") == "sector_selection"
+                        and conversation.questionnaire_state.sector
                     ):
                         logger.warning(
-                            f"Posible bucle detectado - misma pregunta: {next_question.get('id')}"
+                            "Intentando repetir pregunta de sector, forzando avance a subsector"
                         )
-
-                        # Intentar avanzar manualmente basado en el estado
-                        if (
-                            next_question.get("id") == "sector_selection"
-                            and conversation.questionnaire_state.sector
-                        ):
-                            next_question = {
-                                "id": "subsector_selection",
-                                "text": f"¿Cuál es el subsector específico dentro de {conversation.questionnaire_state.sector}?",
-                                "type": "multiple_choice",
-                                "options": questionnaire_service.get_subsectors(
-                                    conversation.questionnaire_state.sector
-                                ),
-                                "explanation": "Cada subsector tiene características y necesidades específicas.",
-                            }
+                        # Generar una pregunta de subsector en su lugar
+                        next_question = {
+                            "id": "subsector_selection",
+                            "text": f"¿Cuál es el subsector específico dentro de {conversation.questionnaire_state.sector}?",
+                            "type": "multiple_choice",
+                            "options": questionnaire_service.get_subsectors(
+                                conversation.questionnaire_state.sector
+                            ),
+                            "explanation": "Cada subsector tiene características y necesidades específicas para el tratamiento de agua.",
+                        }
+                        conversation.questionnaire_state.current_question_id = (
+                            "subsector_selection"
+                        )
 
                     # Obtener un dato interesante relevante para el sector/subsector
                     interesting_fact = questionnaire_service.get_random_fact(
@@ -363,13 +388,17 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
                         )
                         response += f"\n\n{document_suggestion}"
 
-                    # Actualizar la pregunta actual
-                    conversation.questionnaire_state.current_question_id = (
-                        next_question.get("id", "")
-                    )
-                    logger.info(
-                        f"Pregunta actualizada a: {conversation.questionnaire_state.current_question_id}"
-                    )
+                    # Actualizar la pregunta actual solo si no es la misma que teníamos antes
+                    if (
+                        conversation.questionnaire_state.current_question_id
+                        != next_question.get("id", "")
+                    ):
+                        conversation.questionnaire_state.current_question_id = (
+                            next_question.get("id", "")
+                        )
+                        logger.info(
+                            f"Pregunta actualizada a: {conversation.questionnaire_state.current_question_id}"
+                        )
 
                     return response
                 else:
@@ -400,7 +429,7 @@ Este documento incluye:
 - Pasos siguientes recomendados
 
 ¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
-"""
+    """
 
                 # Responder a preguntas sobre la propuesta
                 messages = [
@@ -880,6 +909,10 @@ Este documento incluye:
                     state.answers[current_question_id] = sectors[sector_index]
                     # Establecer explícitamente la siguiente pregunta
                     state.current_question_id = "subsector_selection"
+                    # Loguear para Verificar
+                    logger.info(
+                        f"Sector actualizado a {sectors[sector_index]}. Proxima pregunta: subsector_selection"
+                    )
                     return
 
             # Si no es un índice válido, buscar coincidencia en el texto
@@ -890,10 +923,15 @@ Este documento incluye:
                     state.answers[current_question_id] = sector
                     # Establecer explícitamente la siguiente pregunta
                     state.current_question_id = "subsector_selection"
+                    # LOguear para Verificar
+                    logger.info(
+                        f"Sector actualizado a  {sector} por texto. Proxima pregunta: subsector_selection"
+                    )
                     return
 
             # Si no se encontró coincidencia, registrar respuesta directa
             state.answers[current_question_id] = user_message
+            logger.warning(f"No se pudo identificar sector en: '{user_message}'")
 
         # Si es selección de subsector
         elif current_question_id == "subsector_selection" and state.sector:

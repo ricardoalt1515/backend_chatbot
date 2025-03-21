@@ -103,6 +103,32 @@ class MemoryStorage:
         """Obtiene los eventos de analítica más recientes"""
         return self.analytics_events[-limit:]
 
+    async def add_message_to_conversation(
+        self, conversation_id: str, message: Message
+    ) -> Optional[Conversation]:
+        """Añade un mensaje a una conversación existente y asegura la persistencia del estado"""
+        conversation = await self.get_conversation(conversation_id)
+        if not conversation:
+            return None
+
+        # Añadir el mensaje
+        conversation.add_message(message)
+
+        # Asegurar que la conversación se guarde completamente
+        self.conversations[conversation_id] = conversation
+        self.conversation_last_access[conversation_id] = time.time()
+
+        # Registrar el estado para debugging
+        if conversation.is_questionnaire_active():
+            logger.info(
+                f"Estado guardado: sector={conversation.questionnaire_state.sector}, "
+                f"subsector={conversation.questionnaire_state.subsector}, "
+                f"current_q={conversation.questionnaire_state.current_question_id}, "
+                f"answers_count={len(conversation.questionnaire_state.answers)}"
+            )
+
+        return conversation
+
 
 # Instancia global del servicio de almacenamiento
 storage_service = MemoryStorage()
