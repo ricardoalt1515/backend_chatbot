@@ -1110,6 +1110,298 @@ class AIWithQuestionnaireService(AIService):
         # Actualizar también el estado en el objeto conversación
         conversation.complete_questionnaire()
 
+    def _handle_post_proposal_questions(
+        self, conversation: Conversation, user_message: str
+    ) -> str:
+        """
+        Maneja preguntas o solicitudes después de generar la propuesta
+
+        Args:
+            conversation: Conversación actual
+            user_message: Mensaje del usuario
+
+        Returns:
+            str: Respuesta personalizada
+        """
+        # Detectar tipo de pregunta/solicitud
+        message_lower = user_message.lower()
+
+        # Solicitud de explicación técnica
+        if any(
+            term in message_lower
+            for term in [
+                "explicar",
+                "detallar",
+                "cómo funciona",
+                "tecnología",
+                "proceso",
+            ]
+        ):
+            return self._generate_technical_explanation(conversation)
+
+        # Solicitud de información de costos
+        elif any(
+            term in message_lower
+            for term in ["costo", "precio", "inversión", "financiamiento", "pago"]
+        ):
+            return self._generate_cost_explanation(conversation)
+
+        # Solicitud sobre plazos
+        elif any(
+            term in message_lower
+            for term in ["tiempo", "plazo", "cuándo", "implementación", "instalación"]
+        ):
+            return self._generate_timeline_explanation(conversation)
+
+        # Solicitud sobre personalización
+        elif any(
+            term in message_lower
+            for term in ["modificar", "cambiar", "ajustar", "personalizar"]
+        ):
+            return self._generate_customization_explanation(conversation)
+
+        # Si no es ninguna de las anteriores, respuesta general
+        return """
+Gracias por su interés en nuestra propuesta. Estaré encantado de aclarar cualquier duda o proporcionar información adicional sobre los aspectos técnicos, costos, plazos de implementación o cualquier ajuste que desee realizar.
+
+La propuesta que ha recibido es preliminar y puede personalizarse según sus necesidades específicas. ¿Hay algún aspecto particular sobre el que desearía más detalles?
+
+1. Detalles técnicos del sistema propuesto
+2. Información sobre costos y financiamiento
+3. Plazos de implementación y fases del proyecto
+4. Opciones de personalización o ajustes a la solución
+5. Requisitos de mantenimiento y operación
+"""
+
+    def _generate_technical_explanation(self, conversation: Conversation) -> str:
+        """Genera una explicación técnica detallada del sistema propuesto"""
+
+        state = conversation.questionnaire_state
+        sector = state.sector
+        subsector = state.subsector
+
+        explanation = f"""
+## Detalles Técnicos del Sistema Propuesto
+
+El sistema de tratamiento diseñado para su operación {sector} - {subsector} consta de varias etapas interconectadas, cada una con un propósito específico:
+
+### 1. Pretratamiento
+"""
+
+        # Personalizar según sector/subsector
+        if subsector == "Textil":
+            explanation += """
+El agua residual primero pasa por un sistema de cribado automático para remover fibras y partículas grandes, seguido de un tanque de homogeneización con agitación que equilibra los picos de caudal y concentración, especialmente importantes en la industria textil donde los lotes de producción pueden variar significativamente.
+
+### 2. Tratamiento Primario
+Se implementa un sistema de Flotación por Aire Disuelto (DAF) con dosificación de coagulantes específicos para colorantes, que puede remover hasta el 95% de los colorantes y 85% de los sólidos suspendidos. Esta etapa es crucial para la industria textil debido a la alta carga de colorantes.
+
+### 3. Tratamiento Secundario
+Utilizamos un Reactor de Biopelícula de Lecho Móvil (MBBR) con microorganismos especializados en degradar compuestos orgánicos recalcitrantes típicos de la industria textil. Esta tecnología requiere menos espacio que los lodos activados convencionales mientras proporciona mayor eficiencia.
+
+### 4. Tratamiento Terciario
+El sistema incluye filtración por carbón activado para eliminar colorantes residuales y compuestos orgánicos, seguido de desinfección UV que no genera subproductos indeseables.
+"""
+        elif subsector == "Alimentos y Bebidas":
+            explanation += """
+El agua residual primero pasa por un sistema de cribado seguido de una trampa de grasas y aceites de alto rendimiento, crítica para la industria alimentaria, que puede remover hasta un 95% de grasas y aceites.
+
+### 2. Tratamiento Primario
+Se implementa un sistema de coagulación/floculación optimizado para materia orgánica de origen alimenticio, seguido de sedimentación acelerada que reduce significativamente la carga orgánica.
+
+### 3. Tratamiento Secundario
+Se utiliza un sistema combinado anaerobio-aerobio, comenzando con un reactor UASB (Upflow Anaerobic Sludge Blanket) que además de tratar el agua genera biogás aprovechable energéticamente, seguido de un sistema de lodos activados de alta eficiencia.
+
+### 4. Tratamiento Terciario
+El sistema incluye filtración multimedia y desinfección UV para garantizar la calidad microbiológica del efluente, fundamental en la industria alimentaria.
+"""
+        else:
+            # Versión genérica para otros sectores
+            explanation += """
+El agua residual primero pasa por sistemas de cribado y homogeneización adaptados a su caudal específico, diseñados para manejar las variaciones propias de su operación.
+
+### 2. Tratamiento Primario
+Se implementa un sistema físico-químico personalizado para los contaminantes específicos de su sector, garantizando alta eficiencia en la remoción de sólidos y contaminantes clave.
+
+### 3. Tratamiento Secundario
+Utilizamos un sistema biológico optimizado para la biodegradabilidad específica de sus contaminantes, con diseño modular que permite ajustar la capacidad según sus necesidades.
+
+### 4. Tratamiento Terciario
+El sistema incluye etapas de pulido final adaptadas a sus objetivos de reúso o descarga, garantizando el cumplimiento de los parámetros requeridos.
+"""
+
+        explanation += """
+### Características Adicionales del Sistema
+
+- **Control automatizado**: Todo el sistema está equipado con sensores y controladores que permiten un funcionamiento óptimo con mínima intervención humana.
+- **Módulos de telemetría**: Permiten el monitoreo remoto y alertas en tiempo real para garantizar un funcionamiento constante.
+- **Diseño modular**: Facilita futuras ampliaciones o modificaciones según evolucionen sus necesidades.
+- **Eficiencia energética**: Incorpora variadores de frecuencia y sistemas de recuperación de energía donde es aplicable.
+
+¿Desea información adicional sobre alguna etapa específica del tratamiento o alguna tecnología en particular?
+"""
+
+        return explanation
+
+    def _generate_cost_explanation(self, conversation: Conversation) -> str:
+        """Genera una explicación detallada sobre costos y financiamiento"""
+
+        # Extraer información económica si existe
+        proposal = None
+        try:
+            proposal = questionnaire_service.generate_proposal(conversation)
+        except:
+            pass
+
+        economic = proposal.get("economic_analysis", {}) if proposal else {}
+        capex = economic.get("capex", 100000)
+        opex_monthly = economic.get("opex_monthly", 2000)
+        roi = economic.get("roi", 3)
+
+        explanation = f"""
+## Información Detallada sobre Costos e Inversión
+
+### Estructura de Costos
+
+La inversión en el sistema de tratamiento propuesto se divide en:
+
+1. **Inversión inicial (CAPEX)**: Aproximadamente USD ${capex:,.2f}
+   - Equipamiento: 60-65% del CAPEX
+   - Obra civil e instalación: 25-30% del CAPEX
+   - Ingeniería y puesta en marcha: 10-15% del CAPEX
+
+2. **Costos operativos mensuales (OPEX)**: Aproximadamente USD ${opex_monthly:,.2f}/mes
+   - Consumo energético: 30-35% del OPEX
+   - Químicos y consumibles: 20-25% del OPEX
+   - Mantenimiento preventivo: 15-20% del OPEX
+   - Personal operativo: 25-30% del OPEX
+
+### Retorno de la Inversión (ROI)
+
+Con base en la información proporcionada, estimamos un periodo de recuperación de inversión de aproximadamente {roi:.1f} años, considerando:
+
+- Ahorro en compra de agua fresca
+- Reducción en costos de descarga
+- Menor riesgo de multas ambientales
+- Posible valorización de subproductos
+
+### Opciones de Financiamiento
+
+Hydrous Management Group colabora con diversas instituciones financieras que ofrecen opciones específicas para proyectos de sostenibilidad:
+
+1. **Leasing de equipos**: Permite distribuir el costo a lo largo de 3-5 años
+2. **Financiamiento verde**: Tasas preferenciales para proyectos ambientales
+3. **Esquema BOT (Build-Operate-Transfer)**: Hydrous construye y opera el sistema inicialmente
+4. **Pagos por desempeño**: Estructuración de pagos basados en resultados y ahorros obtenidos
+
+¿Desea información más específica sobre alguna opción de financiamiento o un desglose más detallado de costos?
+"""
+
+        return explanation
+
+    def _generate_timeline_explanation(self, conversation: Conversation) -> str:
+        """Genera una explicación sobre los plazos de implementación"""
+
+        explanation = """
+## Plazos de Implementación del Proyecto
+
+El desarrollo e implementación de su sistema de tratamiento de agua se estructura en las siguientes fases:
+
+### Fase 1: Ingeniería de Detalle (4-6 semanas)
+- Caracterización detallada del agua residual
+- Dimensionamiento preciso de equipos
+- Diseño de planos constructivos
+- Desarrollo de P&ID (Diagramas de Tuberías e Instrumentación)
+
+### Fase 2: Adquisición y Fabricación (8-12 semanas)
+- Procura de equipos principales
+- Fabricación de componentes especializados
+- Control de calidad en fábrica
+- Preparación del sitio para instalación
+
+### Fase 3: Instalación y Montaje (4-6 semanas)
+- Obra civil (si es requerida)
+- Montaje de equipos
+- Interconexión de sistemas
+- Instalación eléctrica y automatización
+
+### Fase 4: Puesta en Marcha (3-4 semanas)
+- Pruebas hidráulicas
+- Arranque secuencial de procesos
+- Inoculación de sistemas biológicos
+- Ajuste de parámetros operativos
+
+### Fase 5: Capacitación y Entrega (2 semanas)
+- Entrenamiento del personal operativo
+- Entrega de manuales y documentación
+- Establecimiento de rutinas de mantenimiento
+- Validación de parámetros de calidad del agua
+
+**Tiempo total estimado: 21-30 semanas** (5-7 meses)
+
+Existe la posibilidad de implementar un enfoque modular o por etapas si se requiere una puesta en operación más rápida de ciertas partes del sistema.
+
+¿Le interesa alguna opción para acelerar la implementación o tiene requerimientos particulares de tiempos para alguna etapa específica?
+"""
+
+        return explanation
+
+    def _generate_customization_explanation(self, conversation: Conversation) -> str:
+        """Genera una explicación sobre opciones de personalización"""
+
+        state = conversation.questionnaire_state
+        sector = state.sector
+        subsector = state.subsector
+
+        explanation = f"""
+## Opciones de Personalización de la Solución
+
+La propuesta presentada puede adaptarse según sus necesidades específicas. Estas son las principales áreas donde podemos realizar ajustes:
+
+### Capacidad y Dimensionamiento
+- **Escalamiento modular**: Implementación por fases para distribuir la inversión
+- **Modificación de capacidad**: Ajuste del dimensionamiento según proyecciones de crecimiento
+- **Redundancia de sistemas**: Incorporación de equipos de respaldo en componentes críticos
+
+### Tecnologías Alternativas
+"""
+
+        # Opciones específicas según el sector/subsector
+        if subsector == "Textil":
+            explanation += """
+- **Tratamiento de color**: Alternativas como ozono, procesos electroquímicos o adsorción avanzada
+- **Manejo de salinidad**: Incorporación de tecnologías de membrana si la conductividad es un parámetro crítico
+- **Recuperación de calor**: Sistemas para aprovechar la energía térmica del agua residual
+"""
+        elif subsector == "Alimentos y Bebidas":
+            explanation += """
+- **Recuperación de subproductos**: Sistemas para extraer materiales valorizables presentes en el agua
+- **Maximización del biogás**: Tecnologías avanzadas para optimizar la generación energética
+- **Tratamiento de alta carga**: Opciones para manejar picos estacionales de producción
+"""
+        else:
+            explanation += """
+- **Tecnologías específicas**: Soluciones adaptadas a contaminantes particulares de su industria
+- **Sistemas compactos**: Alternativas para minimizar el espacio requerido
+- **Soluciones híbridas**: Combinación de diferentes tecnologías para optimizar resultados
+"""
+
+        explanation += """
+### Automatización y Control
+- **Nivel de automatización**: Desde sistemas básicos hasta completamente automatizados
+- **Integración con sistemas existentes**: Compatibilidad con plataformas SCADA o ERP actuales
+- **Monitoreo remoto**: Diferentes niveles de telemetría y control a distancia
+
+### Modelos de Servicio
+- **Mantenimiento**: Opciones desde capacitación a personal propio hasta contratos de servicio integral
+- **Modelos de operación**: Posibilidad de contrato BOT (Build-Operate-Transfer) o servicio por volumen tratado
+- **Garantías extendidas**: Ampliación de coberturas y plazos según sus necesidades
+
+¿Hay algún aspecto específico de la solución propuesta que le gustaría personalizar o alguna restricción particular que debamos considerar?
+"""
+
+        return explanation
+
 
 # Instancia global del servicio
 ai_service = AIWithQuestionnaireService()

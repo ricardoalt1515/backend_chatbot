@@ -712,90 +712,93 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
 
         # Obtener datos del cliente
         client_info = {
-            "name": info.get("name", "Cliente"),
-            "location": info.get("location", "No especificada"),
+            "name": info.get("nombre_empresa", "Cliente"),
+            "location": info.get("ubicacion", "No especificada"),
             "sector": info.get("sector", "Industrial"),
             "subsector": info.get("subsector", ""),
+            "contact_info": info.get("contacto", "No especificado"),
+            "sistema_existente": info.get("sistema_existente", "No especificado"),
         }
 
-        # Datos del proyecto
+        # Datos detallados del proyecto
         project_details = {
-            "water_consumption": info.get("water_consumption", "No especificado"),
+            "water_source": info.get("fuente_agua", "Municipal/Pozo"),
+            "water_consumption": info.get("cantidad_agua_consumida", "No especificado"),
             "wastewater_generation": info.get(
-                "wastewater_generation", "No especificado"
+                "cantidad_agua_residual", "No especificado"
             ),
-            "objectives": info.get("objectives", ["Mejorar eficiencia hídrica"]),
-            "reuse_objectives": info.get("reuse_objectives", ["Reutilización de agua"]),
+            "water_cost": info.get("costo_agua", "No especificado"),
+            "peak_flows": info.get("picos_agua_residual", "No especificado"),
+            "objectives": info.get(
+                "objetivo_principal", ["Mejorar eficiencia hídrica"]
+            ),
+            "reuse_objectives": info.get("objetivo_reuso", ["Reutilización de agua"]),
+            "discharge_location": info.get("descarga_actual", "Alcantarillado"),
+            "constraints": info.get("restricciones", []),
+            "timeline": info.get("tiempo_proyecto", "No especificado"),
+            "budget": info.get("presupuesto", "No especificado"),
         }
 
-        # Obtener parámetros de agua detectados
+        # Obtener parámetros de agua detectados (mejorar la extracción)
         parameters = info.get("parameters", {})
 
-        # Determinar la solución recomendada según sector/subsector y parámetros
+        # Integrar datos técnicos de documentos subidos
+        try:
+            from app.services.document_service import document_service
+
+            doc_insights = document_service.get_insights_for_conversation_sync(
+                conversation.id
+            )
+
+            if doc_insights:
+                for doc in doc_insights:
+                    insights = doc.get("insights", {})
+                    doc_params = insights.get("parameters", {})
+
+                    # Solo añadir parámetros que no existan ya
+                    for param, value in doc_params.items():
+                        if param not in parameters:
+                            parameters[param] = value
+
+                # Añadir una nota sobre los documentos utilizados
+                project_details["documents_used"] = [
+                    {
+                        "filename": doc.get("filename", ""),
+                        "type": doc.get("insights", {}).get("document_type", "unknown"),
+                    }
+                    for doc in doc_insights
+                ]
+        except Exception as e:
+            logger.warning(f"No se pudieron integrar datos de documentos: {e}")
+
+        # Generar solución tecnológica más personalizada según el sector/subsector y parámetros
         treatment_solution = self._determine_treatment_solution(
-            client_info["sector"], client_info["subsector"], parameters
+            client_info["sector"], client_info["subsector"], parameters, project_details
         )
 
-        # Generar análisis económico
+        # Generar análisis económico más preciso
         economic_analysis = self._generate_economic_analysis(
-            project_details["water_consumption"], treatment_solution
+            project_details["water_consumption"],
+            project_details["water_cost"],
+            treatment_solution,
         )
 
-        # Construcción de propuesta completa
+        # Añadir recomendaciones específicas según el caso
+        recommendations = self._generate_recommendations(
+            client_info["sector"], client_info["subsector"], project_details, parameters
+        )
+
+        # Construcción de propuesta completa mejorada
         proposal = {
             "client_info": client_info,
             "project_details": project_details,
             "water_parameters": parameters,
             "recommended_solution": treatment_solution,
             "economic_analysis": economic_analysis,
-            "timestamp": datetime.datetime.now().isoformat(),
+            "recommendations": recommendations,
+            "timestamp": datetime.now().isoformat(),
+            "proposal_id": f"HYD-{datetime.now().strftime('%Y%m%d')}-{conversation.id[:8].upper()}",
         }
-
-        # Agregar información de documentos si está disponible
-        try:
-            from app.services.document_service import document_service
-
-            document_insights = document_service.get_insights_for_conversation_sync(
-                conversation.id
-            )
-
-            if document_insights:
-                doc_section = {
-                    "provided": True,
-                    "count": len(document_insights),
-                    "types": list(
-                        set(
-                            d["insights"].get("document_type", "unknown")
-                            for d in document_insights
-                        )
-                    ),
-                    "relevant_info": [],
-                }
-
-                # Recopilar información relevante de documentos
-                for doc in document_insights:
-                    insights = doc.get("insights", {})
-                    doc_parameters = insights.get("parameters", {})
-
-                    # Añadir parámetros detectados en documentos
-                    parameters.update(doc_parameters)
-
-                    # Añadir información relevante
-                    if insights.get("relevance") in [
-                        "highly_relevant",
-                        "potentially_relevant",
-                    ]:
-                        doc_section["relevant_info"].append(
-                            {
-                                "filename": doc.get("filename", ""),
-                                "summary": insights.get("summary", ""),
-                                "key_points": insights.get("key_points", []),
-                            }
-                        )
-
-                proposal["documents"] = doc_section
-        except Exception as e:
-            logger.error(f"Error al obtener insights de documentos: {str(e)}")
 
         return proposal
 
@@ -1790,19 +1793,20 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
 
     def generate_proposal_pdf(self, proposal: Dict[str, Any]) -> str:
         """
-        Genera un PDF con la propuesta usando la plantilla oficial de Hydrous
+        Genera un PDF mejorado de la propuesta con diseño profesional
 
         Args:
             proposal: Datos de la propuesta
 
         Returns:
-            Ruta al archivo generado (PDF o HTML)
+            str: Ruta al archivo generado
         """
         try:
             # Extraer información básica para el nombre del archivo
             client_info = proposal.get("client_info", {})
             client_name = client_info.get("name", "Cliente").replace(" ", "_")
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            proposal_id = proposal.get("proposal_id", f"HYD-{timestamp}")
 
             # Crear contenido HTML con estilo profesional
             html_content = f"""
@@ -1936,15 +1940,30 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                         background-color: #eaf2f8;
                     }}
                     
-                    .download-button {{
-                        display: inline-block;
-                        background-color: #3498db;
-                        color: white;
-                        padding: 10px 20px;
-                        text-decoration: none;
+                    .proposal-id {{
+                        text-align: right;
+                        font-size: 14px;
+                        color: #7f8c8d;
+                        margin-top: 5px;
+                    }}
+                    
+                    .recommendations {{
+                        background-color: #eaf2f8;
                         border-radius: 5px;
+                        padding: 20px;
+                        margin: 30px 0;
+                    }}
+                    
+                    .recommendation-item {{
+                        margin-bottom: 15px;
+                        border-bottom: 1px solid #d6eaf8;
+                        padding-bottom: 15px;
+                    }}
+                    
+                    .recommendation-title {{
                         font-weight: bold;
-                        margin: 20px 0;
+                        color: #2874a6;
+                        margin-bottom: 5px;
                     }}
                 </style>
             </head>
@@ -1955,6 +1974,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     </div>
                     <h1>Propuesta de Tratamiento de Aguas Residuales</h1>
                     <p>Soluciones personalizadas para optimización y reutilización de agua</p>
+                    <div class="proposal-id">Propuesta #{proposal_id}</div>
                 </div>
                 
                 <div class="container">
@@ -2022,7 +2042,10 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
 
             # Añadir objetivos
             objectives = proposal.get("project_details", {}).get("objectives", [])
-            if not objectives or not isinstance(objectives, list):
+            if not isinstance(objectives, list):
+                objectives = [objectives]
+
+            if not objectives:
                 objectives = [
                     "Cumplimiento Regulatorio",
                     "Optimización de Costos",
@@ -2030,7 +2053,8 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     "Sostenibilidad",
                 ]
 
-            objectives_descriptions = {
+            # Mapeo de descripciones para objetivos
+            objective_descriptions = {
                 "Cumplimiento normativo": "Asegurar que el agua tratada cumpla con las regulaciones de descarga.",
                 "Cumplimiento Regulatorio": "Asegurar que el agua tratada cumpla con las regulaciones de descarga.",
                 "Reducción de la huella ambiental": "Mejorar el perfil ambiental mediante gestión eficiente del agua.",
@@ -2042,7 +2066,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
             }
 
             for obj in objectives:
-                description = objectives_descriptions.get(
+                description = objective_descriptions.get(
                     obj, "Optimizar la gestión del agua para beneficios operativos."
                 )
                 html_content += f"                    <p><span class='checkmark'>✓</span> <strong>{obj}</strong> — {description}</p>\n"
@@ -2067,8 +2091,10 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
             subsector = client_info.get("subsector", "")
             water_params = proposal.get("water_parameters", {})
 
+            sector_params = []
+
             if subsector == "Textil":
-                params = [
+                sector_params = [
                     (
                         "SST (mg/L)",
                         water_params.get("sst", "800"),
@@ -2096,7 +2122,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     ("pH", water_params.get("ph", "4"), "4.5 - 6.5", "6.5 - 7.5"),
                 ]
             elif subsector == "Alimentos y Bebidas":
-                params = [
+                sector_params = [
                     ("SST (mg/L)", water_params.get("sst", "600"), "400 - 800", "≤50"),
                     (
                         "TDS (mg/L)",
@@ -2125,7 +2151,8 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     ("pH", water_params.get("ph", "5.5"), "4.0 - 7.0", "6.5 - 7.5"),
                 ]
             else:
-                params = [
+                # Parámetros genéricos para otros sectores
+                sector_params = [
                     (
                         "SST (mg/L)",
                         water_params.get("sst", "Variable*"),
@@ -2159,7 +2186,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                 ]
 
             # Agregar filas a la tabla
-            for param, actual, industry, target in params:
+            for param, actual, industry, target in sector_params:
                 html_content += f"""
                         <tr>
                             <td><strong>{param}</strong></td>
@@ -2183,7 +2210,12 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                         </tr>
             """
 
-            # Generar etapas de tratamiento según subsector
+            # Obtener la solución recomendada
+            solution = proposal.get("recommended_solution", {})
+
+            # Generar etapas de tratamiento según el subsector
+            treatments = []
+
             if subsector == "Textil":
                 treatments = [
                     (
@@ -2241,6 +2273,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     ),
                 ]
             else:
+                # Tratamiento genérico para otros sectores
                 treatments = [
                     (
                         "<strong>Pretratamiento</strong>",
@@ -2269,6 +2302,62 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     ),
                 ]
 
+            # Sobrescribir con la solución recomendada si existe
+            if "pretreatment" in solution:
+                treatments[0] = (
+                    "<strong>Pretratamiento</strong>",
+                    f"<strong>{solution['pretreatment']}</strong>",
+                    treatments[0][2],
+                )
+
+            if "primary" in solution:
+                if len(treatments) > 1:
+                    treatments[1] = (
+                        "<strong>Tratamiento Primario</strong>",
+                        f"<strong>{solution['primary']}</strong>",
+                        treatments[1][2],
+                    )
+                else:
+                    treatments.append(
+                        (
+                            "<strong>Tratamiento Primario</strong>",
+                            f"<strong>{solution['primary']}</strong>",
+                            "Alternativa según requerimientos específicos",
+                        )
+                    )
+
+            if "secondary" in solution:
+                if len(treatments) > 2:
+                    treatments[2] = (
+                        "<strong>Tratamiento Secundario</strong>",
+                        f"<strong>{solution['secondary']}</strong>",
+                        treatments[2][2],
+                    )
+                else:
+                    treatments.append(
+                        (
+                            "<strong>Tratamiento Secundario</strong>",
+                            f"<strong>{solution['secondary']}</strong>",
+                            "Alternativa según requerimientos específicos",
+                        )
+                    )
+
+            if "tertiary" in solution:
+                if len(treatments) > 3:
+                    treatments[3] = (
+                        "<strong>Tratamiento Terciario</strong>",
+                        f"<strong>{solution['tertiary']}</strong>",
+                        treatments[3][2],
+                    )
+                else:
+                    treatments.append(
+                        (
+                            "<strong>Tratamiento Terciario</strong>",
+                            f"<strong>{solution['tertiary']}</strong>",
+                            "Alternativa según requerimientos específicos",
+                        )
+                    )
+
             # Agregar filas de tratamiento
             for stage, recommended, alternative in treatments:
                 html_content += f"""
@@ -2283,6 +2372,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
             water_consumption = proposal.get("project_details", {}).get(
                 "water_consumption", "100 m³/día"
             )
+
             if isinstance(water_consumption, str):
                 # Tratar de extraer un valor numérico del consumo de agua
                 import re
@@ -2311,6 +2401,8 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
             """
 
             # Añadir equipos según subsector
+            equipment = []
+
             if subsector == "Textil":
                 equipment = [
                     (
@@ -2390,6 +2482,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     ),
                 ]
             else:
+                # Equipos genéricos para otros sectores
                 equipment = [
                     (
                         f"<strong>Sistema de Pretratamiento</strong>",
@@ -2433,14 +2526,21 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                             <td>{brand}</td>
                         </tr>"""
 
-            # Calcular económicos
-            base_capex = flow_value * 1500  # $1500 USD por m³/día como referencia
-            complexity_factor = 1.2  # Factor moderado por defecto
-            total_capex = base_capex * complexity_factor
-            equipment_cost = total_capex * 0.6
-            installation_cost = total_capex * 0.25
-            engineering_cost = total_capex * 0.1
-            contingency_cost = total_capex * 0.05
+            # Datos económicos
+            economic = proposal.get("economic_analysis", {})
+            capex = economic.get("capex", flow_value * 1500)  # Cálculo por defecto
+            complexity_factor = (
+                1.2  # Factor moderado por defecto si no hay datos específicos
+            )
+
+            # Calcular si no existe
+            if "capex" not in economic:
+                capex = flow_value * 1500 * complexity_factor
+
+            equipment_cost = economic.get("equipment_cost", capex * 0.6)
+            installation_cost = economic.get("installation_cost", capex * 0.25)
+            engineering_cost = economic.get("engineering_cost", capex * 0.1)
+            contingency_cost = economic.get("contingency_cost", capex * 0.05)
 
             html_content += """
                     </table>
@@ -2483,26 +2583,27 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                         </tr>
                         <tr class="total-row">
                             <td><strong>CAPEX Total</strong></td>
-                            <td><strong>${total_capex:,.2f}</strong></td>
+                            <td><strong>${capex:,.2f}</strong></td>
                             <td><strong>Inversión total estimada</strong></td>
                         </tr>
             """
 
-            # Calcular OPEX
-            energy_cost = flow_value * 3  # $3 por m³/día
-            chemical_cost = flow_value * 2  # $2 por m³/día
-            labor_cost = 1500 if flow_value < 200 else 3000  # Personal requerido
-            maintenance_cost = (
-                total_capex * 0.01 / 12
-            )  # 1% del CAPEX anual, mensualizado
-            sludge_cost = flow_value * 1  # $1 por m³/día
+            # OPEX
+            energy_cost = economic.get("energy_cost", flow_value * 3)  # $3 por m³/día
+            chemical_cost = economic.get(
+                "chemical_cost", flow_value * 2
+            )  # $2 por m³/día
+            labor_cost = economic.get("labor_cost", 1500 if flow_value < 200 else 3000)
+            maintenance_cost = economic.get("maintenance_cost", capex * 0.01 / 12)
+            sludge_cost = economic.get("sludge_cost", flow_value * 1)
 
-            total_opex_monthly = (
+            total_opex_monthly = economic.get(
+                "opex_monthly",
                 energy_cost
                 + chemical_cost
                 + labor_cost
                 + maintenance_cost
-                + sludge_cost
+                + sludge_cost,
             )
 
             html_content += """
@@ -2552,10 +2653,14 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                         </tr>
             """
 
-            # Calcular ahorros y ROI
-            water_cost = 2.0  # Por defecto USD/m³
-            water_cost_text = client_info.get("costo_agua", "2.0 USD/m³")
+            # Sección 8: ROI
+            water_cost = economic.get("water_cost", 2.0)  # Por defecto USD/m³
+            water_cost_text = proposal.get("project_details", {}).get(
+                "water_cost", "2.0 USD/m³"
+            )
+
             if isinstance(water_cost_text, str):
+                # Intentar extraer valor numérico
                 import re
 
                 cost_match = re.search(r"(\d+(?:\.\d+)?)", water_cost_text)
@@ -2566,7 +2671,9 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                         pass
 
             discharge_cost = water_cost * 0.5  # Estimación de costo de descarga
-            water_savings_ratio = 0.6  # 60% reducción de consumo
+            water_savings_ratio = economic.get(
+                "reuse_efficiency", 0.6
+            )  # 60% por defecto
             discharge_savings_ratio = 0.4  # 40% reducción de descarga
 
             monthly_water_volume = flow_value * 30  # Volumen mensual en m³
@@ -2582,10 +2689,10 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
             total_annual_savings = annual_water_savings + annual_discharge_savings
 
             # Calcular ROI simple
-            roi_years = (
-                total_capex / total_annual_savings if total_annual_savings > 0 else 10
-            )
-            roi_years = max(1.0, min(10.0, roi_years))  # Limitar entre 1 y 10 años
+            roi_years = economic.get("roi", 0)
+            if not roi_years and total_annual_savings > 0:
+                roi_years = capex / total_annual_savings
+                roi_years = max(1.0, min(10.0, roi_years))
 
             html_content += """
                     </table>
@@ -2628,27 +2735,53 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     <div class="highlight">
                         <h2>Retorno de la Inversión</h2>
                         <p><strong>Periodo de recuperación simple:</strong> {roi_years:.1f} años</p>
-                        <p><strong>ROI a 5 años:</strong> {(total_annual_savings * 5 - total_capex) / total_capex * 100:.1f}%</p>
+                        <p><strong>ROI a 5 años:</strong> {(total_annual_savings * 5 - capex) / capex * 100 if capex > 0 else 0:.1f}%</p>
                         <p><strong>Ahorros acumulados a 10 años:</strong> ${total_annual_savings * 10:,.2f}</p>
                     </div>
-                    
-                    <h1>9. Anexo de Preguntas y Respuestas</h1>
-                    <h2>Preguntas Frecuentes</h2>
-                    
-                    <div class="section">
-                        <p><strong>P: ¿Cuánto espacio se requiere para la instalación?</strong><br>
-                        R: El sistema completo requiere aproximadamente {flow_value * 1.5:.0f}-{flow_value * 2:.0f} m² para una instalación típica de este tamaño, pero puede optimizarse según restricciones específicas del sitio.</p>
-                        
-                        <p><strong>P: ¿Cuál es el tiempo estimado de implementación?</strong><br>
-                        R: El proyecto completo, desde aprobación hasta puesta en marcha, tiene un cronograma típico de 4-6 meses.</p>
-                        
-                        <p><strong>P: ¿Qué mantenimiento requiere el sistema?</strong><br>
-                        R: El sistema requiere mantenimiento preventivo regular (diario, semanal y mensual) y revisiones mayores semestrales. Se proporcionará un manual detallado y capacitación al personal.</p>
-                        
-                        <p><strong>P: ¿Requiere personal especializado?</strong><br>
-                        R: Se recomienda contar con un operador capacitado. Hydrous ofrece programas de capacitación completos para su personal.</p>
+            """
+
+            # Sección 9: Recomendaciones
+            recommendations = proposal.get("recommendations", [])
+            if recommendations:
+                html_content += """
+                    <h1>9. Recomendaciones Especializadas</h1>
+                    <div class="recommendations">
+                """
+
+                for rec in recommendations:
+                    html_content += f"""
+                        <div class="recommendation-item">
+                            <div class="recommendation-title">{rec.get("title", "")}</div>
+                            <p>{rec.get("description", "")}</p>
+                        </div>
+                    """
+
+                html_content += """
                     </div>
-                    
+                """
+            else:
+                # Recomendaciones genéricas si no hay específicas
+                html_content += """
+                    <h1>9. Recomendaciones Generales</h1>
+                    <div class="recommendations">
+                        <div class="recommendation-item">
+                            <div class="recommendation-title">Prueba Piloto</div>
+                            <p>Recomendamos realizar una prueba piloto de 2-4 semanas para validar la eficiencia del sistema propuesto con sus condiciones específicas.</p>
+                        </div>
+                        <div class="recommendation-item">
+                            <div class="recommendation-title">Análisis Adicionales</div>
+                            <p>Para una propuesta más precisa, se recomienda un análisis detallado de laboratorio de sus aguas residuales, incluyendo parámetros específicos para su sector.</p>
+                        </div>
+                        <div class="recommendation-item">
+                            <div class="recommendation-title">Capacitación de Personal</div>
+                            <p>Implementar un programa de capacitación para el personal encargado de operar el sistema garantizará un funcionamiento óptimo y prolongará la vida útil de los equipos.</p>
+                        </div>
+                    </div>
+                """
+
+            # Sección final y pie de página
+            html_content += (
+                """
                     <div class="disclaimer">
                         <p>Esta propuesta se basa en la información proporcionada y estándares de la industria. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio y análisis específicos del agua residual. Hydrous Management Group recomienda realizar pruebas piloto para validar el diseño final.</p>
                     </div>
@@ -2660,12 +2793,15 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                 </div>
                 
                 <div class="footer">
-                    <p>Hydrous Management Group © {datetime.datetime.now().year}</p>
-                    <p>Generado el {datetime.datetime.now().strftime('%d/%m/%Y')}</p>
+                    <p>Hydrous Management Group © 2025</p>
+                    <p>Generado el """
+                + datetime.now().strftime("%d/%m/%Y")
+                + """</p>
                 </div>
             </body>
             </html>
             """
+            )
 
             # Asegurar que el directorio existe
             os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -2679,13 +2815,30 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
 
             logger.info(f"HTML de propuesta generado: {html_path}")
 
-            # Intentar generar PDF con pdfkit o weasyprint
+            # Intentar generar PDF con las bibliotecas disponibles
             pdf_path = os.path.join(
                 settings.UPLOAD_DIR, f"{client_name}_propuesta_{timestamp}.pdf"
             )
 
+            # Lista de generadores de PDF disponibles
+            pdf_generators = []
+
+            try:
+                import pdfkit
+
+                pdf_generators.append("pdfkit")
+            except ImportError:
+                logger.warning("pdfkit no está disponible para generar PDF")
+
+            try:
+                from weasyprint import HTML
+
+                pdf_generators.append("weasyprint")
+            except ImportError:
+                logger.warning("weasyprint no está disponible para generar PDF")
+
             # Primero intentar con pdfkit
-            if "pdfkit" in PDF_GENERATORS:
+            if "pdfkit" in pdf_generators:
                 try:
                     options = {
                         "page-size": "A4",
@@ -2726,7 +2879,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                     logger.warning(f"Error al generar PDF con pdfkit: {str(e)}")
 
             # Si pdfkit falla, intentar con weasyprint
-            if "weasyprint" in PDF_GENERATORS:
+            if "weasyprint" in pdf_generators:
                 try:
                     from weasyprint import HTML
 
@@ -2747,7 +2900,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
             # Crear un HTML de error como fallback
             error_html_path = os.path.join(
                 settings.UPLOAD_DIR,
-                f"error_propuesta_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                f"error_propuesta_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
             )
 
             error_html = f"""
@@ -2765,7 +2918,7 @@ Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente en
                 <h1>Ha ocurrido un error al generar la propuesta</h1>
                 <p>No se ha podido generar la propuesta debido a un error técnico. Por favor, intente nuevamente o contacte con soporte técnico.</p>
                 <div class="error-code">
-                    <p><strong>Código de error:</strong> {datetime.datetime.now().strftime('%Y%m%d%H%M%S')}</p>
+                    <p><strong>Código de error:</strong> {datetime.now().strftime('%Y%m%d%H%M%S')}</p>
                     <p><strong>Detalle:</strong> {str(e)}</p>
                 </div>
             </body>
