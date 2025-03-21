@@ -651,11 +651,6 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
                 sectors = self.get_sectors()
                 if 0 <= sector_index < len(sectors):
                     conversation.questionnaire_state.sector = sectors[sector_index]
-                    # Establecer especificamente la siguiente pregunta
-                    conversation.questionnaire_state.current_question_id = (
-                        "subsector_selection"
-                    )
-                    return
             else:
                 # Buscar coincidencia directa o parcial
                 sectors = self.get_sectors()
