@@ -810,21 +810,6 @@ Este documento incluye:
         if not current_question_id:
             return
 
-        # Si es seleccion de sector
-        if current_question_id == "sector_selection":
-            # Puede ser indice numerico o texto directo
-            if user_message.strip().isdigit():
-                sector_index = int(user_message.strip()) - 1
-                sectors = questionnaire_service.get_sectors()
-                if 0 <= sector_index < len(sectors):
-                    state.sector = sectors[sector_index]
-                    state.answers[current_question_id] = sectors[sector_index]
-
-                    # Asegurar que pasamos a la siguiente pregunta cambiando el current_question_id a None
-                    # o directamente establecer la siguiente pregunta
-                    state.current_question_id = "subsector_selection"
-                    return
-
         # Obtener la pregunta actual
         current_question = self._get_current_question(conversation)
 
@@ -843,6 +828,8 @@ Este documento incluye:
                 if 0 <= sector_index < len(sectors):
                     state.sector = sectors[sector_index]
                     state.answers[current_question_id] = sectors[sector_index]
+                    # Establecer explícitamente la siguiente pregunta
+                    state.current_question_id = "subsector_selection"
                     return
 
             # Si no es un índice válido, buscar coincidencia en el texto
@@ -851,6 +838,8 @@ Este documento incluye:
                 if sector.lower() in user_message.lower():
                     state.sector = sector
                     state.answers[current_question_id] = sector
+                    # Establecer explícitamente la siguiente pregunta
+                    state.current_question_id = "subsector_selection"
                     return
 
             # Si no se encontró coincidencia, registrar respuesta directa
