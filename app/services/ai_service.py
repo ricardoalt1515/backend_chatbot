@@ -1465,7 +1465,7 @@ La propuesta presentada puede adaptarse según sus necesidades específicas. Est
 
         return None
 
-    def _detect_user_type(self, conversation: Conversation) -> str:
+    def _detect_user_technical_level(self, conversation: Conversation) -> str:
         """
         Detecta si el usuario es profesiona, semi-profesional o no profesional
         basado en su lenguaje y conocimientos técnicos
