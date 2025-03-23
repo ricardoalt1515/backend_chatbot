@@ -494,70 +494,58 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
 
         return message
 
-    def generate_proposal_summary(
-        self, proposal: Dict[str, Any], conversation_id: str = None
-    ) -> str:
-        """Genera un resumen de la propuesta en formato markdown siguiendo la estructura especificada"""
-        client_info = proposal.get("client_info", {})
-        sector = client_info.get("sector", "")
-        subsector = client_info.get("subsector", "")
-        name = client_info.get("name", "Cliente")
-
-        summary = f"""
-    # PROPUESTA DE SOLUCIÓN DE TRATAMIENTO DE AGUAS RESIDUALES PARA {name.upper()}
-
-    ## 1. Introducción a Hydrous Management Group
-
-    Hydrous Management Group se especializa en **soluciones personalizadas de tratamiento de aguas residuales** para clientes {sector.lower()}es, con enfoque en el subsector {subsector}. Nuestra experiencia en gestión del agua ayuda a las empresas a lograr **cumplimiento normativo, reducción de costos y reutilización sostenible**.
-
-    ## 2. Antecedentes del Proyecto
-
-    **Cliente**: {name}  
-    **Sector**: {sector} - {subsector}  
-    **Ubicación**: {client_info.get('location', 'No especificada')}  
-    **Consumo actual de agua**: {proposal.get('water_consumption', 'No especificado')}  
-    **Generación de aguas residuales**: {proposal.get('wastewater_generation', 'No especificado')}
-
-    ## 3. Objetivo del Proyecto
-
-    {self._generate_objectives_section(proposal)}
-
-    ## 4. Supuestos Clave de Diseño
-
-    {self._generate_assumptions_section(proposal)}
-
-    ## 5. Diseño de Procesos y Alternativas de Tratamiento
-
-    {self._generate_treatment_process_section(proposal)}
-
-    ## 6. Equipo y Tamaño Sugeridos
-
-    {self._generate_equipment_section(proposal)}
-
-    ## 7. Estimación de CAPEX y OPEX
-
-    {self._generate_cost_section(proposal)}
-
-    ## 8. Análisis del Retorno de la Inversión (ROI)
-
-    {self._generate_roi_section(proposal)}
-
-    ## 9. Preguntas y Respuestas
-
-    Si tiene cualquier pregunta sobre esta propuesta, no dude en consultarnos.
-    """
-
-        # Agregar enlace de descarga si tenemos ID de conversación
-        if conversation_id:
-            summary += f"""
-        **Para obtener esta propuesta detallada en formato PDF, simplemente haga clic en el siguiente enlace:**
-
-        [📥 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation_id}/download-proposal-pdf)
-
-        *Esta propuesta es preliminar y se basa en la información proporcionada. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio.*
+    def generate_proposal(self, conversation: Conversation) -> Dict[str, Any]:
         """
+        Genera una propuesta adaptativa basada en la información disponible
+        Enfoque simplificado para extraer la información clave
+        """
+        # Extraer toda la información disponible
+        info = self._extract_conversation_info(conversation)
 
-        return summary
+        # Obtener datos del cliente
+        client_info = {
+            "name": info.get("nombre_empresa", "Cliente"),
+            "location": info.get("ubicacion", "No especificada"),
+            "sector": info.get("sector", "Industrial"),
+            "subsector": info.get("subsector", ""),
+            "contact_info": info.get("contacto", "No especificado"),
+            "sistema_existente": info.get("sistema_existente", "No especificado"),
+        }
+
+        # Datos detallados del proyecto
+        project_details = {
+            "water_source": info.get("fuente_agua", "Municipal/Pozo"),
+            "water_consumption": info.get("cantidad_agua_consumida", "No especificado"),
+            "wastewater_generation": info.get(
+                "cantidad_agua_residual", "No especificado"
+            ),
+            "water_cost": info.get("costo_agua", "No especificado"),
+            "peak_flows": info.get("picos_agua_residual", "No especificado"),
+            "objectives": info.get(
+                "objetivo_principal", ["Mejorar eficiencia hídrica"]
+            ),
+            "reuse_objectives": info.get("objetivo_reuso", ["Reutilización de agua"]),
+            "discharge_location": info.get("descarga_actual", "Alcantarillado"),
+            "constraints": info.get("restricciones", []),
+            "timeline": info.get("tiempo_proyecto", "No especificado"),
+            "budget": info.get("presupuesto", "No especificado"),
+        }
+
+        # En lugar de generar manualmente toda la propuesta, usamos el modelo para generarla
+        proposal_summary = self._generate_proposal_with_llm(
+            conversation, client_info, project_details
+        )
+
+        # Construcción simple de propuesta con lo básico para generar PDF
+        proposal = {
+            "client_info": client_info,
+            "project_details": project_details,
+            "proposal_summary": proposal_summary,
+            "timestamp": datetime.now().isoformat(),
+            "proposal_id": f"HYD-{datetime.now().strftime('%Y%m%d')}-{conversation.id[:8].upper()}",
+        }
+
+        return proposal
 
     def get_introduction(self) -> Tuple[str, str]:
         """

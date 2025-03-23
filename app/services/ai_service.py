@@ -366,80 +366,55 @@ De lo contrario, continuaremos con las siguientes preguntas para completar su pe
         return summary
 
     def _update_questionnaire_state(
-        self, conversation: Conversation, user_message: str
+        self, conversation: Conversation, user_message: str, response: str
     ) -> None:
         """
-        Actualiza el estado del cuestionario basado en la respuesta del usuario
-
-        Args:
-            conversation: Conversación actual
-            user_message: Mensaje del usuario
+        Actualiza el estado del cuestionario basado en la respuesta del usuario y la respuesta generada.
+        Método simplificado que detecta avances en el cuestionario.
         """
         state = conversation.questionnaire_state
 
-        # Si hay una pregunta actual, procesar la respuesta
-        if state.current_question_id:
-            # Si es selección de sector
-            if state.current_question_id == "sector_selection":
-                sector = self._extract_sector(user_message)
-                if sector:
+        # Iniciar cuestionario si no está activo
+        if not state.active and not state.completed:
+            state.active = True
+
+        # Detectar sector/subsector en la respuesta generada o mensaje del usuario
+        if not state.sector:
+            sectors = ["Industrial", "Comercial", "Municipal", "Residencial"]
+            for sector in sectors:
+                if (
+                    sector.lower() in user_message.lower()
+                    or sector.lower() in response.lower()
+                ):
                     state.sector = sector
-                    state.answers[state.current_question_id] = sector
-                    # Incrementar el contador si se añade atributo questions_answered a QuestionnaireState
-                    if hasattr(state, "questions_answered"):
-                        state.questions_answered += 1
+                    state.answers["sector_selection"] = sector
+                    break
 
-            # Si es selección de subsector
-            elif state.current_question_id == "subsector_selection":
-                subsector = self._extract_subsector(user_message, state.sector)
-                if subsector:
+        if state.sector and not state.subsector:
+            subsectors = self.questionnaire_service.get_subsectors(state.sector)
+            for subsector in subsectors:
+                if (
+                    subsector.lower() in user_message.lower()
+                    or subsector.lower() in response.lower()
+                ):
                     state.subsector = subsector
-                    state.answers[state.current_question_id] = subsector
-                    # Incrementar el contador si se añade atributo questions_answered a QuestionnaireState
-                    if hasattr(state, "questions_answered"):
-                        state.questions_answered += 1
+                    state.answers["subsector_selection"] = subsector
+                    break
 
-            # Si es una pregunta de confirmación de resumen
-            elif state.current_question_id == "confirm_summary":
-                # Verificar si el usuario confirma o quiere corregir algo
-                if self._is_affirmative_response(user_message):
-                    # El usuario confirma, continuamos con el cuestionario
-                    state.current_question_id = (
-                        state.previous_question_id
-                    )  # Para obtener la siguiente pregunta
-                else:
-                    # El usuario quiere corregir algo, ofreceremos opciones
-                    return  # La lógica para correcciones se manejará en otro método
+        # Detectar finalización del cuestionario (si la respuesta contiene una propuesta)
+        proposal_indicators = [
+            "Propuesta Preliminar",
+            "Diagnóstico Inicial",
+            "Tren de Tratamiento",
+            "Costos Estimados",
+            "CAPEX",
+            "OPEX",
+            "Beneficios Potenciales",
+        ]
 
-            # Para preguntas de opción múltiple
-            elif self._is_multiple_choice_question(
-                state.current_question_id, state.sector, state.subsector
-            ):
-                # Convertir respuesta numérica a texto de opción
-                answer = self._extract_option_from_multiple_choice(
-                    state.current_question_id,
-                    user_message,
-                    state.sector,
-                    state.subsector,
-                )
-                if answer:
-                    state.answers[state.current_question_id] = answer
-                    # Incrementar el contador si se añade atributo questions_answered a QuestionnaireState
-                    if hasattr(state, "questions_answered"):
-                        state.questions_answered += 1
-                else:
-                    # Si no se pudo extraer una opción, guardar la respuesta literal
-                    state.answers[state.current_question_id] = user_message
-                    # Incrementar el contador si se añade atributo questions_answered a QuestionnaireState
-                    if hasattr(state, "questions_answered"):
-                        state.questions_answered += 1
-
-            # Para cualquier otra pregunta, guardar la respuesta directamente
-            else:
-                state.answers[state.current_question_id] = user_message
-                # Incrementar el contador si se añade atributo questions_answered a QuestionnaireState
-                if hasattr(state, "questions_answered"):
-                    state.questions_answered += 1
+        if sum(1 for indicator in proposal_indicators if indicator in response) >= 3:
+            state.completed = True
+            state.active = False
 
     def _is_multiple_choice_question(
         self, question_id: str, sector: str, subsector: str
@@ -925,95 +900,14 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Maneja el flujo de conversación siguiendo el cuestionario estructurado
-
-        Args:
-            conversation: Conversación actual
-            user_message: Mensaje del usuario
-
-        Returns:
-            str: Respuesta formateada del chatbot
+        Método simplificado que aprovecha las capacidades inherentes del modelo
+        en lugar de intentar replicarlas con lógica compleja.
         """
-        # Si el cuestionario está activo, procesarlo siguiendo la estructura requerida
-        if conversation.is_questionnaire_active():
-            # Actualizar el estado basado en la respuesta del usuario
-            self._update_questionnaire_state(conversation, user_message)
-
-            # Verificar si debemos mostrar un resumen intermedio
-            if (
-                hasattr(conversation.questionnaire_state, "questions_answered")
-                and hasattr(conversation.questionnaire_state, "last_summary_at")
-                and conversation.questionnaire_state.questions_answered > 0
-                and conversation.questionnaire_state.questions_answered % 5 == 0
-                and conversation.questionnaire_state.last_summary_at
-                != conversation.questionnaire_state.questions_answered
+        try:
+            # Si el cuestionario está completado y el usuario pide el PDF
+            if conversation.is_questionnaire_completed() and self._is_pdf_request(
+                user_message
             ):
-                # Mostrar resumen cada 5 preguntas
-                conversation.questionnaire_state.last_summary_at = (
-                    conversation.questionnaire_state.questions_answered
-                )
-                return self._generate_interim_summary(conversation)
-
-            # Obtener la siguiente pregunta
-            next_question = self._get_next_question(conversation)
-
-            # Si no hay más preguntas, generar propuesta final
-            if not next_question:
-                conversation.complete_questionnaire()
-                proposal = questionnaire_service.generate_proposal(conversation)
-                return questionnaire_service.format_proposal_summary(
-                    proposal, conversation.id
-                )
-
-            # Generar respuesta estructurada para la siguiente pregunta
-            interesting_fact = questionnaire_service.get_random_fact(
-                conversation.questionnaire_state.sector,
-                conversation.questionnaire_state.subsector,
-            )
-
-            previous_comment = self._generate_previous_answer_comment(
-                conversation, user_message
-            )
-            question_context = next_question.get("explanation", "")
-            question_text = next_question.get("text", "")
-
-            options = None
-            if (
-                next_question.get("type") in ["multiple_choice", "multiple_select"]
-                and "options" in next_question
-            ):
-                options = next_question["options"]
-
-            # Verificar si debemos sugerir subir un documento
-            document_suggestion = self.should_suggest_document(
-                next_question.get("id", "")
-            )
-
-            # Formatear respuesta siguiendo exactamente la estructura requerida
-            response = self.format_response_with_questions(
-                previous_comment,
-                interesting_fact,
-                question_context,
-                question_text,
-                options,
-                document_suggestion,
-            )
-
-            # Actualizar la pregunta actual para la siguiente interacción
-            if hasattr(conversation.questionnaire_state, "previous_question_id"):
-                conversation.questionnaire_state.previous_question_id = (
-                    conversation.questionnaire_state.current_question_id
-                )
-            conversation.questionnaire_state.current_question_id = next_question.get(
-                "id"
-            )
-
-            return response
-
-        # Si el cuestionario está completado, manejar consultas post-propuesta
-        elif conversation.is_questionnaire_completed():
-            # Detectar si es una solicitud de PDF
-            if self._is_pdf_request(user_message):
                 download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
                 return f"""
 # 📄 Propuesta Lista para Descargar
@@ -1031,13 +925,65 @@ Este documento incluye:
 ¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
 """
 
-            # Responder a preguntas sobre la propuesta
-            return self._handle_post_proposal_questions(conversation, user_message)
+            # Construir mensajes para la API
+            messages = [
+                {"role": "system", "content": settings.MASTER_PROMPT},
+            ]
 
-        # Esto no debería ocurrir con el flujo modificado, pero por si acaso
-        # Reiniciar el cuestionario
-        conversation.start_questionnaire()
-        return self.get_initial_greeting()
+            # Añadir información de contexto actual como parte del sistema
+            if (
+                conversation.questionnaire_state.sector
+                or conversation.questionnaire_state.subsector
+            ):
+                context_info = "Información de contexto:\n"
+                if conversation.questionnaire_state.sector:
+                    context_info += f"- Sector identificado: {conversation.questionnaire_state.sector}\n"
+                if conversation.questionnaire_state.subsector:
+                    context_info += (
+                        f"- Subsector: {conversation.questionnaire_state.subsector}\n"
+                    )
+
+                # Añadir información de respuestas clave si existen
+                answers = conversation.questionnaire_state.answers
+                key_answers = []
+
+                if "nombre_empresa" in answers:
+                    key_answers.append(
+                        f"- Nombre empresa/usuario: {answers['nombre_empresa']}"
+                    )
+                if "ubicacion" in answers:
+                    key_answers.append(f"- Ubicación: {answers['ubicacion']}")
+                if "costo_agua" in answers:
+                    key_answers.append(f"- Costo agua: {answers['costo_agua']}")
+                if "cantidad_agua_consumida" in answers:
+                    key_answers.append(
+                        f"- Consumo agua: {answers['cantidad_agua_consumida']}"
+                    )
+
+                if key_answers:
+                    context_info += "\nDatos proporcionados:\n" + "\n".join(key_answers)
+
+                messages.append({"role": "system", "content": context_info})
+
+            # Añadir todo el historial de conversación relevante
+            for msg in conversation.messages:
+                if msg.role in [
+                    "user",
+                    "assistant",
+                ]:  # Solo incluir mensajes de usuario y asistente
+                    messages.append({"role": msg.role, "content": msg.content})
+
+            # Dejar que el modelo genere la respuesta completa
+            response = await self.generate_response(messages)
+
+            # Actualizar el estado del cuestionario basado en la respuesta generada
+            self._update_questionnaire_state(conversation, user_message, response)
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error en handle_conversation: {str(e)}")
+            return "Lo siento, ha ocurrido un error al procesar su consulta. Por favor, inténtelo de nuevo."
 
     async def generate_response(
         self,

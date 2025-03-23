@@ -81,28 +81,30 @@ async def start_conversation(
 ):
     """Inicia una nueva conversación"""
     try:
-        # Crear nueva conversación - asegurarnos de que metadata existe y es un dict
+        # Crear nueva conversación
         metadata = data.metadata if hasattr(data, "metadata") else {}
         conversation = await storage_service.create_conversation(metadata)
 
-        # Registar inicio de conversacion en analiticas
-        chatbot_analytics.log_conversation_start()
-
-        # Añadir mensaje inicial del bot (bienvenida)
+        # Añadir mensaje inicial del bot con el estilo mejorado
         welcome_message = Message.assistant(
-            "¡Hola! Soy el asistente virtual de Hydrous especializado en soluciones de reciclaje de agua. "
-            "¿En qué puedo ayudarte hoy? Puedes preguntarme sobre nuestros sistemas de filtración, "
-            "tratamiento de aguas residuales, reutilización de agua y más. También puedo ayudarte "
-            "a diseñar una solución personalizada para tu negocio completando un sencillo cuestionario."
+            """
+# 👋 ¡Bienvenido a Hydrous AI!
+
+Soy el diseñador de soluciones de agua de Hydrous AI, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarlo paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
+
+Para desarrollar la mejor solución para sus instalaciones, haré sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarlo a optimizar la gestión del agua, reducir costos y explorar nuevas fuentes de ingresos con soluciones respaldadas por Hydrous.
+
+*Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
+
+**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
+"""
         )
         conversation.add_message(welcome_message)
 
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
-            messages=[
-                welcome_message
-            ],  # Solo devolvemos mensajes visibles, no el prompt del sistema
+            messages=[welcome_message],
         )
     except Exception as e:
         logger.error(f"Error al iniciar conversación: {str(e)}")
@@ -173,7 +175,7 @@ Este documento incluye:
                 data.conversation_id, assistant_message
             )
 
-            # Generar el PDF en segundo plano para tenerlo listo cuando se solicite
+            # Generar el PDF en segundo plano
             background_tasks.add_task(
                 questionnaire_service.generate_proposal_pdf, proposal
             )
@@ -185,398 +187,7 @@ Este documento incluye:
                 created_at=assistant_message.created_at,
             )
 
-        # Verificar si es el inicio de la conversación o se detecta intención de cuestionario
-        if (
-            not conversation.is_questionnaire_active()
-            and not conversation.is_questionnaire_completed()
-        ):
-
-            # Detectar si el usuario quiere iniciar el cuestionario o es el primer mensaje
-            should_start = ai_service._detect_questionnaire_intent(data.message)
-            is_initial_message = (
-                len([m for m in conversation.messages if m.role == "user"]) <= 1
-            )
-
-            if should_start or is_initial_message:
-                # Iniciar cuestionario
-                conversation.start_questionnaire()
-
-                # Mostrar saludo inicial según estructura específica
-                initial_greeting = """
-Soy el diseñador de soluciones de agua de Hydrous AI, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarlo paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
-
-Para desarrollar la mejor solución para sus instalaciones, haré sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarlo a optimizar la gestión del agua, reducir costos y explorar nuevas fuentes de ingresos con soluciones respaldadas por Hydrous.
-
-*Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
-
-El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, sino que puede representar un ahorro significativo en costos operativos a mediano y largo plazo.
-
-**PREGUNTA: ¿En qué sector opera su empresa?**
-1. Industrial
-2. Comercial
-3. Municipal
-4. Residencial
-"""
-
-                # Añadir mensaje del asistente
-                assistant_message = Message.assistant(initial_greeting)
-                await storage_service.add_message_to_conversation(
-                    data.conversation_id, assistant_message
-                )
-
-                # Configurar estado del cuestionario para sector
-                conversation.questionnaire_state.current_question_id = (
-                    "sector_selection"
-                )
-
-                return MessageResponse(
-                    id=assistant_message.id,
-                    conversation_id=data.conversation_id,
-                    message=initial_greeting,
-                    created_at=assistant_message.created_at,
-                )
-
-        # Si el cuestionario está activo, procesamos según el flujo estructurado
-        if conversation.is_questionnaire_active():
-            # CASO 1: Procesar respuesta al sector si es la pregunta actual
-            if (
-                conversation.questionnaire_state.current_question_id
-                == "sector_selection"
-            ):
-                # Intentar extraer sector de la respuesta
-                sector = None
-                message_lower = data.message.lower().strip()
-
-                # Verificar si es respuesta numérica (1-4)
-                if message_lower in ["1", "2", "3", "4"]:
-                    sectors = ["Industrial", "Comercial", "Municipal", "Residencial"]
-                    sector = sectors[int(message_lower) - 1]
-                # O buscar mención textual del sector
-                else:
-                    for possible_sector in [
-                        "industrial",
-                        "comercial",
-                        "municipal",
-                        "residencial",
-                    ]:
-                        if possible_sector in message_lower:
-                            sector = possible_sector.capitalize()
-                            break
-
-                if sector:
-                    # Actualizar estado con sector seleccionado
-                    conversation.questionnaire_state.sector = sector
-                    conversation.questionnaire_state.answers["sector_selection"] = (
-                        sector
-                    )
-
-                    # Preparar pregunta de subsector
-                    subsector_options = questionnaire_service.get_subsectors(sector)
-                    interesting_fact = questionnaire_service.get_random_fact(
-                        sector
-                    ) or (
-                        "Las soluciones de reciclaje pueden reducir costos operativos significativamente."
-                    )
-
-                    subsector_response = f"""
-Gracias por indicar su sector. Esta información es fundamental para adaptar nuestra solución a sus necesidades específicas.
-
-*{interesting_fact}*
-
-Cada subsector tiene características y necesidades específicas para el tratamiento de agua.
-
-**PREGUNTA: ¿Cuál es el subsector específico dentro de {sector}?**
-{chr(10).join([f"{i+1}. {option}" for i, option in enumerate(subsector_options)])}
-"""
-                    # Actualizar la pregunta actual
-                    conversation.questionnaire_state.current_question_id = (
-                        "subsector_selection"
-                    )
-
-                    # Crear y añadir mensaje del asistente
-                    assistant_message = Message.assistant(subsector_response)
-                    await storage_service.add_message_to_conversation(
-                        data.conversation_id, assistant_message
-                    )
-
-                    return MessageResponse(
-                        id=assistant_message.id,
-                        conversation_id=data.conversation_id,
-                        message=subsector_response,
-                        created_at=assistant_message.created_at,
-                    )
-
-            # CASO 2: Procesar respuesta al subsector si es la pregunta actual
-            elif (
-                conversation.questionnaire_state.current_question_id
-                == "subsector_selection"
-            ):
-                # Extraer subsector de la respuesta
-                subsector = None
-                message_lower = data.message.lower().strip()
-                sector = conversation.questionnaire_state.sector
-                subsector_options = questionnaire_service.get_subsectors(sector)
-
-                # Verificar si es respuesta numérica
-                if message_lower.isdigit():
-                    index = int(message_lower) - 1
-                    if 0 <= index < len(subsector_options):
-                        subsector = subsector_options[index]
-                # O buscar mención textual del subsector
-                else:
-                    for option in subsector_options:
-                        if option.lower() in message_lower:
-                            subsector = option
-                            break
-
-                if subsector:
-                    # Actualizar estado con subsector seleccionado
-                    conversation.questionnaire_state.subsector = subsector
-                    conversation.questionnaire_state.answers["subsector_selection"] = (
-                        subsector
-                    )
-
-                    # Obtener la primera pregunta del cuestionario específico
-                    next_question = questionnaire_service.get_next_question(
-                        conversation.questionnaire_state
-                    )
-
-                    if next_question:
-                        # Preparar respuesta con estructura correcta
-                        interesting_fact = questionnaire_service.get_random_fact(
-                            sector, subsector
-                        )
-                        previous_comment = f"Excelente. El subsector {subsector} dentro del sector {sector} presenta desafíos y oportunidades particulares en el tratamiento de agua."
-
-                        question_response = f"""
-{previous_comment}
-
-*{interesting_fact}*
-
-{next_question.get('explanation', 'Esta información nos ayudará a personalizar nuestra solución.')}
-
-**PREGUNTA: {next_question.get('text', '')}**
-"""
-                        # Añadir opciones numeradas si es una pregunta de selección múltiple
-                        if (
-                            next_question.get("type")
-                            in ["multiple_choice", "multiple_select"]
-                            and "options" in next_question
-                        ):
-                            for i, option in enumerate(next_question["options"], 1):
-                                question_response += f"{i}. {option}\n"
-
-                        # Actualizar la pregunta actual
-                        conversation.questionnaire_state.current_question_id = (
-                            next_question.get("id", "")
-                        )
-
-                        # Verificar si debemos sugerir subir documentos para esta pregunta
-                        if ai_service.should_suggest_document(
-                            next_question.get("id", "")
-                        ):
-                            document_suggestion = (
-                                questionnaire_service.suggest_document_upload(
-                                    next_question.get("id", "")
-                                )
-                            )
-                            question_response += f"\n\n{document_suggestion}"
-
-                        # Crear y añadir mensaje del asistente
-                        assistant_message = Message.assistant(question_response)
-                        await storage_service.add_message_to_conversation(
-                            data.conversation_id, assistant_message
-                        )
-
-                        return MessageResponse(
-                            id=assistant_message.id,
-                            conversation_id=data.conversation_id,
-                            message=question_response,
-                            created_at=assistant_message.created_at,
-                        )
-
-            # CASO 3: Procesamiento de preguntas del cuestionario específico
-            elif conversation.questionnaire_state.current_question_id:
-                # Guardar respuesta a pregunta actual
-                current_question_id = (
-                    conversation.questionnaire_state.current_question_id
-                )
-                conversation.questionnaire_state.answers[current_question_id] = (
-                    data.message
-                )
-
-                # Incrementar contador de preguntas respondidas
-                if hasattr(conversation.questionnaire_state, "questions_answered"):
-                    conversation.questionnaire_state.questions_answered += 1
-
-                # Verificar si es momento de mostrar un resumen intermedio
-                show_summary = False
-                questions_answered = len(conversation.questionnaire_state.answers)
-                if questions_answered > 0 and questions_answered % 5 == 0:
-                    # Verificar que no hayamos mostrado resumen para esta cantidad de respuestas
-                    if (
-                        not hasattr(conversation.questionnaire_state, "last_summary_at")
-                        or conversation.questionnaire_state.last_summary_at
-                        != questions_answered
-                    ):
-                        show_summary = True
-                        # Actualizar cuando mostramos el último resumen
-                        if not hasattr(
-                            conversation.questionnaire_state, "last_summary_at"
-                        ):
-                            conversation.questionnaire_state.last_summary_at = 0
-                        conversation.questionnaire_state.last_summary_at = (
-                            questions_answered
-                        )
-
-                if show_summary:
-                    # Generar resumen intermedio
-                    summary = questionnaire_service.generate_interim_summary(
-                        conversation
-                    )
-
-                    # Crear y añadir mensaje del asistente con el resumen
-                    assistant_message = Message.assistant(summary)
-                    await storage_service.add_message_to_conversation(
-                        data.conversation_id, assistant_message
-                    )
-
-                    return MessageResponse(
-                        id=assistant_message.id,
-                        conversation_id=data.conversation_id,
-                        message=summary,
-                        created_at=assistant_message.created_at,
-                    )
-
-                # Obtener la siguiente pregunta
-                next_question = questionnaire_service.get_next_question(
-                    conversation.questionnaire_state
-                )
-
-                # Si no hay más preguntas, completar cuestionario
-                if not next_question:
-                    # Marcar cuestionario como completado
-                    conversation.complete_questionnaire()
-
-                    # Generar diagnóstico preliminar
-                    diagnosis = questionnaire_service.generate_preliminary_diagnosis(
-                        conversation
-                    )
-
-                    # Crear y añadir mensaje del asistente con el diagnóstico
-                    assistant_message = Message.assistant(diagnosis)
-                    await storage_service.add_message_to_conversation(
-                        data.conversation_id, assistant_message
-                    )
-
-                    return MessageResponse(
-                        id=assistant_message.id,
-                        conversation_id=data.conversation_id,
-                        message=diagnosis,
-                        created_at=assistant_message.created_at,
-                    )
-
-                # Preparar siguiente pregunta con estructura correcta
-                previous_comment = ai_service._generate_previous_answer_comment(
-                    conversation, data.message
-                )
-                interesting_fact = questionnaire_service.get_random_fact(
-                    conversation.questionnaire_state.sector,
-                    conversation.questionnaire_state.subsector,
-                )
-
-                question_response = f"""
-{previous_comment}
-
-*{interesting_fact}*
-
-{next_question.get('explanation', 'Esta información nos ayudará a personalizar nuestra solución.')}
-
-**PREGUNTA: {next_question.get('text', '')}**
-"""
-                # Añadir opciones numeradas si es pregunta de selección múltiple
-                if (
-                    next_question.get("type") in ["multiple_choice", "multiple_select"]
-                    and "options" in next_question
-                ):
-                    for i, option in enumerate(next_question["options"], 1):
-                        question_response += f"{i}. {option}\n"
-
-                # Actualizar la pregunta actual
-                conversation.questionnaire_state.current_question_id = (
-                    next_question.get("id", "")
-                )
-
-                # Verificar si debemos sugerir subir documentos para esta pregunta
-                if ai_service.should_suggest_document(next_question.get("id", "")):
-                    document_suggestion = questionnaire_service.suggest_document_upload(
-                        next_question.get("id", "")
-                    )
-                    question_response += f"\n\n{document_suggestion}"
-
-                # Crear y añadir mensaje del asistente
-                assistant_message = Message.assistant(question_response)
-                await storage_service.add_message_to_conversation(
-                    data.conversation_id, assistant_message
-                )
-
-                return MessageResponse(
-                    id=assistant_message.id,
-                    conversation_id=data.conversation_id,
-                    message=question_response,
-                    created_at=assistant_message.created_at,
-                )
-
-        # Si el cuestionario ya está completo y el usuario no está solicitando el PDF,
-        # responder a preguntas sobre la propuesta
-        if conversation.is_questionnaire_completed():
-            # Usar el servicio de IA para generar una respuesta contextual
-            ai_response = await ai_service.handle_conversation(
-                conversation, data.message
-            )
-
-            # Verificar si la respuesta contiene una solicitud implícita de PDF
-            if _is_pdf_request(ai_response):
-                # Generar enlace para descargar PDF y mensaje informativo
-                download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
-                ai_response = f"""
-# 📄 Propuesta Lista para Descargar
-
-He preparado su propuesta personalizada basada en la información proporcionada. Puede descargarla como PDF usando el siguiente enlace:
-
-## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
-
-Este documento incluye:
-- Análisis de sus necesidades específicas
-- Solución tecnológica recomendada
-- Estimación de costos y retorno de inversión
-- Pasos siguientes recomendados
-
-¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
-"""
-                # Generar el PDF en segundo plano
-                proposal = questionnaire_service.generate_proposal(conversation)
-                background_tasks.add_task(
-                    questionnaire_service.generate_proposal_pdf, proposal
-                )
-
-            # Crear y añadir mensaje del asistente
-            assistant_message = Message.assistant(ai_response)
-            await storage_service.add_message_to_conversation(
-                data.conversation_id, assistant_message
-            )
-
-            # Programar limpieza de conversaciones antiguas
-            background_tasks.add_task(storage_service.cleanup_old_conversations)
-
-            return MessageResponse(
-                id=assistant_message.id,
-                conversation_id=data.conversation_id,
-                message=ai_response,
-                created_at=assistant_message.created_at,
-            )
-
-        # Si llegamos aquí, usamos el servicio de IA para manejar la conversación
+        # Usar el enfoque simplificado para generar la respuesta
         ai_response = await ai_service.handle_conversation(conversation, data.message)
 
         # Crear y añadir mensaje del asistente
