@@ -48,6 +48,11 @@ class AIService:
     """Servicio para interactuar con modelos de IA"""
 
     def __init__(self):
+        super().__init__()
+        # Inicializar el atributo questionnaire_service
+        from app.services.questionnaire_service import questionnaire_service
+
+        self.questionnaire_service = questionnaire_service
         self.provider = settings.AI_PROVIDER
 
         # En caso de que las bibliotecas groq y openai no estén instaladas,
@@ -391,7 +396,8 @@ De lo contrario, continuaremos con las siguientes preguntas para completar su pe
                     break
 
         if state.sector and not state.subsector:
-            subsectors = self.questionnaire_service.get_subsectors(state.sector)
+            # Aquí está el cambio, usar el servicio importado directamente:
+            subsectors = questionnaire_service.get_subsectors(state.sector)
             for subsector in subsectors:
                 if (
                     subsector.lower() in user_message.lower()
