@@ -163,7 +163,7 @@ class QuestionnaireService:
 
         return random.choice(facts) if facts else None
 
-    def enerate_preliminary_diagnosis(self, conversation: Conversation) -> str:
+    def generate_preliminary_diagnosis(self, conversation: Conversation) -> str:
         """Genera un diagnóstico preliminar basado en las respuestas del cuestionario"""
         state = conversation.questionnaire_state
         answers = state.answers
@@ -633,15 +633,21 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
         self, conversation: Conversation, question_id: str, answer: Any
     ) -> None:
         """
-        Procesa una respuesta y actualiza el estado del cuestionario
+        Procesa la respuesta a una pregunta y determina si es necesario insistir.
+        Devuelve un mensaje de insistencia o None si la respuesta es aceptable.
 
-        Args:
-            conversation: Conversación actual
-            question_id: ID de la pregunta respondida
-            answer: Respuesta proporcionada
         """
-        # Guardar la respuesta
-        conversation.questionnaire_state.answers[question_id] = answer
+        # Validar respuesta para preguntas criticas
+        insistence_message = self._validate_critical_answer(question_id, answer)
+        if insistence_message:
+            return insistence_message
+
+        # Si la respuesta es aceptable, procesar normalmente
+        conversation.questionnaire_state.answer[question_id] = answer
+
+        # Actualizar conteo de preguntas respondidas si existe el atributo
+        if hasattr(conversation.questionnaire_state, "questions_answered"):
+            conversation.questionnaire_state.questions_answered += 1
 
         # Si es una respuesta al sector o subsector, actualizar esos campos
         if question_id == "sector_selection":
@@ -1161,618 +1167,214 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
         self, proposal: Dict[str, Any], conversation_id: str = None
     ) -> str:
         """
-        Genera un resumen de la propuesta en formato markdown siguiendo EXACTAMENTE
-        la estructura del documento Format Proposal.docx
+        Genera un resumen de la propuesta en formato markdown siguiendo el estilo mejorado.
         """
+
         client_info = proposal.get("client_info", {})
-        project_details = proposal.get("project_details", {})
-        solution = proposal.get("recommended_solution", {})
-        economic = proposal.get("economic_analysis", {})
-        water_params = proposal.get("water_parameters", {})
-
-        # Recuperar datos básicos
-        company_name = client_info.get("name", "Cliente")
-        sector = client_info.get("sector", "Industrial")
+        sector = client_info.get("sector", "")
         subsector = client_info.get("subsector", "")
-        location = client_info.get("location", "No especificada")
-        water_consumption = project_details.get("water_consumption", "No especificado")
-        wastewater_generation = project_details.get(
-            "wastewater_generation", "No especificado"
-        )
+        name = client_info.get("name", "Cliente")
 
-        # Construir la propuesta siguiendo exactamente el formato especificado
         summary = f"""
-# **Hydrous Management Group -- Propuesta de Tratamiento de Aguas Residuales**
+# 🧾 Propuesta de Tratamiento y Reúso de Agua
 
-## **📌 Aviso Importante**
+    **Cliente:** {name}  
+    **Ubicación:** {client_info.get('location', 'No especificada')}  
+    **Industria:** {sector} - {subsector}  
+    **Volumen tratado:** {proposal.get('project_details', {}).get('water_consumption', 'No especificado')}  
+    **Objetivo principal:** {proposal.get('project_details', {}).get('objectives', ['No especificado'])[0]}
 
-Esta propuesta fue **generada usando IA** basada en la información
-proporcionada por el usuario final y **estándares de la industria**. Si bien
-se ha hecho todo lo posible para garantizar la precisión, los datos, estimaciones de costos
-y recomendaciones técnicas **pueden contener errores y no son legalmente
-vinculantes**. Se recomienda que todos los detalles sean **validados por Hydrous
-Management Group** antes de la implementación.
+## 1. 🎯 **Objetivo del Proyecto**
 
-Si se proporcionó un **número de teléfono o información de contacto**, un
-representante de **Hydrous Management Group se pondrá en contacto** para
-mayor discusión. Si no, puede contactarnos en **info@hydrous.com**
-para consultas o aclaraciones adicionales.
+    {self._generate_objectives_section(proposal)}
 
-## **1. Introducción a Hydrous Management Group**
+## 2. 📈 **Diagnóstico Inicial**
 
-Hydrous Management Group se especializa en **soluciones personalizadas de tratamiento de aguas residuales** 
-adaptadas para clientes industriales y comerciales.
-Nuestra **experiencia en gestión del agua** ayuda a las empresas a lograr
-**cumplimiento normativo, reducción de costos y reutilización sostenible del agua**.
+    - **Consumo actual:** {proposal.get('project_details', {}).get('water_consumption', 'No especificado')}
+    - **Generación de agua residual:** {proposal.get('project_details', {}).get('wastewater_generation', 'No especificado')}
+    - **Descarga actual:** {proposal.get('project_details', {}).get('discharge_location', 'No especificado')}
 
-Utilizando tecnologías avanzadas de tratamiento y diseño potenciado por IA, Hydrous
-ofrece soluciones de aguas residuales **eficientes, escalables y rentables** que optimizan 
-el rendimiento operativo mientras minimizan el impacto ambiental.
+    🧪 *{self._get_sector_specific_insight(sector, subsector)}*
 
-## **2. Antecedentes del Proyecto**
+## 3. 🔧 **Tren de Tratamiento Propuesto**
 
-Esta sección proporciona una visión general de las instalaciones del cliente, la industria
-y las necesidades de tratamiento de aguas residuales.
-
-| **Información del Cliente** | **Detalles** |
-|---------------------------|-------------------------------------------|
-| **Nombre del Cliente** | {company_name} |
-| **Ubicación** | {location} |
-| **Industria** | {sector} - {subsector} |
-| **Fuente de Agua** | {project_details.get("water_source", "Suministro Municipal/Pozo")} |
-| **Consumo Actual de Agua** | {water_consumption} |
-| **Generación Actual de Aguas Residuales** | {wastewater_generation} |
-| **Sistema de Tratamiento Existente (si existe)** | {client_info.get("sistema_existente", "No existe tratamiento")} |
-
-## **3. Objetivo del Proyecto**
-
-Definir claramente los **objetivos primarios** para el tratamiento de aguas residuales.
-
+    | **Etapa** | **Tecnología Sugerida** | **Función** |
+    |------------|------------------------|-------------|
     """
 
-        # Añadir objetivos basados en la información recopilada
-        objectives = project_details.get("objectives", [])
-        if not objectives or not isinstance(objectives, list):
-            objectives = [
-                "Cumplimiento Regulatorio",
-                "Optimización de Costos",
-                "Reutilización del Agua",
-                "Sostenibilidad",
-            ]
+        # Añadir etapas de tratamiento dinámicamente basadas en sector/subsector
+        treatment_stages = self._get_treatment_stages_for_sector(sector, subsector)
+        for stage in treatment_stages:
+            summary += f"| **{stage['name']}** | **{stage['technology']}** | {stage['function']} |\n"
 
-        for obj in objectives:
-            summary += f"✅ **{obj}** -- {self._get_objective_description(obj)}\n"
-
-        # Sección 4: Supuestos Clave de Diseño y Comparación
-        summary += """
-## **4. Supuestos Clave de Diseño & Comparación con Estándares de la Industria**
-
-Esta sección compara las **características del agua residual sin tratar** proporcionadas por
-el cliente con **valores estándar de la industria** para aguas residuales industriales similares. 
-También describe la calidad objetivo del efluente para cumplimiento o reutilización.
-
-| **Parámetro** | **Agua Residual Sin Tratar (Proporcionada por Cliente)** | **Estándar de la Industria para {subsector}** | **Objetivo del Efluente (Requisito Regulatorio/Reutilización)** | **Estándar de Efluente (Referencia)** |
-|---------------|----------------|---------------------|------------------------|-----------------|
-    """
-
-        # Añadir parámetros de agua específicos según el subsector
-        if subsector == "Textil":
-            params = [
-                (
-                    "SST (mg/L)",
-                    water_params.get("sst", "800"),
-                    "500 - 1,000",
-                    "≤50",
-                    "10 - 50",
-                ),
-                (
-                    "TDS (mg/L)",
-                    water_params.get("sdt", "3,000"),
-                    "1,500 - 5,000",
-                    "Varía según reutilización",
-                    "≤500 - 1,500",
-                ),
-                (
-                    "DQO (mg/L)",
-                    water_params.get("dqo", "1,100"),
-                    "800 - 2,500",
-                    "≤250",
-                    "≤200 - 300",
-                ),
-                (
-                    "DBO (mg/L)",
-                    water_params.get("dbo", "700"),
-                    "300 - 1,200",
-                    "≤50",
-                    "≤30 - 50",
-                ),
-                (
-                    "pH",
-                    water_params.get("ph", "4"),
-                    "4.5 - 6.5",
-                    "6.5 - 7.5",
-                    "6.5 - 7.5",
-                ),
-            ]
-        elif subsector == "Alimentos y Bebidas":
-            params = [
-                (
-                    "SST (mg/L)",
-                    water_params.get("sst", "600"),
-                    "400 - 800",
-                    "≤50",
-                    "10 - 50",
-                ),
-                (
-                    "TDS (mg/L)",
-                    water_params.get("sdt", "2,000"),
-                    "1,200 - 3,000",
-                    "Varía según reutilización",
-                    "≤500 - 1,500",
-                ),
-                (
-                    "DQO (mg/L)",
-                    water_params.get("dqo", "2,500"),
-                    "1,500 - 5,000",
-                    "≤250",
-                    "≤200 - 300",
-                ),
-                (
-                    "DBO (mg/L)",
-                    water_params.get("dbo", "1,500"),
-                    "900 - 3,000",
-                    "≤50",
-                    "≤30 - 50",
-                ),
-                (
-                    "Grasas y Aceites (mg/L)",
-                    water_params.get("grasas_aceites", "300"),
-                    "200 - 600",
-                    "≤15",
-                    "≤10 - 20",
-                ),
-                (
-                    "pH",
-                    water_params.get("ph", "5.5"),
-                    "4.0 - 7.0",
-                    "6.5 - 7.5",
-                    "6.5 - 7.5",
-                ),
-            ]
-        else:
-            params = [
-                (
-                    "SST (mg/L)",
-                    water_params.get("sst", "Variable*"),
-                    "Según subsector",
-                    "≤50",
-                    "10 - 50",
-                ),
-                (
-                    "TDS (mg/L)",
-                    water_params.get("sdt", "Variable*"),
-                    "Según subsector",
-                    "Varía según reutilización",
-                    "≤500 - 1,500",
-                ),
-                (
-                    "DQO (mg/L)",
-                    water_params.get("dqo", "Variable*"),
-                    "Según subsector",
-                    "≤250",
-                    "≤200 - 300",
-                ),
-                (
-                    "DBO (mg/L)",
-                    water_params.get("dbo", "Variable*"),
-                    "Según subsector",
-                    "≤50",
-                    "≤30 - 50",
-                ),
-                (
-                    "pH",
-                    water_params.get("ph", "Variable*"),
-                    "6.0 - 9.0",
-                    "6.5 - 7.5",
-                    "6.5 - 7.5",
-                ),
-            ]
-
-        # Agregar filas a la tabla de parámetros
-        for param, actual, industry, target, benchmark in params:
-            summary += f"| {param} | {actual} | {industry} | {target} | {benchmark} |\n"
-
-        # Sección 5: Diseño de Procesos y Alternativas
-        summary += """
-## **5. Diseño de Procesos & Alternativas de Tratamiento**
-
-Esta sección describe las **tecnologías de tratamiento recomendadas** y
-posibles **alternativas** para cumplir con los objetivos de tratamiento de aguas residuales.
-
-| **Etapa de Tratamiento** | **Tecnología Recomendada** | **Opción Alternativa** |
-|----------------------|----------------------------|------------------------|
-    """
-
-        # Generar etapas de tratamiento según el subsector
-        if subsector == "Textil":
-            treatments = [
-                (
-                    "**Pretratamiento**",
-                    "**Flotación por Aire Disuelto (DAF)** -- Elimina grasas, aceites y sólidos suspendidos.",
-                    "**Coagulación & Sedimentación** -- Menos efectiva pero de menor costo.",
-                ),
-                (
-                    "**Ajuste de pH**",
-                    "**Dosificación Química (Cal, NaOH, H₂SO₄)** -- Estabiliza niveles de pH.",
-                    "**Neutralización Basada en Aireación** -- Proceso más lento pero libre de químicos.",
-                ),
-                (
-                    "**Tratamiento Secundario (Biológico)**",
-                    "**Reactor de Biopelícula de Lecho Móvil (MBBR)** -- Reducción eficiente de DQO/DBO.",
-                    "**Proceso de Lodos Activados (ASP)** -- Requiere más espacio y energía.",
-                ),
-                (
-                    "**Tratamiento Terciario (Pulido Final & Desinfección)**",
-                    "**Filtración de Arena & Carbón** -- Elimina orgánicos residuales y sólidos.",
-                    "**Biorreactor de Membrana (MBR)** -- Efluente de alta calidad, mayor costo.",
-                ),
-                (
-                    "**Desinfección**",
-                    "**Desinfección UV / Cloración** -- Elimina patógenos.",
-                    "**Ozonización** -- Más efectiva pero intensiva en energía.",
-                ),
-                (
-                    "**Sistema de Reutilización del Agua (Opcional)**",
-                    "**Ósmosis Inversa (RO) / Ultrafiltración (UF)** -- Para reutilización de agua de alta calidad.",
-                    "**Electrodiálisis (ED)** -- Alternativa para remoción selectiva de iones.",
-                ),
-            ]
-        elif subsector == "Alimentos y Bebidas":
-            treatments = [
-                (
-                    "**Pretratamiento**",
-                    "**Trampa de Grasas y Cribado** -- Elimina grasas y sólidos gruesos.",
-                    "**Flotación por Aire Disuelto (DAF)** -- Mayor eficiencia, mayor costo.",
-                ),
-                (
-                    "**Ajuste de pH**",
-                    "**Dosificación Química (Ácido/Base)** -- Estabiliza niveles de pH.",
-                    "**Neutralización Biológica** -- Sostenible para fluctuaciones pequeñas.",
-                ),
-                (
-                    "**Tratamiento Secundario (Biológico)**",
-                    "**Sistema Anaerobio-Aerobio Combinado** -- Eficiente para alta carga orgánica.",
-                    "**Lodos Activados Convencionales** -- Tecnología probada, mayor huella.",
-                ),
-                (
-                    "**Tratamiento Terciario (Pulido Final)**",
-                    "**Filtración Multimedia** -- Elimina sólidos residuales.",
-                    "**Ultrafiltración (UF)** -- Mayor calidad de efluente.",
-                ),
-                (
-                    "**Desinfección**",
-                    "**Desinfección UV** -- Sin químicos residuales.",
-                    "**Cloración** -- Económica pero con subproductos.",
-                ),
-                (
-                    "**Manejo de Lodos**",
-                    "**Deshidratación Mecánica** -- Reduce volumen para disposición.",
-                    "**Digestión Aerobia** -- Estabiliza lodos biológicos.",
-                ),
-            ]
-        else:
-            treatments = [
-                (
-                    "**Pretratamiento**",
-                    "**Sistema de Cribado y Homogeneización** -- Prepara el agua para tratamiento.",
-                    "**Opción personalizada según características específicas.**",
-                ),
-                (
-                    "**Tratamiento Primario**",
-                    "**Proceso Físico-Químico** -- Remueve sólidos y contaminantes específicos.",
-                    "**Tecnología adaptada a contaminantes del sector.**",
-                ),
-                (
-                    "**Tratamiento Secundario**",
-                    "**Sistema Biológico Optimizado** -- Reduce carga orgánica.",
-                    "**Selección basada en biodegradabilidad de contaminantes.**",
-                ),
-                (
-                    "**Tratamiento Terciario**",
-                    "**Filtración Avanzada** -- Asegura calidad final.",
-                    "**Sistema específico según requisitos de reúso/descarga.**",
-                ),
-                (
-                    "**Desinfección**",
-                    "**Sistema UV/Químico** -- Elimina patógenos residuales.",
-                    "**Tecnología seleccionada según aplicación final del agua.**",
-                ),
-            ]
-
-        # Agregar filas a la tabla de tratamientos
-        for stage, recommended, alternative in treatments:
-            summary += f"| {stage} | {recommended} | {alternative} |\n"
-
-        # Sección 6: Equipo Sugerido y Dimensionamiento
-        summary += """
-## **6. Equipo Sugerido & Dimensionamiento**
-
-Esta sección lista **equipos recomendados, capacidades, dimensiones y
-posibles proveedores/modelos** cuando estén disponibles.
-
-| **Equipo** | **Capacidad** | **Dimensiones** | **Marca/Modelo (Si Disponible)** |
-|------------|---------------|-----------------|--------------------------------|
-    """
-
-        # Generar dimensiones de equipos basadas en consumo de agua
-        flow_value = 100  # m³/día (valor por defecto)
-        if isinstance(water_consumption, str):
-            # Tratar de extraer un valor numérico del consumo de agua
-            import re
-
-            match = re.search(r"(\d+(?:\.\d+)?)", water_consumption)
-            if match:
-                try:
-                    flow_value = float(match.group(1))
-                except:
-                    pass
-
-        # Añadir equipos específicos según subsector
-        if subsector == "Textil":
-            equipment = [
-                (
-                    "**Sistema DAF**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"{flow_value*0.1:.1f} m² x 2.5 m altura",
-                    "Marca A / Estándar Industrial",
-                ),
-                (
-                    "**Sistema de Ajuste de pH**",
-                    f"{flow_value/24:.1f} m³/h",
-                    "Unidad Compacta",
-                    "Estándar Industrial",
-                ),
-                (
-                    "**Sistema MBBR**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Tanque de {flow_value*0.3:.1f} m³",
-                    "Marca B / Equivalente",
-                ),
-                (
-                    "**Filtros de Arena & Carbón**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Área de Filtración: {flow_value*0.01:.1f} m²",
-                    "Marca C / Equivalente",
-                ),
-                (
-                    "**Sistema UV**",
-                    f"{flow_value/24:.1f} m³/h",
-                    "Unidad Compacta",
-                    "Marca D / Equivalente",
-                ),
-                (
-                    "**Tanque de Agua Tratada**",
-                    f"{flow_value*0.5:.1f} m³",
-                    f"{flow_value*0.12:.1f} m² x 3 m altura",
-                    "Estándar Industrial",
-                ),
-            ]
-        elif subsector == "Alimentos y Bebidas":
-            equipment = [
-                (
-                    "**Trampa de Grasas/Aceites**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"{flow_value*0.08:.1f} m³",
-                    "Estándar Industrial",
-                ),
-                (
-                    "**Tanque de Ecualización**",
-                    f"{flow_value*0.4:.1f} m³",
-                    f"{flow_value*0.1:.1f} m² x 3 m altura",
-                    "Fabricación a Medida",
-                ),
-                (
-                    "**Reactor Anaerobio**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Volumen: {flow_value*0.25:.1f} m³",
-                    "Marca B / Equivalente",
-                ),
-                (
-                    "**Sistema Aerobio**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Volumen: {flow_value*0.2:.1f} m³",
-                    "Marca C / Equivalente",
-                ),
-                (
-                    "**Sistema de Filtración**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Área: {flow_value*0.01:.1f} m²",
-                    "Marca D / Equivalente",
-                ),
-                (
-                    "**Deshidratador de Lodos**",
-                    f"{flow_value*0.01:.1f} m³/día de lodos",
-                    "Unidad Compacta",
-                    "Marca E / Equivalente",
-                ),
-            ]
-        else:
-            equipment = [
-                (
-                    "**Sistema de Pretratamiento**",
-                    f"{flow_value/24:.1f} m³/h",
-                    "Según requerimientos específicos",
-                    "Selección según contaminantes",
-                ),
-                (
-                    "**Sistema Primario**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Área estimada: {flow_value*0.1:.1f} m²",
-                    "Diseño a medida",
-                ),
-                (
-                    "**Sistema Secundario**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Volumen: {flow_value*0.3:.1f} m³",
-                    "Tecnología seleccionada según caracterización",
-                ),
-                (
-                    "**Sistema Terciario**",
-                    f"{flow_value/24:.1f} m³/h",
-                    f"Dimensiones según tecnología seleccionada",
-                    "Según requerimientos de reúso",
-                ),
-                (
-                    "**Tanque de Almacenamiento**",
-                    f"{flow_value*0.5:.1f} m³",
-                    f"Dimensiones: {flow_value*0.12:.1f} m² x 3 m altura",
-                    "Estándar Industrial",
-                ),
-            ]
-
-        # Agregar filas a la tabla de equipos
-        for equip, capacity, dimensions, brand in equipment:
-            summary += f"| {equip} | {capacity} | {dimensions} | {brand} |\n"
-
-        # Sección 7: Estimación de CAPEX & OPEX
-        summary += """
-## **7. Estimación de CAPEX & OPEX**
-
-Esta sección detalla tanto los **gastos de capital (CAPEX)** como los
-**gastos operativos (OPEX)**.
-
-**Desglose de CAPEX**
-
-| **Categoría** | **Costo Estimado (USD)** | **Notas** |
-|---------------|-------------------------|----------|
-    """
-
-        # Calcular CAPEX basado en flujo
-        base_capex = flow_value * 1500  # $1500 USD por m³/día como referencia
-
-        # Ajustar según complejidad del tratamiento
-        complexity_factor = 1.0
-        if "MBR" in str(solution) or subsector == "Textil":
-            complexity_factor = (
-                1.3  # Mayor complejidad para textil o sistemas avanzados
-            )
-        elif "Alimentos" in subsector:
-            complexity_factor = 1.2  # Complejidad media para alimentos
-
-        total_capex = base_capex * complexity_factor
-        equipment_cost = total_capex * 0.6
-        installation_cost = total_capex * 0.25
-        engineering_cost = total_capex * 0.1
-        contingency_cost = total_capex * 0.05
-
-        # Agregar desglose de CAPEX
-        summary += f"""| **Equipos de Tratamiento** | ${equipment_cost:,.2f} | Basado en instalaciones similares |
-| **Instalación y Montaje** | ${installation_cost:,.2f} | Diseño escalable |
-| **Ingeniería y Gestión** | ${engineering_cost:,.2f} | Incluye puesta en marcha |
-| **Contingencia** | ${contingency_cost:,.2f} | Reserva para imprevistos |
-| **CAPEX Total** | **${total_capex:,.2f}** | Rango estimado |
-    """
-
-        # OPEX Breakdown
-        summary += """
-**Desglose de OPEX**
-
-| **Gasto Operativo** | **Costo Mensual Estimado (USD)** | **Notas** |
-|---------------------|----------------------------------|----------|
-    """
-
-        # Calcular OPEX mensual
-        energy_cost = flow_value * 3  # $3 por m³/día
-        chemical_cost = flow_value * 2  # $2 por m³/día
-        labor_cost = 1500 if flow_value < 200 else 3000  # Personal requerido
-        maintenance_cost = total_capex * 0.01 / 12  # 1% del CAPEX anual, mensualizado
-        sludge_cost = flow_value * 1  # $1 por m³/día
-
-        total_opex_monthly = (
-            energy_cost + chemical_cost + labor_cost + maintenance_cost + sludge_cost
-        )
-
-        # Agregar desglose de OPEX
-        summary += f"""| **Costos de Químicos** | ${chemical_cost:,.2f} | Químicos para ajuste de pH y coagulación |
-| **Costos de Energía** | ${energy_cost:,.2f} | Consumo eléctrico para aireación, bombas |
-| **Costos de Mano de Obra** | ${labor_cost:,.2f} | Operador y personal de mantenimiento |
-| **Disposición de Lodos** | ${sludge_cost:,.2f} | Remoción y tratamiento de lodos residuales |
-| **Mantenimiento** | ${maintenance_cost:,.2f} | Repuestos y servicios preventivos |
-| **OPEX Total** | **${total_opex_monthly:,.2f}/mes** | Rango estimado |
-    """
-
-        # Sección 8: Análisis del Retorno de la Inversión (ROI)
-        summary += """
-## **8. Análisis del Retorno de la Inversión (ROI)**
-
-Ahorros de costos proyectados basados en **reducción de compras de agua y menores
-tarifas de descarga**.
-
-| **Parámetro** | **Costo Actual (USD/m³)** | **Costo Proyectado Después del Tratamiento** | **Ahorro Anual** |
-|---------------|---------------------------|-------------------------------------------|----------------|
-    """
-
-        # Calcular ahorros y ROI
-        water_cost = 2.0  # Por defecto USD/m³
-        water_cost_text = client_info.get("costo_agua", "2.0 USD/m³")
-        if isinstance(water_cost_text, str):
-            import re
-
-            cost_match = re.search(r"(\d+(?:\.\d+)?)", water_cost_text)
-            if cost_match:
-                try:
-                    water_cost = float(cost_match.group(1))
-                except:
-                    pass
-
-        discharge_cost = water_cost * 0.5  # Estimación de costo de descarga
-
-        # Calcular ahorros mensuales
-        water_savings_ratio = 0.6  # 60% reducción de consumo
-        discharge_savings_ratio = 0.4  # 40% reducción de descarga
-
-        monthly_water_volume = flow_value * 30  # Volumen mensual en m³
-        monthly_water_savings = monthly_water_volume * water_savings_ratio * water_cost
-        monthly_discharge_savings = (
-            monthly_water_volume * discharge_savings_ratio * discharge_cost
-        )
-
-        annual_water_savings = monthly_water_savings * 12
-        annual_discharge_savings = monthly_discharge_savings * 12
-        total_annual_savings = annual_water_savings + annual_discharge_savings
-
-        # Calcular ROI simple
-        roi_years = total_capex / total_annual_savings
-
-        # Agregar ahorros a la tabla
-        summary += f"""| **Costo de Compra de Agua** | {water_cost:.2f} USD/m³ | {water_cost * (1-water_savings_ratio):.2f} USD/m³ (con reúso) | ${annual_water_savings:,.2f} |
-| **Tarifas de Descarga** | ${monthly_water_volume * discharge_cost:,.2f}/mes | ${monthly_water_volume * discharge_cost * (1-discharge_savings_ratio):,.2f}/mes (carga reducida) | ${annual_discharge_savings:,.2f} |
-    """
-
-        # Añadir ROI estimado
         summary += f"""
-**ROI Estimado:** **{roi_years:.1f} años** basado en ahorros de costos.
+## 4. 📐 **Dimensionamiento Preliminar**
 
-## **9. Anexo de Preguntas y Respuestas**
-
-Adjuntar todas las **preguntas y respuestas clave** recopiladas durante la consulta como
-referencia.
-
-📩 **Para consultas o validación de esta propuesta, contacte a Hydrous Management Group en:** **info@hydrous.com**.
-
+    | **Etapa** | **Volumen Estimado** |
+    |-----------|----------------------|
     """
 
-        # Si tenemos ID de conversación, agregar enlace de descarga
+        # Añadir dimensionamiento dinámicamente
+        volumes = self._calculate_treatment_volumes(proposal)
+        for stage, volume in volumes.items():
+            summary += f"| {stage} | {volume} |\n"
+
+        summary += f"""
+## 5. 💸 **Costos Estimados**
+
+### CAPEX -- Inversión Inicial
+
+    - Rango estimado: **{proposal.get('economic_analysis', {}).get('capex', 'No especificado')} USD**
+
+### OPEX -- Costo Operativo Mensual
+
+    - Total estimado: **{proposal.get('economic_analysis', {}).get('opex_monthly', 'No especificado')} USD/mes**
+    - Químicos: {proposal.get('economic_analysis', {}).get('chemical_cost', 'No especificado')} USD
+    - Energía: {proposal.get('economic_analysis', {}).get('energy_cost', 'No especificado')} USD
+    - Personal + Mantenimiento: {proposal.get('economic_analysis', {}).get('labor_cost', 0) + proposal.get('economic_analysis', {}).get('maintenance_cost', 0)} USD
+
+## 6. 📊 **Beneficios Potenciales**
+
+    - 🌊 **Reúso del 70-90% del agua tratada**
+    - ✅ Cumplimiento normativo para descarga
+    - 💧 Reducción en consumo de agua fresca
+    - 💸 Ahorros significativos en mediano plazo
+    - ♻️ Imagen corporativa y cumplimiento ambiental
+
+## 7. 📌 **Siguientes Pasos Recomendados**
+
+    1. Validar parámetros faltantes: SST, pH, temperatura
+    2. Confirmar espacio disponible para layout
+    3. Revisión de cotización técnica detallada (Hydrous puede apoyar)
+    4. Evaluar opciones de financiamiento
+    """
+
+        # Agregar enlace de descarga si tenemos ID de conversación
         if conversation_id:
             summary += f"""
-### **Descargar Propuesta Completa**
+# 📥 Descargar Propuesta Completa
 
-Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente enlace:
+    Para obtener esta propuesta detallada en formato PDF, puede usar el siguiente enlace:
 
-[📥 **DESCARGAR PROPUESTA COMPLETA EN PDF**](/api/chat/{conversation_id}/download-proposal-pdf)
+    **[👉 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation_id}/download-proposal-pdf)**
     """
 
         return summary
+
+    # Función para obtener insight específico del sector
+
+    def _get_sector_specific_insight(self, sector: str, subsector: str) -> str:
+        """Devuelve un dato técnico relevante específico para el sector/subsector"""
+        insights = {
+            "Textil": "Las aguas residuales textiles típicamente contienen altas concentraciones de colorantes y requieren tratamientos específicos para remoción de color",
+            "Alimentos y Bebidas": "Las aguas residuales de alimentos contienen principalmente materia orgánica biodegradable, ideal para tratamientos biológicos con recuperación energética",
+            "Petroquímica": "Los efluentes petroquímicos contienen hidrocarburos y compuestos recalcitrantes que requieren tecnologías avanzadas de oxidación",
+        }
+
+        return insights.get(
+            subsector,
+            f"El sector {sector} presenta oportunidades significativas para la optimización del consumo hídrico",
+        )
+
+    # Añadir función para obtener etapas de tratamiento según sector/subsector
+    def _get_treatment_stages_for_sector(
+        self, sector: str, subsector: str
+    ) -> List[Dict[str, str]]:
+        """Devuelve las etapas de tratamiento recomendadas para un sector/subsector"""
+
+        # Definir etapas por defecto
+        default_stages = [
+            {
+                "name": "Pretratamiento",
+                "technology": "Filtro rotatorio + trampa de grasas",
+                "function": "Remover sólidos gruesos y materia orgánica",
+            },
+            {
+                "name": "Tratamiento primario",
+                "technology": "Coagulación/floculación",
+                "function": "Remoción de sólidos suspendidos y coloides",
+            },
+            {
+                "name": "Tratamiento biológico",
+                "technology": "Sistema aerobio",
+                "function": "Reducir DQO/DBO",
+            },
+            {
+                "name": "Clarificación",
+                "technology": "Sedimentación",
+                "function": "Separar biomasa",
+            },
+            {
+                "name": "Filtración",
+                "technology": "Filtros multimedia",
+                "function": "Pulido final",
+            },
+            {
+                "name": "Desinfección",
+                "technology": "UV",
+                "function": "Eliminación de patógenos",
+            },
+        ]
+
+        # Personalizar según subsector
+        if subsector == "Textil":
+            return [
+                {
+                    "name": "Pretratamiento",
+                    "technology": "Cribado + homogeneización",
+                    "function": "Remover sólidos y estabilizar flujo",
+                },
+                {
+                    "name": "Tratamiento primario",
+                    "technology": "DAF con coagulación específica",
+                    "function": "Remoción de color y SST",
+                },
+                {
+                    "name": "Tratamiento biológico",
+                    "technology": "MBBR especializado",
+                    "function": "Degradación de compuestos recalcitrantes",
+                },
+                {
+                    "name": "Tratamiento terciario",
+                    "technology": "Carbón activado + UV",
+                    "function": "Remoción de color residual y desinfección",
+                },
+            ]
+        elif subsector == "Alimentos y Bebidas":
+            return [
+                {
+                    "name": "Pretratamiento",
+                    "technology": "Tamizado + trampa de grasas",
+                    "function": "Remoción de sólidos y grasas",
+                },
+                {
+                    "name": "Ecualización",
+                    "technology": "Tanque con mezclado",
+                    "function": "Homogeneización de caudal y cargas",
+                },
+                {
+                    "name": "Tratamiento anaerobio",
+                    "technology": "UASB",
+                    "function": "Reducción de DQO y generación de biogás",
+                },
+                {
+                    "name": "Tratamiento aerobio",
+                    "technology": "Lodos activados",
+                    "function": "Pulido biológico",
+                },
+                {
+                    "name": "Clarificación",
+                    "technology": "Sedimentador",
+                    "function": "Separación de biomasa",
+                },
+                {
+                    "name": "Desinfección",
+                    "technology": "UV o cloración",
+                    "function": "Eliminación de patógenos",
+                },
+            ]
+
+        return default_stages
 
     def _get_objective_description(self, objective):
         """Obtiene una descripción para cada objetivo"""

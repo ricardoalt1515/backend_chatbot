@@ -16,6 +16,8 @@ from app.models.message import Message, MessageCreate, MessageResponse
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service
 from app.services.questionnaire_service import questionnaire_service
+from app.services.analytics_improved import chatbot_analytics
+
 from app.config import settings
 
 logger = logging.getLogger("hydrous-backend")
@@ -82,6 +84,9 @@ async def start_conversation(
         # Crear nueva conversación - asegurarnos de que metadata existe y es un dict
         metadata = data.metadata if hasattr(data, "metadata") else {}
         conversation = await storage_service.create_conversation(metadata)
+
+        # Registar inicio de conversacion en analiticas
+        chatbot_analytics.log_conversation_start()
 
         # Añadir mensaje inicial del bot (bienvenida)
         welcome_message = Message.assistant(
@@ -618,6 +623,9 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
 
         # intentar generar el PDF - aqui es donde fallaria si hay problema
         file_path = questionnaire_service.generate_proposal_pdf(proposal)
+
+        # Registrar descarga en analiticas
+        chatbot_analytics.log_pdf_download(conversation_id)
 
         if not file_path or not os.path.exists(file_path):
             # Si falla la generacion, generar una respuesta HTML simple

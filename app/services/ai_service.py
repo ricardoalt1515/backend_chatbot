@@ -20,6 +20,29 @@ except ImportError:
 
 logger = logging.getLogger("hydrous-backend")
 
+# Lista de preguntas críticas que requieren respuestas completas
+CRITICAL_QUESTIONS = {
+    "cantidad_agua_consumida": {
+        "explanation": "el consumo de agua es fundamental para dimensionar correctamente el sistema",
+        "fallback": "un rango aproximado (por ejemplo: entre 10-50 m³/día) nos permitiría avanzar",
+        "validation": lambda x: any(
+            term in x.lower() for term in ["m3", "m³", "litro", "l/", "metro"]
+        ),
+    },
+    "costo_agua": {
+        "explanation": "el costo del agua es clave para calcular el retorno de inversión",
+        "fallback": "incluso un valor aproximado nos ayudaría a estimar los ahorros potenciales",
+        "validation": lambda x: any(
+            term in x.lower() for term in ["$", "peso", "mxn", "usd", "dolar"]
+        ),
+    },
+    "ubicacion": {
+        "explanation": "la ubicación influye en las normativas aplicables y disponibilidad de recursos",
+        "fallback": "al menos la ciudad o municipio nos permitiría contextualizar mejor la solución",
+        "validation": lambda x: len(x) > 5,  # Verificación básica de longitud
+    },
+}
+
 
 class AIService:
     """Servicio para interactuar con modelos de IA"""
@@ -95,6 +118,7 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
         interesting_fact,
         question_context,
         question_text,
+        question_id,
         options=None,
         document_suggestion=None,
     ):
@@ -112,19 +136,22 @@ El tratamiento adecuado del agua no solo es beneficioso para el medio ambiente, 
         Returns:
             str: Respuesta formateada según la estructura requerida
         """
+        # Obtener emoji apropidado para la pregunta
+        emoji = self._select_emoji_for_question_type(question_id)
+
         # 1. Comentario sobre respuesta anterior
         response = f"{previous_answer_comment}\n\n"
 
         # 2. Dato interesante en cursiva
         if interesting_fact:
-            response += f"*{interesting_fact}*\n\n"
+            response += f"💡 *{interesting_fact}*\n\n"
 
         # 3. Explicación de por qué la pregunta es importante
         if question_context:
             response += f"{question_context}\n\n"
 
-        # 4. La pregunta al final, en negrita y precedida por "PREGUNTA"
-        response += f"**PREGUNTA: {question_text}**\n\n"
+        # 4. La pregunta al final, en negrita y precedida por emoji contextual
+        response += f"**{emoji} PREGUNTA: {question_text}**\n\n"
 
         # 5. Opciones numeradas para preguntas de opción múltiple
         if options:
@@ -831,6 +858,69 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
             subsector_options,
         )
 
+    def _safe_extract_from_response(
+        self, user_message: str, default_value: Any = None
+    ) -> Any:
+        """
+        Extrae información de una respuesta del usuario de forma segura,
+        manejando posibles errores
+
+        Args:
+            user_message: Mensaje del usuario
+            default_value: Valor por defecto si no se puede extraer información
+
+        Returns:
+            Any: Información extraída o valor por defecto
+        """
+        try:
+            # Intentar extraer información
+            # Implementación específica según el contexto
+            return extracted_value
+        except Exception as e:
+            logger.warning(f"Error al extraer información de respuesta: {e}")
+            return default_value
+
+    def _validate_questionnaire_state(self, conversation: Conversation) -> bool:
+        """
+        Valida que el estado del cuestionario sea consistente
+        y recupera errores cuando sea posible
+
+        Args:
+            conversation: Conversación actual
+
+        Returns:
+            bool: True si el estado es válido, False en caso contrario
+        """
+        state = conversation.questionnaire_state
+
+        # Verificar consistencia básica
+        if (
+            state.active
+            and not state.sector
+            and state.current_question_id != "sector_selection"
+        ):
+            # Inconsistencia: cuestionario activo sin sector y no estamos preguntando por sector
+            logger.warning("Inconsistencia detectada: cuestionario activo sin sector")
+
+            # Corregir el estado
+            state.current_question_id = "sector_selection"
+            return False
+
+        if (
+            state.active
+            and state.sector
+            and not state.subsector
+            and state.current_question_id != "subsector_selection"
+        ):
+            # Inconsistencia: tenemos sector pero no subsector y no estamos preguntando por subsector
+            logger.warning("Inconsistencia detectada: falta subsector")
+
+            # Corregir el estado
+            state.current_question_id = "subsector_selection"
+            return False
+
+        return True
+
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
@@ -1401,6 +1491,196 @@ La propuesta presentada puede adaptarse según sus necesidades específicas. Est
 """
 
         return explanation
+
+    def _validate_critical_answer(self, question_id: str, answer: str) -> Optional[str]:
+        """
+        Valida si la respuesta a una pregunta crítica es adecuada.
+        Devuelve un mensaje de insistencia si es necesario, o None si la respuesta es válida.
+        """
+
+        if question_id not in CRITICAL_QUESTIONS:
+            return None
+
+        if not answer or not CRITICAL_QUESTIONS[question_id]["validation"](answer):
+            explanation = CRITICAL_QUESTIONS[question_id]["explanation"]
+            fallback = CRITICAL_QUESTIONS[question_id]["fallback"]
+
+            return (
+                f"Entiendo que puede ser difícil proporcionar este dato con exactitud, pero {explanation}. "
+                f"Si no tienes el dato exacto, {fallback}. Esta información nos permitirá "
+                f"diseñar una solución mucho más precisa y adaptada a tus necesidades reales."
+            )
+
+        return None
+
+    def _detect_user_type(self, conversation: Conversation) -> str:
+        """
+        Detecta si el usuario es profesiona, semi-profesional o no profesional
+        basado en su lenguaje y conocimientos técnicos
+        """
+        # Extraer todos los mensajes del usuario
+        user_messages = " ".join(
+            [msg.content for msg in conversation.messages if msg.role == "user"]
+        )
+
+        # Indicadores de usuario profesional
+        professional_indicators = [
+            "lps",
+            "m3/día",
+            "DQO",
+            "DBO",
+            "SST",
+            "conductividad",
+            "pH",
+            "ósmosis",
+            "MBBR",
+            "MBR",
+            "DAF",
+            "efluente",
+            "PTAR",
+            "coagulación",
+            "NOM-",
+            "reactor",
+            "anaerobio",
+            "biológico",
+            "cumplimiento normativo",
+            "parámetros técnicos",
+        ]
+
+        # Indicadores de semi-profesional
+        semi_indicators = [
+            "tratamiento",
+            "litros por segundo",
+            "metros cúbicos",
+            "agua residual",
+            "filtración",
+            "norma",
+            "agua industrial",
+            "descarga",
+            "reutilización",
+            "bombas",
+            "tanques",
+            "sistema",
+            "automatización",
+        ]
+
+        # Contar Indicadores
+        prof_count = sum(
+            1
+            for term in professional_indicators
+            if term.lower() in user_messages.lower()
+        )
+
+        semi_count = sum(
+            1 for term in semi_indicators if term.lower() in user_messages.lower()
+        )
+
+        # Clasificar usuario
+        if prof_count >= 3:
+            return "professional"
+        elif semi_count >= 3 or prof_count >= 1:
+            return "semi-profesional"
+        else:
+            return "non-professional"
+
+    def _format_positive_validation(self, previous_message: str) -> str:
+        """
+        Genera una validación positiva personalizada basada en la respuesta anterior.
+        """
+        validations = [
+            "¡Excelente! Gracias por compartir esta información.",
+            "¡Perfecto! Estos datos son muy valiosos para diseñar tu solución.",
+            "Gracias por proporcionarnos este detalle importante.",
+            "Muy bien. Esta información nos ayuda a entender mejor tus necesidades.",
+            "¡Genial! Con estos datos avanzamos significativamente en el diseño de tu solución.",
+        ]
+
+        # Seleccionar una validación aleatoria, se podría mejorar para que sea más contextual
+        import random
+
+        return random.choice(validations)
+
+    # Mejorar la selección de emojis según el tipo de pregunta
+    def _select_emoji_for_question_type(self, question_id: str) -> str:
+        """
+        Selecciona un emoji apropiado según el tipo de pregunta.
+        """
+        emoji_map = {
+            "nombre_empresa": "🏢",
+            "ubicacion": "📍",
+            "costo_agua": "💰",
+            "cantidad_agua_consumida": "🚰",
+            "cantidad_agua_residual": "💧",
+            "num_personas": "👥",
+            "parametros_agua": "🔬",
+            "usos_agua": "🔄",
+            "fuente_agua": "🌊",
+            "objetivo_principal": "🎯",
+            "objetivo_reuso": "♻️",
+            "descarga_actual": "📤",
+            "restricciones": "⚠️",
+            "sistema_existente": "⚙️",
+            "presupuesto": "💵",
+            "tiempo_proyecto": "⏱️",
+            "sector_selection": "🏭",
+            "subsector_selection": "🔍",
+        }
+
+        return emoji_map.get(question_id, "📋")
+
+    def _optimize_context_length(
+        self, conversation: Conversation
+    ) -> List[Dict[str, str]]:
+        """
+        Optimiza el contexto de la conversación para manejar conversaciones largas
+
+        Args:
+            conversation: Conversación actual
+
+        Returns:
+            List: Lista optimizada de mensajes para el contexto
+        """
+        messages = []
+
+        # Siempre incluir el mensaje del sistema
+        system_messages = [msg for msg in conversation.messages if msg.role == "system"]
+        if system_messages:
+            messages.append({"role": "system", "content": system_messages[0].content})
+
+        # Si el cuestionario está activo, priorizar información relevante
+        if conversation.is_questionnaire_active():
+            # Incluir el último intercambio completo (3-4 mensajes)
+            recent_exchanges = [
+                msg
+                for msg in conversation.messages[-6:]
+                if msg.role in ["user", "assistant"]
+            ]
+            messages.extend(
+                [{"role": msg.role, "content": msg.content} for msg in recent_exchanges]
+            )
+
+            # Añadir resumen del estado actual
+            state = conversation.questionnaire_state
+            state_summary = f"""
+    Información recopilada hasta ahora:
+    - Sector: {state.sector}
+    - Subsector: {state.subsector}
+    - Preguntas respondidas: {state.questions_answered}
+    - Pregunta actual: {state.current_question_id}
+    """
+            messages.append({"role": "system", "content": state_summary})
+        else:
+            # Para conversaciones normales, incluir mensajes recientes
+            recent_messages = [
+                msg
+                for msg in conversation.messages[-8:]
+                if msg.role in ["user", "assistant"]
+            ]
+            messages.extend(
+                [{"role": msg.role, "content": msg.content} for msg in recent_messages]
+            )
+
+        return messages
 
 
 # Instancia global del servicio
