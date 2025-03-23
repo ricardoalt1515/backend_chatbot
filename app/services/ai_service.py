@@ -912,8 +912,7 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Método simplificado que aprovecha las capacidades inherentes del modelo
-        en lugar de intentar replicarlas con lógica compleja.
+        Método optimizado para reducir el consumo de tokens
         """
 
         try:
@@ -938,53 +937,25 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
     ¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
     """
 
-            # Construir mensajes para la API
+            # Construir mensajes para la API - OPTIMIZADO PARA REDUCIR TOKENS
             messages = [
                 {"role": "system", "content": settings.SYSTEM_PROMPT},
             ]
 
-            # Añadir información de contexto actual como parte del sistema
-            if (
-                conversation.questionnaire_state.sector
-                or conversation.questionnaire_state.subsector
-            ):
-                context_info = "Información de contexto:\n"
-                if conversation.questionnaire_state.sector:
-                    context_info += f"- Sector identificado: {conversation.questionnaire_state.sector}\n"
-                if conversation.questionnaire_state.subsector:
-                    context_info += (
-                        f"- Subsector: {conversation.questionnaire_state.subsector}\n"
-                    )
+            # Añadir contexto relevante de manera concisa
+            context = self._create_minimal_context(conversation)
+            if context:
+                messages.append({"role": "system", "content": context})
 
-                # Añadir información de respuestas clave si existen
-                answers = conversation.questionnaire_state.answers
-                key_answers = []
+            # Añadir solo los últimos N mensajes del historial para limitar tokens
+            recent_messages = self._get_recent_message_history(
+                conversation, max_messages=6
+            )
+            messages.extend(recent_messages)
 
-                if "nombre_empresa" in answers:
-                    key_answers.append(
-                        f"- Nombre empresa/usuario: {answers['nombre_empresa']}"
-                    )
-                if "ubicacion" in answers:
-                    key_answers.append(f"- Ubicación: {answers['ubicacion']}")
-                if "costo_agua" in answers:
-                    key_answers.append(f"- Costo agua: {answers['costo_agua']}")
-                if "cantidad_agua_consumida" in answers:
-                    key_answers.append(
-                        f"- Consumo agua: {answers['cantidad_agua_consumida']}"
-                    )
-
-                if key_answers:
-                    context_info += "\nDatos proporcionados:\n" + "\n".join(key_answers)
-
-                messages.append({"role": "system", "content": context_info})
-
-            # Añadir todo el historial de conversación relevante
-            for msg in conversation.messages:
-                if msg.role in [
-                    "user",
-                    "assistant",
-                ]:  # Solo incluir mensajes de usuario y asistente
-                    messages.append({"role": msg.role, "content": msg.content})
+            # Si es posible, agregar el último intercambio explícitamente
+            if len(recent_messages) < 2:
+                messages.append({"role": "user", "content": user_message})
 
             # Dejar que el modelo genere la respuesta completa
             response = await self.generate_response(messages)
@@ -998,6 +969,42 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar su consulta. Por favor, inténtelo de nuevo."
 
+    def _create_minimal_context(self, conversation: Conversation) -> str:
+        """Crea un contexto mínimo con solo la información esencial"""
+        state = conversation.questionnaire_state
+        context = ""
+
+        # Solo incluir datos absolutamente esenciales
+        if state.sector:
+            context += f"Sector: {state.sector}. "
+        if state.subsector:
+            context += f"Subsector: {state.subsector}. "
+
+        # Incluir nombre del usuario y ubicación si están disponibles (son importantes)
+        if "nombre_empresa" in state.answers:
+            context += f"Nombre: {state.answers['nombre_empresa']}. "
+        if "ubicacion" in state.answers:
+            context += f"Ubicación: {state.answers['ubicacion']}. "
+
+        return context.strip()
+
+    def _get_recent_message_history(
+        self, conversation: Conversation, max_messages: int = 6
+    ) -> List[Dict[str, str]]:
+        """Obtiene los mensajes más recientes del historial, limitando la cantidad"""
+        recent_messages = []
+        message_count = 0
+
+        # Comenzar desde el final (mensajes más recientes)
+        for msg in reversed(conversation.messages):
+            if msg.role in ["user", "assistant"]:
+                recent_messages.insert(0, {"role": msg.role, "content": msg.content})
+                message_count += 1
+                if message_count >= max_messages:
+                    break
+
+        return recent_messages
+
     async def generate_response(
         self,
         messages: List[Dict[str, Any]],
@@ -1006,55 +1013,139 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
     ) -> str:
         """
         Genera una respuesta utilizando el proveedor de IA configurado
-
-        Args:
-            messages: Lista de mensajes para la conversación
-            temperature: Temperatura para la generación (0.0-1.0)
-            max_tokens: Número máximo de tokens para la respuesta
-
-        Returns:
-            str: Texto de la respuesta generada con formato adecuado para el frontend
+        Con manejo mejorado de errores de límite de tokens
         """
-        try:
-            # Verificar si tenemos conexión con la API
-            if not self.api_key or not self.api_url:
-                return self._get_fallback_response(messages)
 
-            # Hacer solicitud a la API
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}",
-                }
+        max_retries = 2
+        retry_count = 0
+        reduced_context = False
 
-                payload = {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens or 1024,
-                }
-
-                response = await client.post(
-                    self.api_url, json=payload, headers=headers, timeout=30.0
-                )
-
-                if response.status_code != 200:
-                    logger.error(
-                        f"Error en la API de {self.provider}: {response.status_code} - {response.text}"
-                    )
+        while retry_count <= max_retries:
+            try:
+                # Verificar si tenemos conexión con la API
+                if not self.api_key or not self.api_url:
                     return self._get_fallback_response(messages)
 
-                response_data = response.json()
-                raw_response = response_data["choices"][0]["message"]["content"]
+                # Hacer solicitud a la API
+                async with httpx.AsyncClient() as client:
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.api_key}",
+                    }
 
-                # Procesar el texto para mantener un formato consistente
-                processed_response = self._process_response_format(raw_response)
+                    payload = {
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens or 1024,
+                    }
 
-                return processed_response
+                    response = await client.post(
+                        self.api_url, json=payload, headers=headers, timeout=30.0
+                    )
 
-        except Exception as e:
-            logger.error(f"Error al generar respuesta con {self.provider}: {str(e)}")
-            return self._get_fallback_response(messages)
+                    if response.status_code == 429:  # Rate limit o token limit
+                        response_data = response.json()
+                        error_message = response_data.get("error", {}).get(
+                            "message", ""
+                        )
+
+                        if (
+                            "tokens per minute" in error_message
+                            or "rate_limit_exceeded" in error_message
+                        ):
+                            # Esperar antes de reintentar si es un error de límite de velocidad
+                            wait_time = self._extract_wait_time(error_message) or 20
+                            logger.warning(
+                                f"Límite de tokens alcanzado. Esperando {wait_time} segundos..."
+                            )
+                            time.sleep(wait_time)
+                            retry_count += 1
+                            continue
+
+                        elif (
+                            "maximum context length" in error_message
+                            or "context_length_exceeded" in error_message
+                        ):
+                            if not reduced_context:
+                                # Reducir el contexto a solo lo esencial
+                                messages = self._reduce_context(messages)
+                                reduced_context = True
+                                continue
+                            else:
+                                logger.error(
+                                    "No se pudo reducir suficientemente el contexto."
+                                )
+                                return self._get_emergency_response()
+
+                    elif response.status_code != 200:
+                        logger.error(
+                            f"Error en la API de {self.provider}: {response.status_code} - {response.text}"
+                        )
+                        return self._get_fallback_response(messages)
+
+                    response_data = response.json()
+                    raw_response = response_data["choices"][0]["message"]["content"]
+                    return raw_response
+
+            except Exception as e:
+                logger.error(
+                    f"Error al generar respuesta con {self.provider}: {str(e)}"
+                )
+                retry_count += 1
+                if retry_count > max_retries:
+                    return self._get_fallback_response(messages)
+                time.sleep(2)  # Pequeña pausa antes de reintentar
+
+        return self._get_fallback_response(messages)
+
+    def _extract_wait_time(self, error_message: str) -> Optional[int]:
+        """Extrae el tiempo de espera sugerido del mensaje de error"""
+        match = re.search(r"Please try again in (\d+\.?\d*)s", error_message)
+        if match:
+            try:
+                return (
+                    int(float(match.group(1))) + 1
+                )  # Añadir 1 segundo extra por seguridad
+            except:
+                return None
+        return None
+
+    def _reduce_context(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Reduce drásticamente el contexto para manejar errores de límite de contexto"""
+        # Conservar siempre el mensaje del sistema
+        system_messages = [msg for msg in messages if msg.get("role") == "system"]
+        system_message = (
+            system_messages[0]
+            if system_messages
+            else {"role": "system", "content": "Eres un asistente de Hydrous AI."}
+        )
+
+        # Conservar solo el último mensaje del usuario
+        user_messages = [msg for msg in messages if msg.get("role") == "user"]
+        last_user_message = user_messages[-1] if user_messages else None
+
+        # Construir mensajes reducidos
+        reduced_messages = [system_message]
+        if last_user_message:
+            reduced_messages.append(last_user_message)
+
+        return reduced_messages
+
+    def _get_emergency_response(self) -> str:
+        """Proporciona una respuesta de emergencia cuando todo lo demás falla"""
+        return """
+    Lo siento, estamos experimentando una alta demanda en este momento y no puedo procesar su consulta completa.
+
+    Por favor, permítame hacerle preguntas más breves para continuar con nuestra conversación de manera más eficiente:
+
+    **PREGUNTA: ¿Podría indicarme brevemente cuál es su necesidad principal respecto al tratamiento de agua?**
+
+    1. Reciclaje de agua industrial
+    2. Cumplimiento normativo
+    3. Reducción de costos operativos
+    4. Otra (por favor especifique brevemente)
+    """
 
     def _process_response_format(self, text: str) -> str:
         """
