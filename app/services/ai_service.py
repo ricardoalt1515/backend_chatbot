@@ -396,8 +396,8 @@ De lo contrario, continuaremos con las siguientes preguntas para completar su pe
                     break
 
         if state.sector and not state.subsector:
-            # Aquí está el cambio, usar el servicio importado directamente:
-            subsectors = questionnaire_service.get_subsectors(state.sector)
+            # Usar el servicio importado directamente:
+            subsectors = self.questionnaire_service.get_subsectors(state.sector)
             for subsector in subsectors:
                 if (
                     subsector.lower() in user_message.lower()
@@ -421,6 +421,12 @@ De lo contrario, continuaremos con las siguientes preguntas para completar su pe
         if sum(1 for indicator in proposal_indicators if indicator in response) >= 3:
             state.completed = True
             state.active = False
+
+        # Actualizar el contador de preguntas respondidas si existe el atributo
+        if hasattr(state, "questions_answered"):
+            # Solo incrementar si parece que la respuesta contiene una nueva pregunta
+            if "PREGUNTA:" in response or "pregunta:" in response.lower():
+                state.questions_answered += 1
 
     def _is_multiple_choice_question(
         self, question_id: str, sector: str, subsector: str
@@ -909,6 +915,7 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
         Método simplificado que aprovecha las capacidades inherentes del modelo
         en lugar de intentar replicarlas con lógica compleja.
         """
+
         try:
             # Si el cuestionario está completado y el usuario pide el PDF
             if conversation.is_questionnaire_completed() and self._is_pdf_request(
@@ -918,18 +925,18 @@ Si desea avanzar con el proyecto, el siguiente paso sería una reunión técnica
                 return f"""
 # 📄 Propuesta Lista para Descargar
 
-He preparado su propuesta personalizada basada en la información proporcionada. Puede descargarla como PDF usando el siguiente enlace:
+    He preparado su propuesta personalizada basada en la información proporcionada. Puede descargarla como PDF usando el siguiente enlace:
 
 ## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
 
-Este documento incluye:
-- Análisis de sus necesidades específicas
-- Solución tecnológica recomendada
-- Estimación de costos y retorno de inversión
-- Pasos siguientes recomendados
+    Este documento incluye:
+    - Análisis de sus necesidades específicas
+    - Solución tecnológica recomendada
+    - Estimación de costos y retorno de inversión
+    - Pasos siguientes recomendados
 
-¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
-"""
+    ¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
+    """
 
             # Construir mensajes para la API
             messages = [
