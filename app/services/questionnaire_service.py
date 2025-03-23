@@ -496,51 +496,49 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
 
     def generate_proposal(self, conversation: Conversation) -> Dict[str, Any]:
         """
-        Genera una propuesta adaptativa basada en la información disponible
-        Enfoque simplificado para extraer la información clave
+        Genera una propuesta simplificada basada en la conversación
         """
-        # Extraer toda la información disponible
-        info = self._extract_conversation_info(conversation)
 
-        # Obtener datos del cliente
+        # Extraer información básica de la conversación
+        answers = conversation.questionnaire_state.answers
+
+        # Información del cliente
         client_info = {
-            "name": info.get("nombre_empresa", "Cliente"),
-            "location": info.get("ubicacion", "No especificada"),
-            "sector": info.get("sector", "Industrial"),
-            "subsector": info.get("subsector", ""),
-            "contact_info": info.get("contacto", "No especificado"),
-            "sistema_existente": info.get("sistema_existente", "No especificado"),
+            "name": answers.get("nombre_empresa", "Cliente"),
+            "location": answers.get("ubicacion", "No especificada"),
+            "sector": conversation.questionnaire_state.sector or "Industrial",
+            "subsector": conversation.questionnaire_state.subsector or "",
         }
 
-        # Datos detallados del proyecto
-        project_details = {
-            "water_source": info.get("fuente_agua", "Municipal/Pozo"),
-            "water_consumption": info.get("cantidad_agua_consumida", "No especificado"),
-            "wastewater_generation": info.get(
+        # Información técnica
+        technical_info = {
+            "water_consumption": answers.get(
+                "cantidad_agua_consumida", "No especificado"
+            ),
+            "wastewater_generation": answers.get(
                 "cantidad_agua_residual", "No especificado"
             ),
-            "water_cost": info.get("costo_agua", "No especificado"),
-            "peak_flows": info.get("picos_agua_residual", "No especificado"),
-            "objectives": info.get(
-                "objetivo_principal", ["Mejorar eficiencia hídrica"]
+            "water_cost": answers.get("costo_agua", "No especificado"),
+            "objectives": answers.get(
+                "objetivo_principal", "Optimización de recursos hídricos"
             ),
-            "reuse_objectives": info.get("objetivo_reuso", ["Reutilización de agua"]),
-            "discharge_location": info.get("descarga_actual", "Alcantarillado"),
-            "constraints": info.get("restricciones", []),
-            "timeline": info.get("tiempo_proyecto", "No especificado"),
-            "budget": info.get("presupuesto", "No especificado"),
+            "reuse_objectives": answers.get(
+                "objetivo_reuso", ["Reutilización de agua"]
+            ),
         }
 
-        # En lugar de generar manualmente toda la propuesta, usamos el modelo para generarla
-        proposal_summary = self._generate_proposal_with_llm(
-            conversation, client_info, project_details
-        )
+        # Extraer la última propuesta generada por el modelo (si existe)
+        last_proposal_text = ""
+        for msg in reversed(conversation.messages):
+            if msg.role == "assistant" and "Propuesta Preliminar" in msg.content:
+                last_proposal_text = msg.content
+                break
 
-        # Construcción simple de propuesta con lo básico para generar PDF
+        # Construir la propuesta
         proposal = {
             "client_info": client_info,
-            "project_details": project_details,
-            "proposal_summary": proposal_summary,
+            "technical_info": technical_info,
+            "proposal_text": last_proposal_text,
             "timestamp": datetime.now().isoformat(),
             "proposal_id": f"HYD-{datetime.now().strftime('%Y%m%d')}-{conversation.id[:8].upper()}",
         }
@@ -1383,29 +1381,66 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
 
     def generate_proposal_pdf(self, proposal: Dict[str, Any]) -> str:
         """
-        Genera un PDF mejorado de la propuesta con diseño profesional
-
-        Args:
-            proposal: Datos de la propuesta
-
-        Returns:
-            str: Ruta al archivo generado
+        Genera un PDF basado en la propuesta
         """
+
         try:
-            # Extraer información básica para el nombre del archivo
+            # Extraer información básica
             client_info = proposal.get("client_info", {})
             client_name = client_info.get("name", "Cliente").replace(" ", "_")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            proposal_id = proposal.get("proposal_id", f"HYD-{timestamp}")
 
-            # Crear contenido HTML con estilo profesional
+            # Obtener el contenido de la propuesta
+            proposal_text = proposal.get("proposal_text", "")
+
+            # Si no hay texto de propuesta, crear uno básico
+            if not proposal_text:
+                proposal_text = f"""
+# 🧾 Propuesta Preliminar de Tratamiento y Reúso de Agua
+
+    **Cliente:** {client_info.get('name', 'Cliente')}
+    **Ubicación:** {client_info.get('location', 'No especificada')}
+    **Industria:** {client_info.get('sector', 'Industrial')} - {client_info.get('subsector', '')}
+    **Volumen tratado:** {proposal.get('technical_info', {}).get('water_consumption', 'No especificado')}
+    **Objetivo principal:** {proposal.get('technical_info', {}).get('objectives', 'Optimización de recursos hídricos')}
+
+## 1. 🎯 Objetivo del Proyecto
+    Diseñar un sistema eficiente de tratamiento y reúso de agua adaptado a las necesidades específicas del cliente.
+
+## 2. 📈 Diagnóstico Inicial
+    - **Consumo de agua:** {proposal.get('technical_info', {}).get('water_consumption', 'No especificado')}
+    - **Generación de agua residual:** {proposal.get('technical_info', {}).get('wastewater_generation', 'No especificado')}
+    - **Costo actual del agua:** {proposal.get('technical_info', {}).get('water_cost', 'No especificado')}
+
+## 3. 🔧 Tren de Tratamiento Propuesto
+    Pendiente de desarrollar basado en información adicional.
+
+## 4. 📐 Dimensionamiento Preliminar
+    Pendiente de desarrollar basado en información adicional.
+
+## 5. 💸 Costos Estimados
+    Pendiente de desarrollar basado en información adicional.
+
+## 6. 📊 Beneficios Potenciales
+    - 🌊 Reúso del agua
+    - ✅ Cumplimiento normativo
+    - 💧 Reducción en consumo de agua fresca
+    - 💸 Ahorros económicos
+
+## 7. 📌 Siguientes Pasos Recomendados
+    1. Completar la recopilación de información técnica
+    2. Realizar pruebas de calidad del agua
+    3. Desarrollar propuesta detallada
+    4. Evaluar opciones de financiamiento
+    """
+
+            # Convertir formato Markdown a HTML
             html_content = f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Propuesta Hydrous - {client_info.get("name", "Cliente")}</title>
+                <title>Propuesta Hydrous - {client_info.get('name', 'Cliente')}</title>
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
                     
@@ -1415,62 +1450,36 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
                         color: #333; 
                         margin: 0;
                         padding: 0;
+                        background-color: #f9fafb;
                     }}
                     
                     .container {{
-                        max-width: 1000px;
-                        margin: 0 auto;
-                        padding: 20px 40px;
+                        max-width: 800px;
+                        margin: 40px auto;
+                        padding: 30px;
+                        background-color: white;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        border-radius: 8px;
                     }}
                     
-                    h1 {{ 
-                        color: #1a5276; 
-                        border-bottom: 2px solid #3498db; 
-                        padding-bottom: 10px; 
-                        font-size: 24px;
-                        margin-top: 30px;
-                    }}
-                    
-                    h2 {{ 
-                        color: #2874a6; 
-                        margin-top: 25px; 
-                        font-size: 20px;
-                        border-left: 4px solid #3498db;
-                        padding-left: 10px;
-                    }}
+                    h1 {{ color: #1a5276; font-size: 24px; margin-top: 30px; }}
+                    h2 {{ color: #2874a6; font-size: 20px; margin-top: 25px; }}
                     
                     .header {{ 
                         background-color: #2c3e50; 
                         background-image: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
                         color: white; 
-                        padding: 30px 40px; 
+                        padding: 30px; 
                         text-align: center; 
                         margin-bottom: 30px;
+                        border-radius: 8px 8px 0 0;
                     }}
                     
-                    .header h1 {{
-                        border: none;
-                        margin: 0;
-                        padding: 0;
+                    .logo-text {{
                         font-size: 32px;
+                        font-weight: bold;
                         color: white;
-                    }}
-                    
-                    .footer {{ 
-                        background-color: #f9f9f9; 
-                        border-top: 1px solid #ddd;
-                        padding: 20px; 
-                        text-align: center; 
-                        font-size: 0.9em; 
-                        margin-top: 40px; 
-                    }}
-                    
-                    .disclaimer {{ 
-                        background-color: #f8f9fa; 
-                        border-left: 4px solid #e74c3c; 
-                        padding: 15px; 
-                        margin: 25px 0; 
-                        font-size: 0.9em;
+                        margin-bottom: 10px;
                     }}
                     
                     table {{ 
@@ -1481,1044 +1490,138 @@ Para avanzar con una propuesta técnica y económica detallada, necesitamos:
                     
                     th, td {{ 
                         border: 1px solid #ddd; 
-                        padding: 12px; 
+                        padding: 10px; 
                         text-align: left; 
                     }}
                     
-                    th {{ 
-                        background-color: #f2f2f2; 
-                    }}
+                    th {{ background-color: #f2f2f2; }}
                     
-                    tr:nth-child(even) {{
-                        background-color: #f8f9fa;
-                    }}
-                    
-                    .section {{
-                        margin-bottom: 30px;
-                        background-color: #fff;
-                        border-radius: 5px;
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                        padding: 20px;
-                    }}
-                    
-                    .highlight {{
-                        background-color: #eaf2f8;
-                        border-left: 4px solid #3498db;
-                        padding: 15px;
-                        margin: 20px 0;
-                    }}
-                    
-                    .checkmark {{
-                        color: #27ae60;
-                        font-weight: bold;
-                    }}
-                    
-                    .logo {{
-                        text-align: center;
-                        margin-bottom: 10px;
-                    }}
-                    
-                    .logo-text {{
-                        font-size: 40px;
-                        font-weight: bold;
-                        color: white;
-                        letter-spacing: 2px;
-                    }}
-                    
-                    .total-row {{
-                        font-weight: bold;
-                        background-color: #eaf2f8;
-                    }}
-                    
-                    .proposal-id {{
-                        text-align: right;
-                        font-size: 14px;
-                        color: #7f8c8d;
-                        margin-top: 5px;
-                    }}
-                    
-                    .recommendations {{
-                        background-color: #eaf2f8;
-                        border-radius: 5px;
-                        padding: 20px;
-                        margin: 30px 0;
-                    }}
-                    
-                    .recommendation-item {{
-                        margin-bottom: 15px;
-                        border-bottom: 1px solid #d6eaf8;
-                        padding-bottom: 15px;
-                    }}
-                    
-                    .recommendation-title {{
-                        font-weight: bold;
-                        color: #2874a6;
-                        margin-bottom: 5px;
+                    .footer {{ 
+                        text-align: center; 
+                        margin-top: 40px; 
+                        font-size: 0.9em; 
+                        color: #777;
                     }}
                 </style>
             </head>
             <body>
-                <div class="header">
-                    <div class="logo">
-                        <div class="logo-text">HYDROUS</div>
-                    </div>
-                    <h1>Propuesta de Tratamiento de Aguas Residuales</h1>
-                    <p>Soluciones personalizadas para optimización y reutilización de agua</p>
-                    <div class="proposal-id">Propuesta #{proposal_id}</div>
-                </div>
-                
                 <div class="container">
-                    <div class="disclaimer">
-                        <strong>📌 Aviso importante:</strong> Esta propuesta fue generada usando IA basada en la información
-                        proporcionada por el usuario final y estándares de la industria. Si bien se ha hecho todo lo posible 
-                        para garantizar la precisión, los datos, estimaciones de costos y recomendaciones técnicas pueden 
-                        contener errores y no son legalmente vinculantes. Se recomienda que todos los detalles sean validados 
-                        por Hydrous Management Group antes de la implementación.
+                    <div class="header">
+                        <div class="logo-text">HYDROUS</div>
+                        <h1>Propuesta de Solución de Tratamiento de Agua</h1>
                     </div>
                     
-                    <h1>1. Introducción a Hydrous Management Group</h1>
-                    <p>Hydrous Management Group se especializa en <strong>soluciones personalizadas de tratamiento de aguas residuales</strong> 
-                    adaptadas para clientes industriales y comerciales. Nuestra <strong>experiencia en gestión del agua</strong> ayuda a las 
-                    empresas a lograr <strong>cumplimiento normativo, reducción de costos y reutilización sostenible del agua</strong>.</p>
-                    
-                    <p>Utilizando tecnologías avanzadas de tratamiento y diseño potenciado por IA, Hydrous
-                    ofrece soluciones de aguas residuales <strong>eficientes, escalables y rentables</strong> que optimizan 
-                    el rendimiento operativo mientras minimizan el impacto ambiental.</p>
-                    
-                    <h1>2. Antecedentes del Proyecto</h1>
-                    <p>Esta sección proporciona una visión general de las instalaciones del cliente, la industria
-                    y las necesidades de tratamiento de aguas residuales.</p>
-                    
-                    <table>
-                        <tr>
-                            <th style="width: 40%;">Información del Cliente</th>
-                            <th>Detalles</th>
-                        </tr>
-                        <tr>
-                            <td><strong>Nombre del Cliente</strong></td>
-                            <td>{client_info.get("name", "No especificado")}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Ubicación</strong></td>
-                            <td>{client_info.get("location", "No especificada")}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Industria</strong></td>
-                            <td>{client_info.get("sector", "Industrial")} - {client_info.get("subsector", "")}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Fuente de Agua</strong></td>
-                            <td>{proposal.get("project_details", {}).get("water_source", "Suministro Municipal/Pozo")}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Consumo Actual de Agua</strong></td>
-                            <td>{proposal.get("project_details", {}).get("water_consumption", "No especificado")}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Generación Actual de Aguas Residuales</strong></td>
-                            <td>{proposal.get("project_details", {}).get("wastewater_generation", "No especificado")}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Sistema de Tratamiento Existente</strong></td>
-                            <td>{client_info.get("sistema_existente", "No existe tratamiento")}</td>
-                        </tr>
-                    </table>
-                    
-                    <h1>3. Objetivo del Proyecto</h1>
-                    <p>Definir claramente los <strong>objetivos primarios</strong> para el tratamiento de aguas residuales.</p>
-                    
-                    <div class="highlight">
-            """
-
-            # Añadir objetivos
-            objectives = proposal.get("project_details", {}).get("objectives", [])
-            if not isinstance(objectives, list):
-                objectives = [objectives]
-
-            if not objectives:
-                objectives = [
-                    "Cumplimiento Regulatorio",
-                    "Optimización de Costos",
-                    "Reutilización del Agua",
-                    "Sostenibilidad",
-                ]
-
-            # Mapeo de descripciones para objetivos
-            objective_descriptions = {
-                "Cumplimiento normativo": "Asegurar que el agua tratada cumpla con las regulaciones de descarga.",
-                "Cumplimiento Regulatorio": "Asegurar que el agua tratada cumpla con las regulaciones de descarga.",
-                "Reducción de la huella ambiental": "Mejorar el perfil ambiental mediante gestión eficiente del agua.",
-                "Ahorro de costos": "Reducir gastos de agua y descarga mediante reutilización.",
-                "Proyecto de retorno de inversión": "Garantizar recuperación de la inversión en un periodo razonable.",
-                "Mayor disponibilidad de agua": "Asegurar suministro sostenible mediante recuperación y reúso.",
-                "Sostenibilidad": "Mejorar la huella ambiental a través de la gestión eficiente del agua.",
-                "Optimización de Costos": "Reducir gastos operativos relacionados con agua potable y descargas.",
-            }
-
-            for obj in objectives:
-                description = objective_descriptions.get(
-                    obj, "Optimizar la gestión del agua para beneficios operativos."
-                )
-                html_content += f"                    <p><span class='checkmark'>✓</span> <strong>{obj}</strong> — {description}</p>\n"
-
-            html_content += """
+                    <div class="content">
+                        {self._markdown_to_html(proposal_text)}
                     </div>
                     
-                    <h1>4. Supuestos Clave de Diseño & Comparación</h1>
-                    <p>Esta sección compara las <strong>características del agua residual sin tratar</strong> proporcionadas por
-                    el cliente con <strong>valores estándar de la industria</strong>. También describe la calidad objetivo del efluente.</p>
-                    
-                    <table>
-                        <tr>
-                            <th>Parámetro</th>
-                            <th>Agua Residual Sin Tratar</th>
-                            <th>Estándar de la Industria</th>
-                            <th>Objetivo del Efluente</th>
-                        </tr>
-            """
-
-            # Añadir parámetros de agua según subsector
-            subsector = client_info.get("subsector", "")
-            water_params = proposal.get("water_parameters", {})
-
-            sector_params = []
-
-            if subsector == "Textil":
-                sector_params = [
-                    (
-                        "SST (mg/L)",
-                        water_params.get("sst", "800"),
-                        "500 - 1,000",
-                        "≤50",
-                    ),
-                    (
-                        "TDS (mg/L)",
-                        water_params.get("sdt", "3,000"),
-                        "1,500 - 5,000",
-                        "Varía según reutilización",
-                    ),
-                    (
-                        "DQO (mg/L)",
-                        water_params.get("dqo", "1,100"),
-                        "800 - 2,500",
-                        "≤250",
-                    ),
-                    (
-                        "DBO (mg/L)",
-                        water_params.get("dbo", "700"),
-                        "300 - 1,200",
-                        "≤50",
-                    ),
-                    ("pH", water_params.get("ph", "4"), "4.5 - 6.5", "6.5 - 7.5"),
-                ]
-            elif subsector == "Alimentos y Bebidas":
-                sector_params = [
-                    ("SST (mg/L)", water_params.get("sst", "600"), "400 - 800", "≤50"),
-                    (
-                        "TDS (mg/L)",
-                        water_params.get("sdt", "2,000"),
-                        "1,200 - 3,000",
-                        "Varía según reutilización",
-                    ),
-                    (
-                        "DQO (mg/L)",
-                        water_params.get("dqo", "2,500"),
-                        "1,500 - 5,000",
-                        "≤250",
-                    ),
-                    (
-                        "DBO (mg/L)",
-                        water_params.get("dbo", "1,500"),
-                        "900 - 3,000",
-                        "≤50",
-                    ),
-                    (
-                        "Grasas y Aceites (mg/L)",
-                        water_params.get("grasas_aceites", "300"),
-                        "200 - 600",
-                        "≤15",
-                    ),
-                    ("pH", water_params.get("ph", "5.5"), "4.0 - 7.0", "6.5 - 7.5"),
-                ]
-            else:
-                # Parámetros genéricos para otros sectores
-                sector_params = [
-                    (
-                        "SST (mg/L)",
-                        water_params.get("sst", "Variable*"),
-                        "Según subsector",
-                        "≤50",
-                    ),
-                    (
-                        "TDS (mg/L)",
-                        water_params.get("sdt", "Variable*"),
-                        "Según subsector",
-                        "Varía según reutilización",
-                    ),
-                    (
-                        "DQO (mg/L)",
-                        water_params.get("dqo", "Variable*"),
-                        "Según subsector",
-                        "≤250",
-                    ),
-                    (
-                        "DBO (mg/L)",
-                        water_params.get("dbo", "Variable*"),
-                        "Según subsector",
-                        "≤50",
-                    ),
-                    (
-                        "pH",
-                        water_params.get("ph", "Variable*"),
-                        "6.0 - 9.0",
-                        "6.5 - 7.5",
-                    ),
-                ]
-
-            # Agregar filas a la tabla
-            for param, actual, industry, target in sector_params:
-                html_content += f"""
-                        <tr>
-                            <td><strong>{param}</strong></td>
-                            <td>{actual}</td>
-                            <td>{industry}</td>
-                            <td>{target}</td>
-                        </tr>"""
-
-            html_content += """
-                    </table>
-                    
-                    <h1>5. Diseño de Procesos & Alternativas de Tratamiento</h1>
-                    <p>Esta sección describe las <strong>tecnologías de tratamiento recomendadas</strong> y
-                    posibles <strong>alternativas</strong> para cumplir con los objetivos de tratamiento.</p>
-                    
-                    <table>
-                        <tr>
-                            <th>Etapa de Tratamiento</th>
-                            <th>Tecnología Recomendada</th>
-                            <th>Opción Alternativa</th>
-                        </tr>
-            """
-
-            # Obtener la solución recomendada
-            solution = proposal.get("recommended_solution", {})
-
-            # Generar etapas de tratamiento según el subsector
-            treatments = []
-
-            if subsector == "Textil":
-                treatments = [
-                    (
-                        "<strong>Pretratamiento</strong>",
-                        "<strong>Flotación por Aire Disuelto (DAF)</strong> — Elimina grasas, aceites y sólidos suspendidos.",
-                        "<strong>Coagulación & Sedimentación</strong> — Menos efectiva pero de menor costo.",
-                    ),
-                    (
-                        "<strong>Ajuste de pH</strong>",
-                        "<strong>Dosificación Química</strong> — Estabiliza niveles de pH.",
-                        "<strong>Neutralización Basada en Aireación</strong> — Proceso más lento pero libre de químicos.",
-                    ),
-                    (
-                        "<strong>Tratamiento Secundario</strong>",
-                        "<strong>Reactor de Biopelícula de Lecho Móvil (MBBR)</strong> — Reducción eficiente de DQO/DBO.",
-                        "<strong>Proceso de Lodos Activados (ASP)</strong> — Requiere más espacio y energía.",
-                    ),
-                    (
-                        "<strong>Tratamiento Terciario</strong>",
-                        "<strong>Filtración de Arena & Carbón</strong> — Elimina orgánicos residuales y sólidos.",
-                        "<strong>Biorreactor de Membrana (MBR)</strong> — Efluente de alta calidad, mayor costo.",
-                    ),
-                    (
-                        "<strong>Desinfección</strong>",
-                        "<strong>Desinfección UV / Cloración</strong> — Elimina patógenos.",
-                        "<strong>Ozonización</strong> — Más efectiva pero intensiva en energía.",
-                    ),
-                ]
-            elif subsector == "Alimentos y Bebidas":
-                treatments = [
-                    (
-                        "<strong>Pretratamiento</strong>",
-                        "<strong>Trampa de Grasas y Cribado</strong> — Elimina grasas y sólidos gruesos.",
-                        "<strong>Flotación por Aire Disuelto (DAF)</strong> — Mayor eficiencia, mayor costo.",
-                    ),
-                    (
-                        "<strong>Ajuste de pH</strong>",
-                        "<strong>Dosificación Química</strong> — Estabiliza niveles de pH.",
-                        "<strong>Neutralización Biológica</strong> — Sostenible para fluctuaciones pequeñas.",
-                    ),
-                    (
-                        "<strong>Tratamiento Secundario</strong>",
-                        "<strong>Sistema Anaerobio-Aerobio Combinado</strong> — Eficiente para alta carga orgánica.",
-                        "<strong>Lodos Activados Convencionales</strong> — Tecnología probada, mayor huella.",
-                    ),
-                    (
-                        "<strong>Tratamiento Terciario</strong>",
-                        "<strong>Filtración Multimedia</strong> — Elimina sólidos residuales.",
-                        "<strong>Ultrafiltración (UF)</strong> — Mayor calidad de efluente.",
-                    ),
-                    (
-                        "<strong>Desinfección</strong>",
-                        "<strong>Desinfección UV</strong> — Sin químicos residuales.",
-                        "<strong>Cloración</strong> — Económica pero con subproductos.",
-                    ),
-                ]
-            else:
-                # Tratamiento genérico para otros sectores
-                treatments = [
-                    (
-                        "<strong>Pretratamiento</strong>",
-                        "<strong>Sistema de Cribado y Homogeneización</strong> — Prepara el agua para tratamiento.",
-                        "<strong>Opción personalizada según características específicas.</strong>",
-                    ),
-                    (
-                        "<strong>Tratamiento Primario</strong>",
-                        "<strong>Proceso Físico-Químico</strong> — Remueve sólidos y contaminantes específicos.",
-                        "<strong>Tecnología adaptada a contaminantes del sector.</strong>",
-                    ),
-                    (
-                        "<strong>Tratamiento Secundario</strong>",
-                        "<strong>Sistema Biológico Optimizado</strong> — Reduce carga orgánica.",
-                        "<strong>Selección basada en biodegradabilidad de contaminantes.</strong>",
-                    ),
-                    (
-                        "<strong>Tratamiento Terciario</strong>",
-                        "<strong>Filtración Avanzada</strong> — Asegura calidad final.",
-                        "<strong>Sistema específico según requisitos de reúso/descarga.</strong>",
-                    ),
-                    (
-                        "<strong>Desinfección</strong>",
-                        "<strong>Sistema UV/Químico</strong> — Elimina patógenos residuales.",
-                        "<strong>Tecnología seleccionada según aplicación final del agua.</strong>",
-                    ),
-                ]
-
-            # Sobrescribir con la solución recomendada si existe
-            if "pretreatment" in solution:
-                treatments[0] = (
-                    "<strong>Pretratamiento</strong>",
-                    f"<strong>{solution['pretreatment']}</strong>",
-                    treatments[0][2],
-                )
-
-            if "primary" in solution:
-                if len(treatments) > 1:
-                    treatments[1] = (
-                        "<strong>Tratamiento Primario</strong>",
-                        f"<strong>{solution['primary']}</strong>",
-                        treatments[1][2],
-                    )
-                else:
-                    treatments.append(
-                        (
-                            "<strong>Tratamiento Primario</strong>",
-                            f"<strong>{solution['primary']}</strong>",
-                            "Alternativa según requerimientos específicos",
-                        )
-                    )
-
-            if "secondary" in solution:
-                if len(treatments) > 2:
-                    treatments[2] = (
-                        "<strong>Tratamiento Secundario</strong>",
-                        f"<strong>{solution['secondary']}</strong>",
-                        treatments[2][2],
-                    )
-                else:
-                    treatments.append(
-                        (
-                            "<strong>Tratamiento Secundario</strong>",
-                            f"<strong>{solution['secondary']}</strong>",
-                            "Alternativa según requerimientos específicos",
-                        )
-                    )
-
-            if "tertiary" in solution:
-                if len(treatments) > 3:
-                    treatments[3] = (
-                        "<strong>Tratamiento Terciario</strong>",
-                        f"<strong>{solution['tertiary']}</strong>",
-                        treatments[3][2],
-                    )
-                else:
-                    treatments.append(
-                        (
-                            "<strong>Tratamiento Terciario</strong>",
-                            f"<strong>{solution['tertiary']}</strong>",
-                            "Alternativa según requerimientos específicos",
-                        )
-                    )
-
-            # Agregar filas de tratamiento
-            for stage, recommended, alternative in treatments:
-                html_content += f"""
-                        <tr>
-                            <td>{stage}</td>
-                            <td>{recommended}</td>
-                            <td>{alternative}</td>
-                        </tr>"""
-
-            # Extraer valor de flujo para dimensionamiento
-            flow_value = 100  # m³/día (valor por defecto)
-            water_consumption = proposal.get("project_details", {}).get(
-                "water_consumption", "100 m³/día"
-            )
-
-            if isinstance(water_consumption, str):
-                # Tratar de extraer un valor numérico del consumo de agua
-                import re
-
-                match = re.search(r"(\d+(?:\.\d+)?)", water_consumption)
-                if match:
-                    try:
-                        flow_value = float(match.group(1))
-                    except:
-                        pass
-
-            html_content += """
-                    </table>
-                    
-                    <h1>6. Equipo Sugerido & Dimensionamiento</h1>
-                    <p>Esta sección lista <strong>equipos recomendados, capacidades, dimensiones y
-                    posibles proveedores/modelos</strong> cuando estén disponibles.</p>
-                    
-                    <table>
-                        <tr>
-                            <th>Equipo</th>
-                            <th>Capacidad</th>
-                            <th>Dimensiones</th>
-                            <th>Marca/Modelo</th>
-                        </tr>
-            """
-
-            # Añadir equipos según subsector
-            equipment = []
-
-            if subsector == "Textil":
-                equipment = [
-                    (
-                        f"<strong>Sistema DAF</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"{flow_value*0.1:.1f} m² x 2.5 m altura",
-                        "Marca A / Estándar Industrial",
-                    ),
-                    (
-                        f"<strong>Sistema de Ajuste de pH</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        "Unidad Compacta",
-                        "Estándar Industrial",
-                    ),
-                    (
-                        f"<strong>Sistema MBBR</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Tanque de {flow_value*0.3:.1f} m³",
-                        "Marca B / Equivalente",
-                    ),
-                    (
-                        f"<strong>Filtros de Arena & Carbón</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Área de Filtración: {flow_value*0.01:.1f} m²",
-                        "Marca C / Equivalente",
-                    ),
-                    (
-                        f"<strong>Sistema UV</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        "Unidad Compacta",
-                        "Marca D / Equivalente",
-                    ),
-                    (
-                        f"<strong>Tanque de Agua Tratada</strong>",
-                        f"{flow_value*0.5:.1f} m³",
-                        f"{flow_value*0.12:.1f} m² x 3 m altura",
-                        "Estándar Industrial",
-                    ),
-                ]
-            elif subsector == "Alimentos y Bebidas":
-                equipment = [
-                    (
-                        f"<strong>Trampa de Grasas/Aceites</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"{flow_value*0.08:.1f} m³",
-                        "Estándar Industrial",
-                    ),
-                    (
-                        f"<strong>Tanque de Ecualización</strong>",
-                        f"{flow_value*0.4:.1f} m³",
-                        f"{flow_value*0.1:.1f} m² x 3 m altura",
-                        "Fabricación a Medida",
-                    ),
-                    (
-                        f"<strong>Reactor Anaerobio</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Volumen: {flow_value*0.25:.1f} m³",
-                        "Marca B / Equivalente",
-                    ),
-                    (
-                        f"<strong>Sistema Aerobio</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Volumen: {flow_value*0.2:.1f} m³",
-                        "Marca C / Equivalente",
-                    ),
-                    (
-                        f"<strong>Sistema de Filtración</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Área: {flow_value*0.01:.1f} m²",
-                        "Marca D / Equivalente",
-                    ),
-                    (
-                        f"<strong>Deshidratador de Lodos</strong>",
-                        f"{flow_value*0.01:.1f} m³/día de lodos",
-                        "Unidad Compacta",
-                        "Marca E / Equivalente",
-                    ),
-                ]
-            else:
-                # Equipos genéricos para otros sectores
-                equipment = [
-                    (
-                        f"<strong>Sistema de Pretratamiento</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        "Según requerimientos específicos",
-                        "Selección según contaminantes",
-                    ),
-                    (
-                        f"<strong>Sistema Primario</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Área estimada: {flow_value*0.1:.1f} m²",
-                        "Diseño a medida",
-                    ),
-                    (
-                        f"<strong>Sistema Secundario</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Volumen: {flow_value*0.3:.1f} m³",
-                        "Tecnología seleccionada según caracterización",
-                    ),
-                    (
-                        f"<strong>Sistema Terciario</strong>",
-                        f"{flow_value/24:.1f} m³/h",
-                        f"Dimensiones según tecnología seleccionada",
-                        "Según requerimientos de reúso",
-                    ),
-                    (
-                        f"<strong>Tanque de Almacenamiento</strong>",
-                        f"{flow_value*0.5:.1f} m³",
-                        f"Dimensiones: {flow_value*0.12:.1f} m² x 3 m altura",
-                        "Estándar Industrial",
-                    ),
-                ]
-
-            # Agregar filas de equipos
-            for equip, capacity, dimensions, brand in equipment:
-                html_content += f"""
-                        <tr>
-                            <td>{equip}</td>
-                            <td>{capacity}</td>
-                            <td>{dimensions}</td>
-                            <td>{brand}</td>
-                        </tr>"""
-
-            # Datos económicos
-            economic = proposal.get("economic_analysis", {})
-            capex = economic.get("capex", flow_value * 1500)  # Cálculo por defecto
-            complexity_factor = (
-                1.2  # Factor moderado por defecto si no hay datos específicos
-            )
-
-            # Calcular si no existe
-            if "capex" not in economic:
-                capex = flow_value * 1500 * complexity_factor
-
-            equipment_cost = economic.get("equipment_cost", capex * 0.6)
-            installation_cost = economic.get("installation_cost", capex * 0.25)
-            engineering_cost = economic.get("engineering_cost", capex * 0.1)
-            contingency_cost = economic.get("contingency_cost", capex * 0.05)
-
-            html_content += """
-                    </table>
-                    
-                    <h1>7. Estimación de CAPEX & OPEX</h1>
-                    <p>Esta sección detalla tanto los <strong>gastos de capital (CAPEX)</strong> como los
-                    <strong>gastos operativos (OPEX)</strong>.</p>
-                    
-                    <h2>Desglose de CAPEX</h2>
-                    
-                    <table>
-                        <tr>
-                            <th>Categoría</th>
-                            <th>Costo Estimado (USD)</th>
-                            <th>Notas</th>
-                        </tr>
-            """
-
-            # Agregar filas de CAPEX
-            html_content += f"""
-                        <tr>
-                            <td><strong>Equipos de Tratamiento</strong></td>
-                            <td>${equipment_cost:,.2f}</td>
-                            <td>Basado en instalaciones similares</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Instalación y Montaje</strong></td>
-                            <td>${installation_cost:,.2f}</td>
-                            <td>Diseño escalable</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Ingeniería y Gestión</strong></td>
-                            <td>${engineering_cost:,.2f}</td>
-                            <td>Incluye puesta en marcha</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Contingencia</strong></td>
-                            <td>${contingency_cost:,.2f}</td>
-                            <td>Reserva para imprevistos</td>
-                        </tr>
-                        <tr class="total-row">
-                            <td><strong>CAPEX Total</strong></td>
-                            <td><strong>${capex:,.2f}</strong></td>
-                            <td><strong>Inversión total estimada</strong></td>
-                        </tr>
-            """
-
-            # OPEX
-            energy_cost = economic.get("energy_cost", flow_value * 3)  # $3 por m³/día
-            chemical_cost = economic.get(
-                "chemical_cost", flow_value * 2
-            )  # $2 por m³/día
-            labor_cost = economic.get("labor_cost", 1500 if flow_value < 200 else 3000)
-            maintenance_cost = economic.get("maintenance_cost", capex * 0.01 / 12)
-            sludge_cost = economic.get("sludge_cost", flow_value * 1)
-
-            total_opex_monthly = economic.get(
-                "opex_monthly",
-                energy_cost
-                + chemical_cost
-                + labor_cost
-                + maintenance_cost
-                + sludge_cost,
-            )
-
-            html_content += """
-                    </table>
-                    
-                    <h2>Desglose de OPEX</h2>
-                    
-                    <table>
-                        <tr>
-                            <th>Gasto Operativo</th>
-                            <th>Costo Mensual Estimado (USD)</th>
-                            <th>Notas</th>
-                        </tr>
-            """
-
-            # Agregar filas de OPEX
-            html_content += f"""
-                        <tr>
-                            <td><strong>Costos de Químicos</strong></td>
-                            <td>${chemical_cost:,.2f}</td>
-                            <td>Químicos para ajuste de pH y coagulación</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Costos de Energía</strong></td>
-                            <td>${energy_cost:,.2f}</td>
-                            <td>Consumo eléctrico para aireación, bombas</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Costos de Mano de Obra</strong></td>
-                            <td>${labor_cost:,.2f}</td>
-                            <td>Operador y personal de mantenimiento</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Disposición de Lodos</strong></td>
-                            <td>${sludge_cost:,.2f}</td>
-                            <td>Remoción y tratamiento de lodos residuales</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Mantenimiento</strong></td>
-                            <td>${maintenance_cost:,.2f}</td>
-                            <td>Repuestos y servicios preventivos</td>
-                        </tr>
-                        <tr class="total-row">
-                            <td><strong>OPEX Total</strong></td>
-                            <td><strong>${total_opex_monthly:,.2f}/mes</strong></td>
-                            <td><strong>Costo operativo mensual</strong></td>
-                        </tr>
-            """
-
-            # Sección 8: ROI
-            water_cost = economic.get("water_cost", 2.0)  # Por defecto USD/m³
-            water_cost_text = proposal.get("project_details", {}).get(
-                "water_cost", "2.0 USD/m³"
-            )
-
-            if isinstance(water_cost_text, str):
-                # Intentar extraer valor numérico
-                import re
-
-                cost_match = re.search(r"(\d+(?:\.\d+)?)", water_cost_text)
-                if cost_match:
-                    try:
-                        water_cost = float(cost_match.group(1))
-                    except:
-                        pass
-
-            discharge_cost = water_cost * 0.5  # Estimación de costo de descarga
-            water_savings_ratio = economic.get(
-                "reuse_efficiency", 0.6
-            )  # 60% por defecto
-            discharge_savings_ratio = 0.4  # 40% reducción de descarga
-
-            monthly_water_volume = flow_value * 30  # Volumen mensual en m³
-            monthly_water_savings = (
-                monthly_water_volume * water_savings_ratio * water_cost
-            )
-            monthly_discharge_savings = (
-                monthly_water_volume * discharge_savings_ratio * discharge_cost
-            )
-
-            annual_water_savings = monthly_water_savings * 12
-            annual_discharge_savings = monthly_discharge_savings * 12
-            total_annual_savings = annual_water_savings + annual_discharge_savings
-
-            # Calcular ROI simple
-            roi_years = economic.get("roi", 0)
-            if not roi_years and total_annual_savings > 0:
-                roi_years = capex / total_annual_savings
-                roi_years = max(1.0, min(10.0, roi_years))
-
-            html_content += """
-                    </table>
-                    
-                    <h1>8. Análisis del Retorno de la Inversión (ROI)</h1>
-                    <p>Ahorros de costos proyectados basados en <strong>reducción de compras de agua y menores
-                    tarifas de descarga</strong>.</p>
-                    
-                    <table>
-                        <tr>
-                            <th>Parámetro</th>
-                            <th>Costo Actual</th>
-                            <th>Costo Proyectado Después del Tratamiento</th>
-                            <th>Ahorro Anual (USD)</th>
-                        </tr>
-            """
-
-            # Agregar filas de ahorros
-            html_content += f"""
-                        <tr>
-                            <td><strong>Costo de Compra de Agua</strong></td>
-                            <td>{water_cost:.2f} USD/m³</td>
-                            <td>{water_cost * (1-water_savings_ratio):.2f} USD/m³ (con reúso)</td>
-                            <td>${annual_water_savings:,.2f}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Tarifas de Descarga</strong></td>
-                            <td>${monthly_water_volume * discharge_cost:,.2f}/mes</td>
-                            <td>${monthly_water_volume * discharge_cost * (1-discharge_savings_ratio):,.2f}/mes (carga reducida)</td>
-                            <td>${annual_discharge_savings:,.2f}</td>
-                        </tr>
-                        <tr class="total-row">
-                            <td><strong>Total Ahorros Anuales</strong></td>
-                            <td></td>
-                            <td></td>
-                            <td><strong>${total_annual_savings:,.2f}</strong></td>
-                        </tr>
-                    </table>
-                    
-                    <div class="highlight">
-                        <h2>Retorno de la Inversión</h2>
-                        <p><strong>Periodo de recuperación simple:</strong> {roi_years:.1f} años</p>
-                        <p><strong>ROI a 5 años:</strong> {(total_annual_savings * 5 - capex) / capex * 100 if capex > 0 else 0:.1f}%</p>
-                        <p><strong>Ahorros acumulados a 10 años:</strong> ${total_annual_savings * 10:,.2f}</p>
+                    <div class="footer">
+                        <p>Hydrous Management Group © {datetime.now().year}</p>
+                        <p>Propuesta generada el {datetime.now().strftime('%d/%m/%Y')}</p>
+                        <p>Documento confidencial para uso exclusivo del cliente</p>
                     </div>
-            """
-
-            # Sección 9: Recomendaciones
-            recommendations = proposal.get("recommendations", [])
-            if recommendations:
-                html_content += """
-                    <h1>9. Recomendaciones Especializadas</h1>
-                    <div class="recommendations">
-                """
-
-                for rec in recommendations:
-                    html_content += f"""
-                        <div class="recommendation-item">
-                            <div class="recommendation-title">{rec.get("title", "")}</div>
-                            <p>{rec.get("description", "")}</p>
-                        </div>
-                    """
-
-                html_content += """
-                    </div>
-                """
-            else:
-                # Recomendaciones genéricas si no hay específicas
-                html_content += """
-                    <h1>9. Recomendaciones Generales</h1>
-                    <div class="recommendations">
-                        <div class="recommendation-item">
-                            <div class="recommendation-title">Prueba Piloto</div>
-                            <p>Recomendamos realizar una prueba piloto de 2-4 semanas para validar la eficiencia del sistema propuesto con sus condiciones específicas.</p>
-                        </div>
-                        <div class="recommendation-item">
-                            <div class="recommendation-title">Análisis Adicionales</div>
-                            <p>Para una propuesta más precisa, se recomienda un análisis detallado de laboratorio de sus aguas residuales, incluyendo parámetros específicos para su sector.</p>
-                        </div>
-                        <div class="recommendation-item">
-                            <div class="recommendation-title">Capacitación de Personal</div>
-                            <p>Implementar un programa de capacitación para el personal encargado de operar el sistema garantizará un funcionamiento óptimo y prolongará la vida útil de los equipos.</p>
-                        </div>
-                    </div>
-                """
-
-            # Sección final y pie de página
-            html_content += (
-                """
-                    <div class="disclaimer">
-                        <p>Esta propuesta se basa en la información proporcionada y estándares de la industria. Los costos y especificaciones finales pueden variar tras un estudio detallado del sitio y análisis específicos del agua residual. Hydrous Management Group recomienda realizar pruebas piloto para validar el diseño final.</p>
-                    </div>
-                    
-                    <p style="text-align: center; margin-top: 30px;">
-                        <strong>Para consultas o validación de esta propuesta, contacte a Hydrous Management Group en:</strong><br>
-                        info@hydrous.com | +1 (555) 123-4567
-                    </p>
-                </div>
-                
-                <div class="footer">
-                    <p>Hydrous Management Group © 2025</p>
-                    <p>Generado el """
-                + datetime.now().strftime("%d/%m/%Y")
-                + """</p>
                 </div>
             </body>
             </html>
             """
-            )
 
-            # Asegurar que el directorio existe
-            os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
-            # Guardar el HTML
+            # Guardar como HTML
             html_path = os.path.join(
                 settings.UPLOAD_DIR, f"{client_name}_propuesta_{timestamp}.html"
             )
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
-            logger.info(f"HTML de propuesta generado: {html_path}")
+            # Intentar generar PDF si hay bibliotecas disponibles
+            if PDF_GENERATORS:
+                pdf_path = os.path.join(
+                    settings.UPLOAD_DIR, f"{client_name}_propuesta_{timestamp}.pdf"
+                )
 
-            # Intentar generar PDF con las bibliotecas disponibles
-            pdf_path = os.path.join(
-                settings.UPLOAD_DIR, f"{client_name}_propuesta_{timestamp}.pdf"
-            )
+                # Intentar con WeasyPrint primero
+                if "weasyprint" in PDF_GENERATORS:
+                    try:
+                        from weasyprint import HTML
 
-            # Lista de generadores de PDF disponibles
-            pdf_generators = []
+                        HTML(string=html_content).write_pdf(pdf_path)
+                        return pdf_path
+                    except Exception as e:
+                        logger.warning(f"Error al generar PDF con WeasyPrint: {e}")
 
-            try:
-                import pdfkit
+                # Si falla, intentar con pdfkit
+                if "pdfkit" in PDF_GENERATORS:
+                    try:
+                        import pdfkit
 
-                pdf_generators.append("pdfkit")
-            except ImportError:
-                logger.warning("pdfkit no está disponible para generar PDF")
+                        pdfkit.from_string(html_content, pdf_path)
+                        return pdf_path
+                    except Exception as e:
+                        logger.warning(f"Error al generar PDF con pdfkit: {e}")
 
-            try:
-                from weasyprint import HTML
-
-                pdf_generators.append("weasyprint")
-            except ImportError:
-                logger.warning("weasyprint no está disponible para generar PDF")
-
-            # Primero intentar con pdfkit
-            if "pdfkit" in pdf_generators:
-                try:
-                    options = {
-                        "page-size": "A4",
-                        "margin-top": "20mm",
-                        "margin-right": "20mm",
-                        "margin-bottom": "20mm",
-                        "margin-left": "20mm",
-                        "encoding": "UTF-8",
-                        "no-outline": None,
-                        "enable-local-file-access": None,
-                    }
-
-                    # Buscar wkhtmltopdf en Windows
-                    path_wkhtmltopdf = None
-                    if os.name == "nt":  # Windows
-                        for possible_path in [
-                            r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe",
-                            r"C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe",
-                        ]:
-                            if os.path.exists(possible_path):
-                                path_wkhtmltopdf = possible_path
-                                break
-
-                    if path_wkhtmltopdf:
-                        config = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
-                        pdfkit.from_string(
-                            html_content,
-                            pdf_path,
-                            options=options,
-                            configuration=config,
-                        )
-                    else:
-                        pdfkit.from_string(html_content, pdf_path, options=options)
-
-                    logger.info(f"PDF generado correctamente con pdfkit: {pdf_path}")
-                    return pdf_path
-                except Exception as e:
-                    logger.warning(f"Error al generar PDF con pdfkit: {str(e)}")
-
-            # Si pdfkit falla, intentar con weasyprint
-            if "weasyprint" in pdf_generators:
-                try:
-                    from weasyprint import HTML
-
-                    HTML(string=html_content).write_pdf(pdf_path)
-                    logger.info(
-                        f"PDF generado correctamente con WeasyPrint: {pdf_path}"
-                    )
-                    return pdf_path
-                except Exception as e:
-                    logger.warning(f"Error al generar PDF con WeasyPrint: {str(e)}")
-
-            # Si no se pudo generar PDF, devolver el HTML
-            logger.warning(f"No se pudo generar PDF. Devolviendo HTML: {html_path}")
+            # Si no se pudo generar PDF, devolver HTML
             return html_path
 
         except Exception as e:
             logger.error(f"Error al generar propuesta: {str(e)}")
-            # Crear un HTML de error como fallback
+            # Devolver página de error HTML
             error_html_path = os.path.join(
                 settings.UPLOAD_DIR,
                 f"error_propuesta_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
             )
 
-            error_html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Error en Generación de Propuesta</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
-                    h1 {{ color: #d9534f; }}
-                    .error-code {{ background: #f8d7da; padding: 15px; border-radius: 5px; }}
-                </style>
-            </head>
-            <body>
-                <h1>Ha ocurrido un error al generar la propuesta</h1>
-                <p>No se ha podido generar la propuesta debido a un error técnico. Por favor, intente nuevamente o contacte con soporte técnico.</p>
-                <div class="error-code">
-                    <p><strong>Código de error:</strong> {datetime.now().strftime('%Y%m%d%H%M%S')}</p>
-                    <p><strong>Detalle:</strong> {str(e)}</p>
-                </div>
-            </body>
-            </html>
-            """
-
             with open(error_html_path, "w", encoding="utf-8") as f:
-                f.write(error_html)
+                f.write(
+                    f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Error al Generar Propuesta</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; padding: 30px; }}
+                        .error-box {{ background: #f8d7da; padding: 20px; border-radius: 5px; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>Error al Generar la Propuesta</h1>
+                    <div class="error-box">
+                        <p>Se produjo un error al generar la propuesta: {str(e)}</p>
+                    </div>
+                    <p>Por favor, intente nuevamente o contacte con soporte técnico.</p>
+                </body>
+                </html>
+                """
+                )
 
             return error_html_path
+
+    def _markdown_to_html(self, markdown_text: str) -> str:
+        """Convierte Markdown a HTML de forma básica"""
+        try:
+            if markdown2:
+                return markdown2.markdown(
+                    markdown_text, extras=["tables", "fenced-code-blocks"]
+                )
+            else:
+                # Conversión básica si no está disponible markdown2
+                html = markdown_text
+                # Encabezados
+                html = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
+                html = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
+                html = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
+                # Negrita
+                html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
+                # Cursiva
+                html = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html)
+                # Listas
+                html = re.sub(r"^- (.*?)$", r"<li>\1</li>", html, flags=re.MULTILINE)
+                # Párrafos
+                html = re.sub(r"([^\n])\n([^\n])", r"\1<br>\2", html)
+                html = re.sub(r"\n\n", r"</p><p>", html)
+                html = "<p>" + html + "</p>"
+                return html
+        except Exception as e:
+            logger.warning(f"Error al convertir Markdown a HTML: {e}")
+            return f"<pre>{markdown_text}</pre>"
 
 
 # Instancia global del servicio
