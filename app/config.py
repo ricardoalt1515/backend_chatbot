@@ -147,6 +147,9 @@ Al final, ofrece un enlace para descargar la propuesta completa en PDF.
 """
 
 
+# Y añade esta nueva variable:
+SYSTEM_PROMPT: str = MASTER_PROMPT
+
 # Crear instancia de configuración
 settings = Settings()
 
