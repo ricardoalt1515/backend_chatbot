@@ -927,7 +927,7 @@ Este documento incluye:
 
             # Construir mensajes para la API
             messages = [
-                {"role": "system", "content": settings.MASTER_PROMPT},
+                {"role": "system", "content": settings.SYSTEM_PROMPT},
             ]
 
             # Añadir información de contexto actual como parte del sistema
