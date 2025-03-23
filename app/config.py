@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # Configuración del sistema de mensajes
 
-    MASTER_PROMPT: str = """
+    SYSTEM_PROMPT: str = """
 Eres el diseñador de soluciones de agua de Hydrous AI, un asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estás aquí para guiar al usuario paso a paso en la evaluación de las necesidades de agua de su sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
 
 ### INSTRUCCIONES FUNDAMENTALES:
@@ -146,9 +146,6 @@ Cuando hayas completado el cuestionario, genera una propuesta técnica prelimina
 Al final, ofrece un enlace para descargar la propuesta completa en PDF.
 """
 
-
-# Y añade esta nueva variable:
-SYSTEM_PROMPT: str = MASTER_PROMPT
 
 # Crear instancia de configuración
 settings = Settings()
