@@ -14,7 +14,6 @@ from app.services.questionnaire_service import questionnaire_service
 # Intentar importar las bibliotecas de Gemini
 try:
     import google.generativeai as genai
-    from google.generativeai import types as gemini_types
 
     gemini_available = True
 except ImportError:
@@ -184,54 +183,78 @@ Este documento incluye:
                 ):
                     try:
                         # Extraer instrucciones del sistema y convertir mensajes al formato de Gemini
-                        system_instruction = None
+                        system_instruction = ""
                         gemini_messages = []
 
+                        # Extraer todas las instrucciones del sistema y combinarlas
                         for msg in messages:
                             if msg["role"] == "system":
-                                # Gemini maneja las instrucciones del sistema de forma separada
-                                # Si hay múltiples mensajes del sistema, usamos el último
-                                system_instruction = gemini_types.Part.from_text(
-                                    text=msg["content"]
-                                )
-                            else:
-                                # Gemini usa "user" y "model" en lugar de "user" y "assistant"
-                                gemini_role = (
-                                    "user" if msg["role"] == "user" else "model"
-                                )
-                                gemini_messages.append(
-                                    gemini_types.Content(
-                                        role=gemini_role,
-                                        parts=[
-                                            gemini_types.Part.from_text(
-                                                text=msg["content"]
-                                            )
-                                        ],
-                                    )
+                                if system_instruction:
+                                    system_instruction += "\n\n" + msg["content"]
+                                else:
+                                    system_instruction = msg["content"]
+
+                        # Preparar la historia de conversación
+                        history = []
+                        for msg in messages:
+                            if msg["role"] != "system":
+                                # Ajustar los roles para Gemini (user -> user, assistant -> model)
+                                role = "user" if msg["role"] == "user" else "model"
+                                history.append(
+                                    {"role": role, "parts": [{"text": msg["content"]}]}
                                 )
 
                         # Configurar la generación
-                        generate_config = gemini_types.GenerateContentConfig(
-                            temperature=temperature,
-                            max_output_tokens=max_tokens or 8192,
-                            response_mime_type="text/plain",
+                        generation_config = {
+                            "temperature": temperature,
+                            "max_output_tokens": max_tokens or 8192,
+                            "top_p": 0.95,
+                            "top_k": 40,
+                        }
+
+                        # Configurar seguridad
+                        safety_settings = [
+                            {
+                                "category": "HARM_CATEGORY_HARASSMENT",
+                                "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                            },
+                            {
+                                "category": "HARM_CATEGORY_HATE_SPEECH",
+                                "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                            },
+                            {
+                                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                            },
+                            {
+                                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                                "threshold": "BLOCK_MEDIUM_AND_ABOVE",
+                            },
+                        ]
+
+                        # Inicializar el modelo
+                        model = self.gemini_client.GenerativeModel(
+                            model_name=self.model,
+                            generation_config=generation_config,
+                            safety_settings=safety_settings,
+                            system_instruction=system_instruction,
                         )
 
-                        # Agregar instrucción del sistema si existe
-                        if system_instruction:
-                            generate_config.system_instruction = [system_instruction]
+                        # Si hay historial previo, usar chat para mantener contexto
+                        if len(history) > 1:
+                            chat = model.start_chat(history=history[:-1])
+                            response = chat.send_message(
+                                history[-1]["parts"][0]["text"]
+                            )
+                        else:
+                            # Si solo hay un mensaje, enviarlo directamente
+                            content = history[0]["parts"][0]["text"] if history else ""
+                            response = model.generate_content(content)
 
-                        # Hacer la solicitud a Gemini
-                        model = self.gemini_client.models.get_model(self.model)
-                        response = model.generate_content(
-                            contents=gemini_messages,
-                            generation_config=generate_config,
-                        )
-
-                        # Manejar la respuesta
+                        # Extraer el texto de la respuesta
                         if hasattr(response, "text"):
                             return response.text
-                        elif hasattr(response, "parts") and response.parts:
+                        elif hasattr(response, "parts") and len(response.parts) > 0:
                             return response.parts[0].text
                         else:
                             logger.error("Formato de respuesta de Gemini no reconocido")
