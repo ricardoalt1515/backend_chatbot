@@ -40,6 +40,20 @@ class AIService:
                 logger.warning(
                     "GEMINI_API_KEY no configurada. las llamadas a la API fallaran."
                 )
+            self.api_key = setting.GEMINI_API_KEY
+            self.model = settings.GEMINI_MODEL
+            self.gemini_client = None
+            try:
+                from google import genai
+
+                genai.configure(api_key=self.api_key)
+                self.gemini_client = genai.GenerativeModel(self.model)
+            except ImportError:
+                logger.error(
+                    "No se pudo importar la biblioteca de Google Generative AI. Instálela con 'pip install google-generative-ai'"
+                )
+            except Exception as e:
+                logger.error(f"Error al inicializar el cliente de Gemini: {e}")
         else:
             logger.warning(
                 f"Proveedor de IA no soportado: {self.provider}. Usando respuestas predefinidas."
@@ -135,133 +149,200 @@ Este documento incluye:
 
         return messages
 
-    async def _generate_response(self, messages: List[Dict[str, Any]]) -> str:
-        """
-        Genera una respuesta usando el modelo de IA configurado
-
-        Args:
-            messages: Lista de mensajes para el modelo
-
-        Returns:
-            str: Respuesta generada
-        """
-        # Verificar si tenemos configuración de API
-        if not self.api_key:
-            return self._get_fallback_response()
-
-        try:
-            # Manejar las llamadas a la API según el proveedor
-            if self.provider == "gemini":
-                return await self._generate_gemini_response(messages)
-            else:  # Para Groq y OpenAI (misma estructura de API)
-                return await self._generate_openai_compatible_response(messages)
-
-        except Exception as e:
-            logger.error(f"Error al generar respuesta: {str(e)}")
-            return self._get_fallback_response()
-
-    async def _generate_openai_compatible_response(
-        self, messages: List[Dict[str, Any]]
+    async def _generate_response(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
     ) -> str:
         """
-        Genera respuesta usando APIs compatibles con OpenAI (Groq, OpenAI)
+        Genera una respuesta utilizando el proveedor de IA configurado
+        Con manejo mejorado de errores de límite de tokens
 
         Args:
             messages: Lista de mensajes para el modelo
+            temperature: Nivel de creatividad (0.0 a 1.0)
+            max_tokens: Número máximo de tokens en la respuesta
 
         Returns:
-            str: Respuesta generada
+            str: Texto de respuesta generada
         """
-        if not self.api_url:
-            return self._get_fallback_response()
+        # Caso especial para Gemini
+        if (
+            self.provider == "gemini"
+            and hasattr(self, "gemini_client")
+            and self.gemini_client
+        ):
+            try:
+                # Formatear los mensajes para Gemini
+                gemini_messages = []
+                system_content = ""
 
-        async with httpx.AsyncClient() as client:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            }
+                # Extraer el mensaje del sistema primero (si existe)
+                for msg in messages:
+                    if msg["role"] == "system":
+                        system_content = msg["content"]
+                        break
 
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 1500,
-            }
+                # Formatear el resto de mensajes para Gemini
+                for msg in messages:
+                    if msg["role"] == "system":
+                        continue  # Ya procesamos el mensaje del sistema
 
-            response = await client.post(
-                self.api_url, json=payload, headers=headers, timeout=30.0
-            )
+                    role = "user" if msg["role"] == "user" else "model"
+                    gemini_messages.append({"role": role, "parts": [msg["content"]]})
 
-            if response.status_code == 200:
-                response_data = response.json()
-                return response_data["choices"][0]["message"]["content"]
-            else:
-                logger.error(
-                    f"Error en la API: {response.status_code} - {response.text}"
-                )
+                # Si no hay mensajes después del formateo, usar mensaje del sistema como prompt inicial
+                if not gemini_messages and system_content:
+                    # Usar el sistema como primer mensaje del usuario
+                    gemini_messages.append({"role": "user", "parts": [system_content]})
+                elif system_content and len(gemini_messages) > 0:
+                    # Prepend system message to first user message if it exists
+                    first_user_idx = next(
+                        (
+                            i
+                            for i, msg in enumerate(gemini_messages)
+                            if msg["role"] == "user"
+                        ),
+                        None,
+                    )
+                    if first_user_idx is not None:
+                        gemini_messages[first_user_idx]["parts"][
+                            0
+                        ] = f"{system_content}\n\n{gemini_messages[first_user_idx]['parts'][0]}"
+
+                # Asegurarse de que la conversación termine con un mensaje del usuario para generar respuesta
+                if gemini_messages and gemini_messages[-1]["role"] == "model":
+                    # Si el último mensaje es del modelo, no podemos generar respuesta
+                    logger.warning(
+                        "La conversación termina con un mensaje del modelo. Añadiendo mensaje de usuario genérico."
+                    )
+                    gemini_messages.append(
+                        {"role": "user", "parts": ["Por favor continúa."]}
+                    )
+
+                # Configurar generación
+                generation_config = {
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens or 1024,
+                    "top_p": 0.95,
+                    "top_k": 64,
+                }
+
+                # Determinar si usamos chat o generación directa
+                if len(gemini_messages) > 1:  # Múltiples turnos de conversación
+                    # Separar el último mensaje (prompt actual) del historial
+                    history = gemini_messages[:-1]
+                    current_msg = gemini_messages[-1]["parts"][0]
+
+                    # Iniciar chat con historial
+                    chat = self.gemini_client.start_chat(history=history)
+                    response = chat.send_message(
+                        current_msg, generation_config=generation_config
+                    )
+                else:  # Un solo mensaje
+                    # Generar directamente con el mensaje
+                    prompt = gemini_messages[0]["parts"][0]
+                    response = self.gemini_client.generate_content(
+                        prompt, generation_config=generation_config
+                    )
+
+                # Extraer y devolver texto
+                if hasattr(response, "text"):
+                    return response.text
+                elif hasattr(response, "parts"):
+                    return "".join([part.text for part in response.parts])
+                else:
+                    logger.error("Formato de respuesta de Gemini desconocido")
+                    return self._get_fallback_response()
+
+            except Exception as e:
+                logger.error(f"Error al generar respuesta con Gemini: {str(e)}")
                 return self._get_fallback_response()
 
-    async def _generate_gemini_response(self, messages: List[Dict[str, Any]]) -> str:
-        """
-        Genera respuesta usando la API de Gemini
+        # Para proveedores compatibles con OpenAI (Groq, OpenAI, etc.)
+        max_retries = 2
+        retry_count = 0
+        reduced_context = False
 
-        Args:
-            messages: Lista de mensajes para el modelo
+        while retry_count <= max_retries:
+            try:
+                # Verificar si tenemos conexión con la API
+                if not self.api_key or not self.api_url:
+                    return self._get_fallback_response(messages)
 
-        Returns:
-            str: Respuesta generada
-        """
-        try:
-            # Importar la biblioteca de Gemini
-            from google import genai
+                # Hacer solicitud a la API
+                async with httpx.AsyncClient() as client:
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.api_key}",
+                    }
 
-            # Configurar cliente con API key
-            genai.configure(api_key=self.api_key)
+                    payload = {
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        "max_tokens": max_tokens or 1024,
+                    }
 
-            # Convertir mensajes del formato OpenAI/Groq al formato de Gemini
-            gemini_content = []
-
-            # Primero, buscar el mensaje del sistema
-            system_content = None
-            for msg in messages:
-                if msg["role"] == "system":
-                    system_content = msg["content"]
-                    break
-
-            # Luego, procesar los mensajes de usuario/asistente
-            for msg in messages:
-                if msg["role"] == "user":
-                    gemini_content.append(
-                        {"role": "user", "parts": [{"text": msg["content"]}]}
-                    )
-                elif msg["role"] == "assistant":
-                    gemini_content.append(
-                        {"role": "model", "parts": [{"text": msg["content"]}]}
+                    response = await client.post(
+                        self.api_url, json=payload, headers=headers, timeout=30.0
                     )
 
-            # Crear el cliente de Gemini
-            model = genai.GenerativeModel(
-                model_name=self.model, system_instruction=system_content
-            )
+                    if response.status_code == 429:  # Rate limit o token limit
+                        response_data = response.json()
+                        error_message = response_data.get("error", {}).get(
+                            "message", ""
+                        )
 
-            # Generar la respuesta
-            chat = model.start_chat(
-                history=gemini_content[:-1] if gemini_content else []
-            )
-            response = chat.send_message(
-                gemini_content[-1]["parts"][0]["text"] if gemini_content else "Hola"
-            )
+                        if (
+                            "tokens per minute" in error_message
+                            or "rate_limit_exceeded" in error_message
+                        ):
+                            # Esperar antes de reintentar si es un error de límite de velocidad
+                            wait_time = self._extract_wait_time(error_message) or 20
+                            logger.warning(
+                                f"Límite de tokens alcanzado. Esperando {wait_time} segundos..."
+                            )
+                            time.sleep(wait_time)
+                            retry_count += 1
+                            continue
 
-            return response.text
+                        elif (
+                            "maximum context length" in error_message
+                            or "context_length_exceeded" in error_message
+                        ):
+                            if not reduced_context:
+                                # Reducir el contexto a solo lo esencial
+                                messages = self._reduce_context(messages)
+                                reduced_context = True
+                                continue
+                            else:
+                                logger.error(
+                                    "No se pudo reducir suficientemente el contexto."
+                                )
+                                return self._get_emergency_response()
 
-        except ImportError:
-            logger.error(
-                "La biblioteca 'google-generativeai' no está instalada. Por favor, instálela con 'pip install google-generativeai'"
-            )
-            return "Error: La biblioteca de Gemini no está instalada en el servidor."
-        except Exception as e:
-            logger.error(f"Error al generar respuesta con Gemini: {str(e)}")
-            return f"Error al generar respuesta con Gemini: {str(e)}"
+                    elif response.status_code != 200:
+                        logger.error(
+                            f"Error en la API de {self.provider}: {response.status_code} - {response.text}"
+                        )
+                        return self._get_fallback_response(messages)
+
+                    response_data = response.json()
+                    raw_response = response_data["choices"][0]["message"]["content"]
+                    return raw_response
+
+            except Exception as e:
+                logger.error(
+                    f"Error al generar respuesta con {self.provider}: {str(e)}"
+                )
+                retry_count += 1
+                if retry_count > max_retries:
+                    return self._get_fallback_response(messages)
+                time.sleep(2)  # Pequeña pausa antes de reintentar
+
+        return self._get_fallback_response(messages)
 
     def _is_pdf_request(self, message: str) -> bool:
         """
