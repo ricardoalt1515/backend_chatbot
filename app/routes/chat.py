@@ -17,12 +17,12 @@ router = APIRouter()
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation():
-    """Inicia una nueva conversación"""
+    """Inicia una nueva conversación con mensaje de bienvenida adecuado"""
     try:
         # Crear nueva conversación
         conversation = await storage_service.create_conversation()
 
-        # Añadir mensaje inicial del asistente
+        # Añadir mensaje inicial del asistente solicitando nombre y empresa
         welcome_message = Message.assistant(
             """
 # 👋 ¡Bienvenido a Hydrous AI!
@@ -31,13 +31,9 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
 
 💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
 
-**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
+**PREGUNTA: ¿Podrías indicarme tu nombre y el nombre de tu empresa o proyecto?**
 
-Por favor incluye:
-- Nombre de tu empresa o proyecto
-- Ubicación (ciudad, estado, país)
-
-🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
+Esta información me permitirá personalizar la propuesta para ti.
 """
         )
         conversation.add_message(welcome_message)
@@ -54,7 +50,7 @@ Por favor incluye:
 
 @router.post("/message")
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
-    """Procesa un mensaje del usuario y genera una respuesta"""
+    """Procesa un mensaje del usuario con mejor manejo de errores y contexto"""
     try:
         # Obtener conversación
         conversation = await storage_service.get_conversation(data.conversation_id)
@@ -127,7 +123,7 @@ Este documento incluye:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error al procesar mensaje: {str(e)}")
+        logger.error(f"Error al procesar mensaje: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
 
 
