@@ -1,28 +1,25 @@
+# app/routes/chat.py
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 import logging
-import os
-from datetime import datetime
 
-from app.models.conversation import Conversation, ConversationResponse
+from app.models.conversation import ConversationResponse
 from app.models.message import Message, MessageCreate
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service
 from app.services.pdf_service import pdf_service
-
-logger = logging.getLogger("hydrous")
 
 router = APIRouter()
 
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation():
-    """Inicia una nueva conversación con mensaje de bienvenida adecuado"""
+    """Inicia una nueva conversación"""
     try:
         # Crear nueva conversación
         conversation = await storage_service.create_conversation()
 
-        # Añadir mensaje inicial del asistente solicitando nombre y empresa
+        # Añadir mensaje de bienvenida
         welcome_message = Message.assistant(
             """
 # 👋 ¡Bienvenido a Hydrous AI!
@@ -31,9 +28,13 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
 
 💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
 
-**PREGUNTA: ¿Podrías indicarme tu nombre y el nombre de tu empresa o proyecto?**
+**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
 
-Esta información me permitirá personalizar la propuesta para ti.
+Por favor incluye:
+- Nombre de tu empresa o proyecto
+- Ubicación (ciudad, estado, país)
+
+🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
 """
         )
         conversation.add_message(welcome_message)
@@ -44,13 +45,13 @@ Esta información me permitirá personalizar la propuesta para ti.
             messages=[welcome_message],
         )
     except Exception as e:
-        logger.error(f"Error al iniciar conversación: {str(e)}")
+        logging.error(f"Error al iniciar conversación: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al iniciar la conversación")
 
 
 @router.post("/message")
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
-    """Procesa un mensaje del usuario con mejor manejo de errores y contexto"""
+    """Procesa un mensaje del usuario y genera una respuesta"""
     try:
         # Obtener conversación
         conversation = await storage_service.get_conversation(data.conversation_id)
@@ -63,18 +64,18 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             data.conversation_id, user_message
         )
 
-        # Detectar si es una solicitud para generar PDF
-        if conversation.metadata.get("has_proposal", False) and _is_pdf_request(
-            data.message
+        # Verificar si es una solicitud de PDF y si hay propuesta completa
+        if _is_pdf_request(data.message) and conversation.metadata.get(
+            "has_proposal", False
         ):
-            # Generar enlace para descargar PDF
-            download_url = f"/api/chat/{conversation.id}/download-pdf"
-            pdf_message = f"""
+            # Generar mensaje con enlace a PDF
+            pdf_message = Message.assistant(
+                f"""
 # 📄 Propuesta Lista para Descargar
 
-He preparado tu propuesta personalizada basada en la información proporcionada. Puedes descargarla usando el siguiente enlace:
+He preparado tu propuesta personalizada basada en la información proporcionada. Puedes descargarla como PDF usando el siguiente enlace:
 
-## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
+## [👉 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation.id}/download-pdf)
 
 Este documento incluye:
 - Análisis de tus necesidades específicas
@@ -84,25 +85,24 @@ Este documento incluye:
 
 ¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
 """
-            # Añadir mensaje del asistente
-            assistant_message = Message.assistant(pdf_message)
+            )
+
+            # Guardar mensaje
             await storage_service.add_message_to_conversation(
-                data.conversation_id, assistant_message
+                data.conversation_id, pdf_message
             )
 
             # Generar PDF en segundo plano
-            background_tasks.add_task(
-                pdf_service.generate_pdf_from_conversation, conversation
-            )
+            background_tasks.add_task(pdf_service.generate_pdf, conversation)
 
             return {
-                "id": assistant_message.id,
+                "id": pdf_message.id,
                 "conversation_id": data.conversation_id,
-                "message": pdf_message,
-                "created_at": assistant_message.created_at,
+                "message": pdf_message.content,
+                "created_at": pdf_message.created_at,
             }
 
-        # Generar respuesta a través del servicio AI
+        # Generar respuesta usando el servicio de IA
         ai_response = await ai_service.handle_conversation(conversation, data.message)
 
         # Crear mensaje del asistente
@@ -111,7 +111,7 @@ Este documento incluye:
             data.conversation_id, assistant_message
         )
 
-        # Limpiar conversaciones antiguas en segundo plano
+        # Limpieza en segundo plano
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
         return {
@@ -120,10 +120,8 @@ Este documento incluye:
             "message": ai_response,
             "created_at": assistant_message.created_at,
         }
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error al procesar mensaje: {str(e)}", exc_info=True)
+        logging.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
 
 
@@ -131,47 +129,47 @@ Este documento incluye:
 async def download_pdf(conversation_id: str):
     """Descarga la propuesta en formato PDF"""
     try:
-        # Verificar conversación
+        # Verificar que la conversación existe
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
+        # Verificar que hay una propuesta disponible
         if not conversation.metadata.get("has_proposal", False):
             raise HTTPException(
                 status_code=400,
                 detail="No hay propuesta disponible para esta conversación",
             )
 
-        # Generar el PDF si aún no existe
-        pdf_path = pdf_service.get_pdf_path(conversation_id)
-        if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = await pdf_service.generate_pdf_from_conversation(conversation)
+        # Generar PDF
+        pdf_path = await pdf_service.generate_pdf(conversation)
 
         if not pdf_path:
             raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
-        # Extraer nombre del cliente de la conversación para el nombre del archivo
+        # Extraer nombre para el archivo
         client_name = "Cliente"
+        # Intentar obtener nombre del cliente de los mensajes
         for msg in conversation.messages:
             if msg.role == "user" and len(msg.content) < 100:
-                # Buscar un posible nombre de empresa en el primer mensaje corto
-                client_name = msg.content.split()[0]
+                # Simplemente usamos la primera palabra del primer mensaje corto como nombre
+                words = msg.content.split()
+                if words:
+                    client_name = words[0]
                 break
 
         return FileResponse(
             path=pdf_path,
             filename=f"Propuesta_Hydrous_{client_name}.pdf",
-            media_type="application/pdf",
+            media_type="application/pdf" if pdf_path.endswith(".pdf") else "text/html",
         )
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error al descargar PDF: {str(e)}")
+        logging.error(f"Error al descargar PDF: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
 
 def _is_pdf_request(message: str) -> bool:
     """Determina si el mensaje es una solicitud de PDF"""
     message = message.lower()
-    keywords = ["pdf", "descargar", "documento", "propuesta", "archivo"]
-    return any(kw in message for kw in keywords)
+    pdf_keywords = ["pdf", "descargar", "documento", "propuesta", "bajar", "archivo"]
+    return any(keyword in message for keyword in pdf_keywords)

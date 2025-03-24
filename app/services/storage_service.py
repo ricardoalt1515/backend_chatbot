@@ -1,6 +1,7 @@
+# app/services/storage_service.py
 import logging
-from typing import Dict, Optional, List
-from datetime import datetime, timedelta
+from typing import Dict, Optional
+from datetime import datetime
 import time
 
 from app.models.conversation import Conversation
@@ -10,25 +11,23 @@ from app.config import settings
 logger = logging.getLogger("hydrous")
 
 
-class SimpleStorageService:
-    """Almacenamiento básico en memoria para conversaciones y documentos"""
+class StorageService:
+    """Servicio para almacenar conversaciones"""
 
     def __init__(self):
-        # Almacenamiento en memoria
+        """Inicialización del servicio"""
+        # Almacenamiento en memoria para conversaciones
         self.conversations: Dict[str, Conversation] = {}
-        self.documents: Dict[str, Dict] = {}
+
+        # Registro de último acceso para expiración
         self.last_access: Dict[str, float] = {}
 
-    async def create_conversation(self, metadata: Dict = None) -> Conversation:
+    async def create_conversation(self) -> Conversation:
         """Crea una nueva conversación"""
-        # Crear conversación
-        conversation = Conversation(metadata=metadata or {})
+        # Crear conversación con metadatos vacíos
+        conversation = Conversation()
 
-        # Añadir mensaje del sistema con el prompt maestro
-        system_message = Message.system(settings.SYSTEM_PROMPT)
-        conversation.add_message(system_message)
-
-        # Guardar
+        # Guardar en el almacenamiento
         self.conversations[conversation.id] = conversation
         self.last_access[conversation.id] = time.time()
 
@@ -50,57 +49,37 @@ class SimpleStorageService:
         if not conversation:
             return None
 
+        # Añadir mensaje
         conversation.add_message(message)
+
+        # Actualizar en el almacenamiento
         self.conversations[conversation_id] = conversation
+        self.last_access[conversation_id] = time.time()
 
         return conversation
 
-    async def save_document(
-        self, file_data: bytes, filename: str, conversation_id: str
-    ) -> Dict:
-        """Guarda un documento y lo asocia a una conversación"""
-        import uuid
-        import os
-
-        # Crear ID y dirección para el documento
-        doc_id = str(uuid.uuid4())
-        file_ext = os.path.splitext(filename)[1]
-        save_path = f"{settings.UPLOAD_DIR}/{doc_id}{file_ext}"
-
-        # Guardar físicamente
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        with open(save_path, "wb") as f:
-            f.write(file_data)
-
-        # Registrar documento
-        doc_info = {
-            "id": doc_id,
-            "filename": filename,
-            "path": save_path,
-            "conversation_id": conversation_id,
-            "uploaded_at": datetime.now().isoformat(),
-        }
-
-        self.documents[doc_id] = doc_info
-        return doc_info
-
     async def cleanup_old_conversations(self):
-        """Elimina conversaciones antiguas"""
+        """Elimina conversaciones antiguas basado en el tiempo de acceso"""
         current_time = time.time()
         timeout = settings.CONVERSATION_TIMEOUT
 
-        to_delete = [
+        # Buscar conversaciones expiradas
+        expired_ids = [
             conv_id
             for conv_id, last_time in self.last_access.items()
             if current_time - last_time > timeout
         ]
 
-        for conv_id in to_delete:
+        # Eliminar conversaciones expiradas
+        for conv_id in expired_ids:
             if conv_id in self.conversations:
                 del self.conversations[conv_id]
             if conv_id in self.last_access:
                 del self.last_access[conv_id]
 
+        if expired_ids:
+            logger.info(f"Eliminadas {len(expired_ids)} conversaciones expiradas")
+
 
 # Instancia global
-storage_service = SimpleStorageService()
+storage_service = StorageService()

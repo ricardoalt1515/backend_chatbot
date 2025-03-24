@@ -1,3 +1,4 @@
+# app/models/message.py
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -29,12 +30,3 @@ class Message(BaseModel):
 class MessageCreate(BaseModel):
     conversation_id: str
     message: str
-    metadata: Optional[Dict[str, Any]] = {}
-
-
-# Añadimos esta clase que faltaba
-class MessageResponse(BaseModel):
-    id: str
-    conversation_id: str
-    message: str
-    created_at: datetime
