@@ -32,6 +32,10 @@ app.add_middleware(
 # Incluir rutas
 app.include_router(chat.router, prefix=f"{settings.API_V1_STR}/chat", tags=["chat"])
 app.include_router(
+    analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"]
+)
+
+app.include_router(
     documents.router, prefix=f"{settings.API_V1_STR}/documents", tags=["documents"]
 )
 
