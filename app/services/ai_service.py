@@ -1,151 +1,76 @@
 import logging
 import httpx
-import json
 from typing import List, Dict, Any, Optional
+import re
 
 from app.config import settings
 from app.models.conversation import Conversation
+from app.prompts.master_prompt import get_master_prompt
 
-logger = logging.getLogger("hydrous-backend")
+logger = logging.getLogger("hydrous")
 
 
-class AIService:
-    """Servicio simplificado para interactuar con modelos de IA"""
+class SimpleAIService:
+    """Servicio simplificado para interactuar con API de LLM"""
 
     def __init__(self):
         """Inicialización del servicio AI"""
-        self.provider = settings.AI_PROVIDER
-
-        # Configurar endpoints de API según el proveedor
-        if self.provider == "groq":
-            if not settings.GROQ_API_KEY:
-                logger.warning(
-                    "GROQ_API_KEY no configurada. Las llamadas a la API fallarán."
-                )
-            self.api_key = settings.GROQ_API_KEY
-            self.model = settings.GROQ_MODEL
-            self.api_url = "https://api.groq.com/openai/v1/chat/completions"
-
-        elif self.provider == "openai":
-            if not settings.OPENAI_API_KEY:
-                logger.warning(
-                    "OPENAI_API_KEY no configurada. Las llamadas a la API fallarán."
-                )
-            self.api_key = settings.OPENAI_API_KEY
-            self.model = settings.OPENAI_MODEL
-            self.api_url = "https://api.openai.com/v1/chat/completions"
-
-        else:
-            logger.warning(
-                f"Proveedor de IA no soportado: {self.provider}. Usando respuestas predefinidas."
-            )
-            self.api_key = None
-            self.model = None
-            self.api_url = None
+        self.api_key = settings.API_KEY
+        self.model = settings.MODEL
+        self.api_url = settings.API_URL
+        self.master_prompt = get_master_prompt()
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str
     ) -> str:
         """
-        Maneja la conversación del usuario y genera una respuesta
+        Maneja una nueva entrada del usuario y genera una respuesta
 
         Args:
             conversation: Conversación actual
             user_message: Mensaje del usuario
 
         Returns:
-            str: Respuesta generada por el modelo
+            str: Respuesta generada por el LLM
         """
         try:
-            # Verificar si el mensaje es una solicitud de PDF
-            if (
-                self._is_pdf_request(user_message)
-                and conversation.questionnaire_state.completed
-            ):
-                download_url = f"/api/chat/{conversation.id}/download-proposal-pdf"
-                return f"""
-# 📄 Propuesta Lista para Descargar
-
-He preparado su propuesta personalizada basada en la información proporcionada. Puede descargarla como PDF usando el siguiente enlace:
-
-## [👉 DESCARGAR PROPUESTA EN PDF]({download_url})
-
-Este documento incluye:
-- Análisis de sus necesidades específicas
-- Solución tecnológica recomendada
-- Estimación de costos y retorno de inversión
-- Pasos siguientes recomendados
-
-¿Necesita alguna aclaración sobre la propuesta o tiene alguna otra pregunta?
-"""
-
-            # Construir mensajes para la API
+            # Preparar mensajes para la API
             messages = self._prepare_messages(conversation, user_message)
 
-            # Enviar a la API y obtener respuesta
+            # Generar respuesta
             response = await self._generate_response(messages)
 
-            # Actualizar cuestionario completado si la respuesta contiene propuesta
-            if self._contains_proposal_markers(response):
-                conversation.questionnaire_state.completed = True
-                conversation.questionnaire_state.active = False
+            # Detectar si la respuesta contiene una propuesta completa
+            if self._contains_proposal(response):
+                conversation.metadata["has_proposal"] = True
 
             return response
 
         except Exception as e:
-            logger.error(f"Error en handle_conversation: {str(e)}")
-            return "Lo siento, ha ocurrido un error al procesar su consulta. Por favor, inténtelo de nuevo."
+            logger.error(f"Error al manejar conversación: {str(e)}")
+            return "Lo siento, ocurrió un error al procesar tu consulta. Por favor, inténtalo nuevamente."
 
     def _prepare_messages(
         self, conversation: Conversation, user_message: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Prepara los mensajes para enviar a la API
+    ) -> List[Dict[str, str]]:
+        """Prepara los mensajes para la API del LLM"""
+        # Mensaje del sistema con el prompt maestro
+        messages = [{"role": "system", "content": self.master_prompt}]
 
-        Args:
-            conversation: Conversación actual
-            user_message: Mensaje del usuario
-
-        Returns:
-            List[Dict[str, Any]]: Lista de mensajes formateados para la API
-        """
-        # Iniciar con el mensaje del sistema
-        messages = [{"role": "system", "content": settings.SYSTEM_PROMPT}]
-
-        # Agregar contexto de la conversación (últimos mensajes)
-        history = []
-        for msg in conversation.messages[
-            -10:
-        ]:  # Incluir solo los últimos 10 mensajes para limitar tokens
-            if msg.role in ["user", "assistant"]:  # Excluir mensajes del sistema
-                history.append({"role": msg.role, "content": msg.content})
-
-        # Añadir historial si hay mensajes
-        if history:
-            messages.extend(history)
+        # Añadir historial de mensajes (limitado para evitar exceder tokens)
+        for msg in conversation.messages[-10:]:
+            if msg.role != "system":  # No duplicar mensajes del sistema
+                messages.append({"role": msg.role, "content": msg.content})
 
         # Si el último mensaje no es del usuario, añadir el mensaje actual
-        if not history or history[-1]["role"] != "user":
+        if not messages or messages[-1]["role"] != "user":
             messages.append({"role": "user", "content": user_message})
 
         return messages
 
-    async def _generate_response(self, messages: List[Dict[str, Any]]) -> str:
-        """
-        Genera una respuesta usando el modelo de IA configurado
-
-        Args:
-            messages: Lista de mensajes para el modelo
-
-        Returns:
-            str: Respuesta generada
-        """
-        # Verificar si tenemos configuración de API
-        if not self.api_key or not self.api_url:
-            return self._get_fallback_response()
-
+    async def _generate_response(self, messages: List[Dict[str, str]]) -> str:
+        """Genera una respuesta usando la API del LLM"""
         try:
-            # Hacer solicitud a la API
             async with httpx.AsyncClient() as client:
                 headers = {
                     "Content-Type": "application/json",
@@ -164,79 +89,29 @@ Este documento incluye:
                 )
 
                 if response.status_code == 200:
-                    response_data = response.json()
-                    return response_data["choices"][0]["message"]["content"]
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
                 else:
-                    logger.error(
-                        f"Error en la API: {response.status_code} - {response.text}"
-                    )
-                    return self._get_fallback_response()
+                    logger.error(f"Error API: {response.status_code} - {response.text}")
+                    return "Lo siento, ocurrió un problema con el servicio. Por favor, intenta nuevamente más tarde."
 
         except Exception as e:
             logger.error(f"Error al generar respuesta: {str(e)}")
-            return self._get_fallback_response()
+            return "Lo siento, no puedo procesar tu solicitud en este momento."
 
-    def _is_pdf_request(self, message: str) -> bool:
-        """
-        Detecta si el mensaje es una solicitud de PDF
-
-        Args:
-            message: Mensaje del usuario
-
-        Returns:
-            bool: True si parece una solicitud de PDF
-        """
-        message = message.lower()
-        pdf_keywords = [
-            "pdf",
-            "descargar",
-            "documento",
-            "propuesta",
-            "guardar",
-            "exportar",
-            "bajar",
-        ]
-
-        return any(keyword in message for keyword in pdf_keywords)
-
-    def _contains_proposal_markers(self, response: str) -> bool:
-        """
-        Detecta si la respuesta contiene marcadores de una propuesta completa
-
-        Args:
-            response: Respuesta del modelo
-
-        Returns:
-            bool: True si contiene marcadores de propuesta
-        """
-        markers = [
-            "Propuesta Técnica Preliminar",
+    def _contains_proposal(self, response: str) -> bool:
+        """Detecta si la respuesta contiene una propuesta completa"""
+        proposal_markers = [
+            "Propuesta",
             "Antecedentes del Proyecto",
-            "Parámetros de Diseño",
-            "Proceso de Tratamiento Propuesto",
+            "Objetivo del Proyecto",
+            "Proceso de Tratamiento",
             "Costos Estimados",
-            "Análisis ROI",
         ]
 
-        return sum(1 for marker in markers if marker in response) >= 3
-
-    def _get_fallback_response(self) -> str:
-        """
-        Proporciona una respuesta predefinida en caso de error
-
-        Returns:
-            str: Respuesta predefinida
-        """
-        return """
-Gracias por su consulta. Estoy aquí para ayudarle con su proyecto de tratamiento y reciclaje de agua.
-
-Para ofrecerle la mejor solución personalizada, necesitaría conocer más sobre sus necesidades específicas.
-
-**PREGUNTA: ¿Podría indicarme el nombre de su empresa y su ubicación?**
-
-Esto nos ayudará a entender mejor el contexto regional y las normativas aplicables a su caso.
-"""
+        marker_count = sum(1 for marker in proposal_markers if marker in response)
+        return marker_count >= 3
 
 
-# Instancia global del servicio
-ai_service = AIService()
+# Instancia global
+ai_service = SimpleAIService()

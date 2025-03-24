@@ -1,64 +1,36 @@
 import logging
-from typing import Dict, Optional, List, Any
+from typing import Dict, Optional, List
 from datetime import datetime, timedelta
 import time
 
 from app.models.conversation import Conversation
 from app.models.message import Message
-from app.models.analytics import AnalyticsEvent
 from app.config import settings
 
-logger = logging.getLogger("hydrous-backend")
+logger = logging.getLogger("hydrous")
 
 
-class MemoryStorage:
-    """
-    Almacenamiento en memoria para el MVP
-    En el futuro, esto se reemplazará por MongoDB
-    """
+class SimpleStorageService:
+    """Almacenamiento básico en memoria para conversaciones y documentos"""
 
     def __init__(self):
-        # Diccionarios para almacenar datos en memoria
+        # Almacenamiento en memoria
         self.conversations: Dict[str, Conversation] = {}
-        self.analytics_events: List[AnalyticsEvent] = []
-        # Control del tiempo de expiración de las conversaciones
-        self.conversation_last_access: Dict[str, float] = {}
+        self.documents: Dict[str, Dict] = {}
+        self.last_access: Dict[str, float] = {}
 
-    async def cleanup_old_conversations(self):
-        """Elimina conversaciones antiguas basadas en el tiempo de acceso"""
-        current_time = time.time()
-        expired_ids = []
-
-        for conv_id, last_access in self.conversation_last_access.items():
-            if current_time - last_access > settings.CONVERSATION_TIMEOUT:
-                expired_ids.append(conv_id)
-
-        for conv_id in expired_ids:
-            if conv_id in self.conversations:
-                del self.conversations[conv_id]
-            del self.conversation_last_access[conv_id]
-
-        if expired_ids:
-            logger.info(f"Limpiadas {len(expired_ids)} conversaciones expiradas")
-
-    # Métodos para gestión de conversaciones
-    async def create_conversation(
-        self, metadata: Dict[str, Any] = None
-    ) -> Conversation:
+    async def create_conversation(self, metadata: Dict = None) -> Conversation:
         """Crea una nueva conversación"""
-        # Asegurarse de que metadata sea un diccionario válido
-        if metadata is None:
-            metadata = {}
+        # Crear conversación
+        conversation = Conversation(metadata=metadata or {})
 
-        conversation = Conversation(metadata=metadata)
-
-        # Añadir mensaje del sistema para guiar al modelo
+        # Añadir mensaje del sistema con el prompt maestro
         system_message = Message.system(settings.SYSTEM_PROMPT)
         conversation.add_message(system_message)
 
-        # Guardar conversación
+        # Guardar
         self.conversations[conversation.id] = conversation
-        self.conversation_last_access[conversation.id] = time.time()
+        self.last_access[conversation.id] = time.time()
 
         return conversation
 
@@ -66,69 +38,69 @@ class MemoryStorage:
         """Obtiene una conversación por su ID"""
         # Actualizar tiempo de acceso
         if conversation_id in self.conversations:
-            self.conversation_last_access[conversation_id] = time.time()
+            self.last_access[conversation_id] = time.time()
 
         return self.conversations.get(conversation_id)
 
     async def add_message_to_conversation(
         self, conversation_id: str, message: Message
     ) -> Optional[Conversation]:
-        """Añade un mensaje a una conversación existente"""
+        """Añade un mensaje a una conversación"""
         conversation = await self.get_conversation(conversation_id)
         if not conversation:
             return None
 
         conversation.add_message(message)
-        return conversation
-
-    async def delete_conversation(self, conversation_id: str) -> bool:
-        """Elimina una conversación"""
-        if conversation_id in self.conversations:
-            del self.conversations[conversation_id]
-            if conversation_id in self.conversation_last_access:
-                del self.conversation_last_access[conversation_id]
-            return True
-        return False
-
-    # Métodos para gestión de eventos de analítica
-    async def store_analytics_event(self, event: AnalyticsEvent) -> AnalyticsEvent:
-        """Almacena un evento de analítica"""
-        self.analytics_events.append(event)
-        # En el MVP solo guardamos un número limitado de eventos
-        if len(self.analytics_events) > 1000:
-            self.analytics_events = self.analytics_events[-1000:]
-        return event
-
-    async def get_recent_analytics(self, limit: int = 100) -> List[AnalyticsEvent]:
-        """Obtiene los eventos de analítica más recientes"""
-        return self.analytics_events[-limit:]
-
-    async def add_message_to_conversation(
-        self, conversation_id: str, message: Message
-    ) -> Optional[Conversation]:
-        """Añade un mensaje a una conversación existente y asegura la persistencia del estado"""
-        conversation = await self.get_conversation(conversation_id)
-        if not conversation:
-            return None
-
-        # Añadir el mensaje
-        conversation.add_message(message)
-
-        # Asegurar que la conversación se guarde completamente
         self.conversations[conversation_id] = conversation
-        self.conversation_last_access[conversation_id] = time.time()
-
-        # Registrar el estado para debugging
-        if conversation.is_questionnaire_active():
-            logger.info(
-                f"Estado guardado: sector={conversation.questionnaire_state.sector}, "
-                f"subsector={conversation.questionnaire_state.subsector}, "
-                f"current_q={conversation.questionnaire_state.current_question_id}, "
-                f"answers_count={len(conversation.questionnaire_state.answers)}"
-            )
 
         return conversation
 
+    async def save_document(
+        self, file_data: bytes, filename: str, conversation_id: str
+    ) -> Dict:
+        """Guarda un documento y lo asocia a una conversación"""
+        import uuid
+        import os
 
-# Instancia global del servicio de almacenamiento
-storage_service = MemoryStorage()
+        # Crear ID y dirección para el documento
+        doc_id = str(uuid.uuid4())
+        file_ext = os.path.splitext(filename)[1]
+        save_path = f"{settings.UPLOAD_DIR}/{doc_id}{file_ext}"
+
+        # Guardar físicamente
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        with open(save_path, "wb") as f:
+            f.write(file_data)
+
+        # Registrar documento
+        doc_info = {
+            "id": doc_id,
+            "filename": filename,
+            "path": save_path,
+            "conversation_id": conversation_id,
+            "uploaded_at": datetime.now().isoformat(),
+        }
+
+        self.documents[doc_id] = doc_info
+        return doc_info
+
+    async def cleanup_old_conversations(self):
+        """Elimina conversaciones antiguas"""
+        current_time = time.time()
+        timeout = settings.CONVERSATION_TIMEOUT
+
+        to_delete = [
+            conv_id
+            for conv_id, last_time in self.last_access.items()
+            if current_time - last_time > timeout
+        ]
+
+        for conv_id in to_delete:
+            if conv_id in self.conversations:
+                del self.conversations[conv_id]
+            if conv_id in self.last_access:
+                del self.last_access[conv_id]
+
+
+# Instancia global
+storage_service = SimpleStorageService()

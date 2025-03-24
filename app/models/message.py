@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 import uuid
 
@@ -9,7 +9,6 @@ class Message(BaseModel):
     role: str  # "system", "user", "assistant"
     content: str
     created_at: datetime = Field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = {}
 
     @classmethod
     def system(cls, content: str) -> "Message":
@@ -17,24 +16,16 @@ class Message(BaseModel):
         return cls(role="system", content=content)
 
     @classmethod
-    def user(cls, content: str, metadata: Dict[str, Any] = None) -> "Message":
+    def user(cls, content: str) -> "Message":
         """Crea un mensaje de usuario"""
-        return cls(role="user", content=content, metadata=metadata or {})
+        return cls(role="user", content=content)
 
     @classmethod
-    def assistant(cls, content: str, metadata: Dict[str, Any] = None) -> "Message":
+    def assistant(cls, content: str) -> "Message":
         """Crea un mensaje del asistente"""
-        return cls(role="assistant", content=content, metadata=metadata or {})
+        return cls(role="assistant", content=content)
 
 
 class MessageCreate(BaseModel):
     conversation_id: str
     message: str
-    metadata: Optional[Dict[str, Any]] = {}
-
-
-class MessageResponse(BaseModel):
-    id: str
-    conversation_id: str
-    message: str
-    created_at: datetime
