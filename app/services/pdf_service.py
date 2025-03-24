@@ -1,8 +1,7 @@
 import os
 import logging
-from typing import Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
-import uuid
 
 from app.models.conversation import Conversation
 from app.config import settings
