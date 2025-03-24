@@ -15,8 +15,15 @@ class SimpleAIService:
 
     def __init__(self):
         """Inicialización del servicio AI"""
-        self.api_key = settings.API_KEY
-        self.model = settings.MODEL
+        self.api_provider = settings.API_PROVIDER
+
+        if self.api_provider == "groq":
+            self.api_key = settings.GROQ_API_KEY
+            self.model = settings.GROQ_MODEL
+        else:
+            self.api_key = settings.OPENAI_API_KEY
+            self.model = settings.OPENAI_MODEL
+
         self.api_url = settings.API_URL
         self.master_prompt = get_master_prompt()
 
