@@ -29,3 +29,12 @@ class Message(BaseModel):
 class MessageCreate(BaseModel):
     conversation_id: str
     message: str
+    metadata: Optional[Dict[str, Any]] = {}
+
+
+# Añadimos esta clase que faltaba
+class MessageResponse(BaseModel):
+    id: str
+    conversation_id: str
+    message: str
+    created_at: datetime
