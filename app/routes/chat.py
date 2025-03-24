@@ -4,7 +4,6 @@ import logging
 from typing import Dict, Any, List, Optional
 import os
 import time
-import re
 from datetime import datetime
 
 from app.models.conversation import (
@@ -25,56 +24,6 @@ logger = logging.getLogger("hydrous-backend")
 router = APIRouter()
 
 
-def _is_pdf_request(message: str) -> bool:
-    """
-    Determina si el mensaje del usuario es una solicitud de PDF
-
-    Args:
-        message: Mensaje del usuario
-
-    Returns:
-        bool: True si es una solicitud de PDF
-    """
-    message = message.lower()
-
-    # Palabras clave relacionadas con PDF
-    pdf_keywords = [
-        "pdf",
-        "descargar",
-        "propuesta",
-        "documento",
-        "guardar",
-        "archivo",
-        "exportar",
-        "bajar",
-        "obtener",
-        "enviar",
-    ]
-
-    # Frases comunes de solicitud
-    pdf_phrases = [
-        "quiero el pdf",
-        "dame la propuesta",
-        "ver el documento",
-        "obtener el archivo",
-        "descargar la propuesta",
-        "enviame el pdf",
-        "generar documento",
-        "necesito la propuesta",
-        "el enlace no funciona",
-    ]
-
-    # Verificar palabras clave simples
-    if any(keyword in message for keyword in pdf_keywords):
-        return True
-
-    # Verificar frases comunes
-    if any(phrase in message for phrase in pdf_phrases):
-        return True
-
-    return False
-
-
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation(
     data: ConversationCreate = Body(default=ConversationCreate()),
@@ -85,6 +34,9 @@ async def start_conversation(
         metadata = data.metadata if hasattr(data, "metadata") else {}
         conversation = await storage_service.create_conversation(metadata)
 
+        # Registrar inicio de conversación en analíticas
+        chatbot_analytics.log_conversation_start()
+
         # Añadir mensaje inicial del bot con el estilo mejorado
         welcome_message = Message.assistant(
             """
@@ -94,12 +46,21 @@ Soy el diseñador de soluciones de agua de Hydrous AI, su asistente experto para
 
 Para desarrollar la mejor solución para sus instalaciones, haré sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarlo a optimizar la gestión del agua, reducir costos y explorar nuevas fuentes de ingresos con soluciones respaldadas por Hydrous.
 
-*Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
+💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
 
 **PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
+
+Por favor incluye:
+- Nombre de tu empresa o proyecto
+- Ubicación (ciudad, estado, país)
+
+🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
 """
         )
         conversation.add_message(welcome_message)
+
+        # Iniciar el cuestionario
+        conversation.start_questionnaire()
 
         return ConversationResponse(
             id=conversation.id,
@@ -144,10 +105,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         )
 
         # Detectar si es una solicitud para generar PDF
-        pdf_requested = _is_pdf_request(data.message)
-
-        # Si se solicita PDF y el cuestionario está completo, generar PDF
-        if pdf_requested and conversation.is_questionnaire_completed():
+        if conversation.is_questionnaire_completed() and _is_pdf_request(data.message):
             # Generar y verificar propuesta
             proposal = questionnaire_service.generate_proposal(conversation)
 
@@ -168,7 +126,6 @@ Este documento incluye:
 
 ¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
 """
-
             # añadir mensaje del asistente
             assistant_message = Message.assistant(pdf_message)
             await storage_service.add_message_to_conversation(
@@ -215,7 +172,7 @@ Este documento incluye:
 
 @router.get("/{conversation_id}/download-proposal-pdf")
 async def download_proposal_pdf(conversation_id: str, response: Response):
-    """Descarga la propuesta en formato PDF o HTML según disponibilidad"""
+    """Descarga la propuesta en formato PDF"""
     try:
         # Obtener la conversación
         conversation = await storage_service.get_conversation(conversation_id)
@@ -229,42 +186,29 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
                 detail="El cuestionario no está completo, no se puede generar la propuesta",
             )
 
-        # Generar la propuesta y el PDF/HTML
+        # Generar la propuesta y el PDF
         proposal = questionnaire_service.generate_proposal(conversation)
-
-        # intentar generar el PDF - aqui es donde fallaria si hay problema
         file_path = questionnaire_service.generate_proposal_pdf(proposal)
 
-        # Registrar descarga en analiticas
+        # Registrar descarga en analíticas
         chatbot_analytics.log_pdf_download(conversation_id)
 
         if not file_path or not os.path.exists(file_path):
-            # Si falla la generacion, generar una respuesta HTML simple
+            # Generar respuesta HTML simple en caso de error
             html_content = f"""
             <html>
-                <head>
-                    <title>Propuesta Hydrous</title>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; padding: 30px; line-height: 1.6; }}
-                        h1 {{ color: #2c3e50; }}
-                        .container {{ max-width: 800px; margin: 0 auto; background: #f9f9f9; padding: 30px; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-                        .error {{ color: #e74c3c; }}
-                        .btn {{ display: inline-block; background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 20px; }}
-                    </style>
-                </head>
+                <head><title>Error al generar PDF</title></head>
                 <body>
-                    <div class="container">
-                        <h1>Error al generar documento</h1>
-                        <p>No se pudo generar el documento de propuesta. Esto puede deberse a una de las siguientes razones:</p>
-                        <ul>
-                            <li>La información proporcionada está incompleta</li>
-                            <li>Ocurrió un problema técnico durante la generación</li>
-                            <li>El servicio de generación de PDF no está disponible actualmente</li>
-                        </ul>
-                        <p>Por favor intente nuevamente o contacte con soporte proporcionando el siguiente código:</p>
-                        <p class="error"><strong>Referencia: {datetime.datetime.now().strftime('%Y%m%d%H%M%S')}</strong></p>
-                        <a href="/chat/{conversation_id}" class="btn">Volver a la conversación</a>
-                    </div>
+                    <h1>Error al generar documento</h1>
+                    <p>No se pudo generar el documento de propuesta. Esto puede deberse a una de las siguientes razones:</p>
+                    <ul>
+                        <li>La información proporcionada está incompleta</li>
+                        <li>Ocurrió un problema técnico durante la generación</li>
+                        <li>El servicio de generación de PDF no está disponible actualmente</li>
+                    </ul>
+                    <p>Por favor intente nuevamente o contacte con soporte proporcionando el siguiente código:</p>
+                    <p><strong>Referencia: {datetime.now().strftime('%Y%m%d%H%M%S')}</strong></p>
+                    <a href="/chat/{conversation_id}">Volver a la conversación</a>
                 </body>
             </html>
             """
@@ -283,12 +227,9 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
             filename = f"Propuesta_Hydrous_{client_name}.html"
             media_type = "text/html"
 
-        # Mejorar manejo de la descarga
+        # Configurar headers para la descarga
         response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         response.headers["X-Content-Type-Options"] = "nosniff"
-
-        # Registrar éxito
-        logger.info(f"Descarga exitosa: {filename} para conversación {conversation_id}")
 
         # Devolver el archivo
         return FileResponse(
@@ -301,7 +242,7 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
     except Exception as e:
         logger.error(f"Error al descargar propuesta: {str(e)}")
 
-        # Pagina de error con instrucciones claras
+        # Página de error con instrucciones claras
         error_html = f"""
         <html>
             <head>
@@ -321,7 +262,7 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
                     <p>Ha ocurrido un problema técnico al procesar la propuesta. Disculpe las molestias.</p>
                     
                     <div class="error-code">
-                        <p><strong>Código de referencia:</strong> {datetime.datetime.now().strftime('%Y%m%d%H%M%S')}</p>
+                        <p><strong>Código de referencia:</strong> {datetime.now().strftime('%Y%m%d%H%M%S')}</p>
                         <p><strong>Detalle técnico:</strong> {str(e)[:100]}...</p>
                     </div>
                     
@@ -343,177 +284,25 @@ async def download_proposal_pdf(conversation_id: str, response: Response):
         return Response(content=error_html, media_type="text/html", status_code=500)
 
 
-@router.get("/{conversation_id}/questionnaire/status")
-async def get_questionnaire_status(conversation_id: str):
-    """Obtiene el estado actual del cuestionario para una conversación"""
-    try:
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+def _is_pdf_request(message: str) -> bool:
+    """
+    Determina si el mensaje del usuario es una solicitud de PDF
+    """
+    message = message.lower()
+    pdf_keywords = [
+        "pdf",
+        "descargar",
+        "propuesta",
+        "documento",
+        "guardar",
+        "archivo",
+        "exportar",
+        "bajar",
+        "obtener",
+        "enviar",
+        "quiero el pdf",
+        "dame la propuesta",
+        "ver el documento",
+    ]
 
-        return {
-            "active": conversation.is_questionnaire_active(),
-            "completed": conversation.is_questionnaire_completed(),
-            "sector": conversation.questionnaire_state.sector,
-            "subsector": conversation.questionnaire_state.subsector,
-            "current_question": conversation.questionnaire_state.current_question_id,
-            "answers_count": len(conversation.questionnaire_state.answers),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error al obtener estado del cuestionario: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error al obtener estado del cuestionario"
-        )
-
-
-@router.post("/{conversation_id}/questionnaire/start")
-async def start_questionnaire(conversation_id: str):
-    """Inicia manualmente el proceso de cuestionario"""
-    try:
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-
-        # Verificar si ya está activo
-        if conversation.is_questionnaire_active():
-            return {"message": "El cuestionario ya está activo"}
-
-        # Iniciar cuestionario
-        conversation.start_questionnaire()
-
-        # Obtener introducción y primera pregunta
-        intro_text, explanation = questionnaire_service.get_introduction()
-        next_question = questionnaire_service.get_next_question(
-            conversation.questionnaire_state
-        )
-
-        # Crear mensaje con la introducción y primera pregunta
-        message_text = f"{intro_text}\n\n{explanation}\n\n"
-        if next_question:
-            message_text += ai_service._format_question(next_question)
-            conversation.questionnaire_state.current_question_id = next_question["id"]
-
-        # Añadir mensaje del asistente
-        assistant_message = Message.assistant(message_text)
-        await storage_service.add_message_to_conversation(
-            conversation_id, assistant_message
-        )
-
-        return {
-            "message": "Cuestionario iniciado correctamente",
-            "first_question": message_text,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error al iniciar cuestionario: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al iniciar cuestionario")
-
-
-@router.post("/{conversation_id}/questionnaire/answer")
-async def answer_questionnaire(conversation_id: str, data: Dict[str, Any] = Body(...)):
-    """Procesa una respuesta del cuestionario y devuelve la siguiente pregunta"""
-    try:
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-
-        # Verificar si el cuestionario está activo
-        if not conversation.is_questionnaire_active():
-            raise HTTPException(
-                status_code=400, detail="El cuestionario no está activo"
-            )
-
-        # Verificar que se recibió una respuesta
-        if "answer" not in data:
-            raise HTTPException(
-                status_code=400, detail="No se ha proporcionado una respuesta"
-            )
-
-        # Verificar que hay una pregunta actual
-        if not conversation.questionnaire_state.current_question_id:
-            raise HTTPException(status_code=400, detail="No hay una pregunta actual")
-
-        # Procesar la respuesta
-        question_id = conversation.questionnaire_state.current_question_id
-        answer = data["answer"]
-        questionnaire_service.process_answer(conversation, question_id, answer)
-
-        # Obtener siguiente pregunta
-        next_question = questionnaire_service.get_next_question(
-            conversation.questionnaire_state
-        )
-
-        if not next_question:
-            # Si no hay siguiente pregunta, generar propuesta
-            if not conversation.is_questionnaire_completed():
-                conversation.complete_questionnaire()
-
-            # Generar y formatear propuesta
-            proposal = questionnaire_service.generate_proposal(conversation)
-            summary = questionnaire_service.format_proposal_summary(
-                proposal, conversation.id
-            )
-
-            # Añadir mensaje con la propuesta
-            assistant_message = Message.assistant(summary)
-            await storage_service.add_message_to_conversation(
-                conversation_id, assistant_message
-            )
-
-            return {"completed": True, "message": summary}
-
-        # Actualizar la pregunta actual
-        conversation.questionnaire_state.current_question_id = next_question["id"]
-
-        # Formatear la siguiente pregunta
-        next_question_formatted = ai_service._format_question(next_question)
-
-        # Añadir mensaje con la siguiente pregunta
-        assistant_message = Message.assistant(next_question_formatted)
-        await storage_service.add_message_to_conversation(
-            conversation_id, assistant_message
-        )
-
-        return {
-            "completed": False,
-            "next_question": next_question,
-            "message": next_question_formatted,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error al procesar respuesta del cuestionario: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Error al procesar respuesta del cuestionario"
-        )
-
-
-@router.get("/{conversation_id}/proposal")
-async def generate_proposal(conversation_id: str):
-    """Genera una propuesta basada en las respuestas del cuestionario"""
-    try:
-        # Obtener la conversación
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-
-        # Verificar si hay suficientes respuestas
-        if len(conversation.questionnaire_state.answers) < 3:
-            raise HTTPException(
-                status_code=400,
-                detail="No hay suficiente información para generar una propuesta",
-            )
-
-        # Generar propuesta
-        proposal = questionnaire_service.generate_proposal(conversation)
-
-        # Por ahora devolvemos los datos JSON, pero en el futuro podría generarse un PDF
-        return proposal
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error al generar propuesta: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al generar la propuesta")
+    return any(keyword in message for keyword in pdf_keywords)
