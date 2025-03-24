@@ -40,7 +40,7 @@ class AIService:
                 logger.warning(
                     "GEMINI_API_KEY no configurada. las llamadas a la API fallaran."
                 )
-            self.api_key = setting.GEMINI_API_KEY
+            self.api_key = settings.GEMINI_API_KEY
             self.model = settings.GEMINI_MODEL
             self.gemini_client = None
             try:
