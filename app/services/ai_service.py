@@ -89,6 +89,43 @@ class AIService:
 
         return messages
 
+    def _get_phase_instructions(self, phase, conversation):
+        """Genera instrucciones especificas, segun la fase"""
+        if phase == "initial_questions":
+            return "Estas en la fase inicial de recopilacion de información. Concentrate en preguntas basicas sobre la empresa, ubicacion y conusmo de agua"
+
+        elif phase == "detailed_questions":
+            # Es momento de hacer un resumen si hay suficiente información
+            questions_answered = sum(
+                1 for msg in conversation.messages if msg.role == "user"
+            )
+            if questions_answered % 5 == 0 and questions_answered > 0:
+                return """
+                Haz un breve resumen de la información recopilada hasta ahora antes de hacer la siguiente pregunta.
+                El resumen debe ser conciso y destacar los puntos clave que has aprendido sobre el proyecto.
+                """
+            return "Continúa con las preguntas detalladas sobre procesos específicos de agua."
+
+        elif phase == "final_questions":
+            return "Estás en las preguntas finales. Prioriza preguntas sobre restricciones, objetivos principales y plazos."
+
+        elif phase == "proposal_generation":
+            return """
+            Has recopilado suficiente información. Genera una propuesta completa siguiendo el formato establecido:
+            1. Título con nombre del cliente
+            2. Antecedentes del proyecto
+            3. Objetivos
+            4. Parámetros de diseño
+            5. Proceso de tratamiento propuesto
+            6. Capacidades estimadas
+            7. Costos estimados
+            8. Análisis ROI
+            9. Siguientes pasos
+            """
+
+        else:  # proposal_complete
+            return "El usuario ya tiene una propuesta completa. Responde a sus preguntas adicionales o aclaraciones."
+
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
         try:
