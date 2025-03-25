@@ -18,14 +18,24 @@ class Settings(BaseSettings):
     # Configuración IA - Añadimos compatibilidad con los nombres antiguos y nuevos
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GEMINI_KEY: str = os.getenv("GEMINI_API_KEY", "")
+
+    # Clave unificada para la compatibilidad
     API_KEY: str = os.getenv(
-        "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", "")
-    )  # Para compatibilidad
+        "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", os.getenv("GEMINI_API_KEY", ""))
+    )
 
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+    # Modelo unificado para compatibilidad
     MODEL: str = os.getenv(
-        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-3.5-turbo"))
+        "MODEL",
+        os.getenv(
+            "OPENAI_MODEL",
+            os.getenv("GROQ_MODEL", os.getenv("GEMINI_MODEL", "gpt-3.5-turbo")),
+        ),
     )
 
     # Determinar URL de API basado en lo que esté disponible
@@ -35,6 +45,8 @@ class Settings(BaseSettings):
     def API_URL(self):
         if self.API_PROVIDER == "groq":
             return "https://api.groq.com/openai/v1/chat/completions"
+        elif self.API_PROVIDER == "gemini":
+            return None  # Gemini usa SDK, no URL directa
         else:
             return "https://api.openai.com/v1/chat/completions"
 

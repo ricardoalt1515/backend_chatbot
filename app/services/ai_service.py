@@ -10,6 +10,18 @@ from app.services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
+# Importación condicional de google-generativeai
+try:
+    from google import genai
+    from google.genai import types
+
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    logger.warning(
+        "google-generativeai no está instalado. El proveedor Gemini no estará disponible."
+    )
+
 
 class AIService:
     """Servicio simplificado para interactuar con LLMs"""
@@ -22,7 +34,12 @@ class AIService:
         # Configuración de API
         self.api_key = settings.API_KEY
         self.model = settings.MODEL
+        self.api_provider = settings.API_PROVIDER
         self.api_url = settings.API_URL
+
+        # Inicializar gemini si esta disponible y seleccionado
+        if self.api_provider == "gemini" and GEMINI_AVAILABLE:
+            genai.configure(api_key=settings.GEMINI_API_KEY)
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
@@ -160,6 +177,54 @@ class AIService:
         except Exception as e:
             logger.error(f"Error en _call_llm_api: {str(e)}")
             return "Lo siento, ha ocurrido un error al comunicarse con el servicio. Por favor, inténtalo de nuevo."
+
+    async def _call_gemini_api(self, messages: List[Dict[str, str]]) -> str:
+        """Llama a la API de Gemini"""
+        try:
+            if not GEMINI_AVAILABLE:
+                return "Lo siento, Gemini no está disponible. Por favor, configura otro proveedor."
+
+            # Configurar el modelo
+            model = genai.GenerativeModel(settings.GEMINI_MODEL)
+
+            # Convertir mensajes al formato que espera Gemini
+            gemini_messages = []
+            for msg in messages:
+                role = msg["role"]
+                content = msg["content"]
+
+                if role == "system":
+                    # Gemini no tiene un rol de "system" explícito, lo convertimos a "user"
+                    # pero marcado como instrucción del sistema
+                    gemini_messages.append(
+                        {"role": "user", "parts": [f"[SYSTEM INSTRUCTION] {content}"]}
+                    )
+                elif role == "user":
+                    gemini_messages.append({"role": "user", "parts": [content]})
+                elif role == "assistant":
+                    gemini_messages.append({"role": "model", "parts": [content]})
+
+            # Crear una conversación con Gemini
+            chat = model.start_chat(
+                history=gemini_messages[:-1] if gemini_messages else []
+            )
+
+            # Obtener la última pregunta del usuario
+            last_message = (
+                gemini_messages[-1]
+                if gemini_messages
+                else {"role": "user", "parts": ["Hola"]}
+            )
+
+            # Generar respuesta
+            response = chat.send_message(last_message["parts"][0])
+
+            # Extraer el texto de la respuesta
+            return response.text
+
+        except Exception as e:
+            logger.error(f"Error en _call_gemini_api: {str(e)}")
+            return f"Lo siento, ha ocurrido un error al comunicarse con Gemini: {str(e)}. Por favor, inténtalo de nuevo."
 
     def _contains_proposal_markers(self, text: str) -> bool:
         """Detecta si el texto contiene marcadores de una propuesta completa"""

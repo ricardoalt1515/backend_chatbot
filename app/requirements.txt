@@ -9,6 +9,8 @@ python-multipart==0.0.7
 # Clientes de IA
 groq==0.4.1
 openai==1.12.0
+google
+google-genai
 
 # Generacion de PDFS
 pdfkit==1.0.0
