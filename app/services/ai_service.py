@@ -79,21 +79,27 @@ class AIService:
             return {}
 
     def _prepare_messages(
-        self, conversation: Conversation, user_message: str = None
+        self,
+        conversation: Conversation,
+        user_message: str = None,
+        questionnaire_data: Dict[str, Any] = None,
     ) -> List[Dict[str, str]]:
         """Prepara los mensajes para la API del LLM"""
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # añadir contexto de cuestionario al prompt del sistema si esta disponible
+        # Añadir contexto de cuestionario al prompt del sistema si está disponible
         if questionnaire_data:
-            current_question = conversation.get_current_question(questionnaire_data)
-            if current_question:
-                context_message = {
-                    "role": "system",
-                    "content": f"La pregunta actual es: {current_question['text']}",
-                }
-                messages.append(context_message)
+            try:
+                current_question = conversation.get_current_question(questionnaire_data)
+                if current_question:
+                    context_message = {
+                        "role": "system",
+                        "content": f"La pregunta actual es: {current_question['text']}",
+                    }
+                    messages.append(context_message)
+            except Exception as e:
+                logger.warning(f"Error al obtener pregunta actual: {str(e)}")
 
         # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
         for msg in conversation.messages[-15:]:
