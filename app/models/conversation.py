@@ -14,9 +14,7 @@ class Conversation(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
     messages: List[Message] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    questionnaire_state: QuestionnaireState = Field(
-        default_factory=QuestionnaireState
-    )  # Nuevo campo
+    questionnaire_state: QuestionnaireState = Field(default_factory=QuestionnaireState)
 
     def add_message(self, message: Message) -> None:
         """Añade un mensaje a la conversación"""

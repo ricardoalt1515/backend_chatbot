@@ -1,13 +1,13 @@
 # app/services/ai_service.py
 import logging
 import httpx
+import json
+import os
 from typing import List, Dict, Any
 
 from app.config import settings
 from app.models.conversation import Conversation
 from app.prompts.main_prompt import get_master_prompt
-from app.services.storage_service import storage_service
-from app.services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
@@ -17,13 +17,46 @@ class AIService:
 
     def __init__(self):
         """Inicialización del servicio AI"""
+        # Cargar datos del cuestionario y hechos
+        self.questionnaire_data = self._load_questionnaire_data()
+        self.facts_data = self._load_facts_data()
+
         # Cargar el prompt maestro
-        self.master_prompt = get_master_prompt()
+        self.master_prompt = get_master_prompt(
+            questionnaire_data=self.questionnaire_data, facts_data=self.facts_data
+        )
 
         # Configuración de API
         self.api_key = settings.API_KEY
         self.model = settings.MODEL
         self.api_url = settings.API_URL
+
+    def _load_questionnaire_data(self) -> Dict[str, Any]:
+        """Carga los datos del cuestionario"""
+        try:
+            # Intentar cargar desde archivo
+            questionnaire_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/questionnaire_complete.json"
+            )
+            if os.path.exists(questionnaire_path):
+                with open(questionnaire_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+
+            logger.warning("Archivo de cuestionario no encontrado.")
+            return {}
+        except Exception as e:
+            logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
+            return {}
+
+    def _load_facts_data(self) -> Dict[str, List[str]]:
+        """Carga los hechos/datos para diferentes sectores"""
+        try:
+            # Intentar extraer hechos del cuestionario
+            questionnaire_data = self._load_questionnaire_data()
+            return questionnaire_data.get("facts", {})
+        except Exception as e:
+            logger.error(f"Error al cargar datos de hechos: {str(e)}")
+            return {}
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
@@ -32,19 +65,12 @@ class AIService:
         Maneja una conversación y genera una respuesta
         """
         try:
-            # Cargar datos del cuestionario
-            questionnaire_data = await self._load_questionnaire_data()
-
-            # Actualizar estadod el cuestionario si hay un nuevo mensaje
+            # Si es un nuevo mensaje, procesar para actualizar el estado del cuestionario
             if user_message:
-                conversation.update_questionnaire_state(
-                    user_message, questionnaire_data
-                )
+                self._update_questionnaire_state(conversation, user_message)
 
             # Preparar los mensajes para la API
-            messages = self._prepare_messages(
-                conversation, user_message, questionnaire_data
-            )
+            messages = self._prepare_messages(conversation, user_message)
 
             # Llamar a la API del LLM
             response = await self._call_llm_api(messages)
@@ -52,7 +78,7 @@ class AIService:
             # Detectar si el mensaje contiene una propuesta completa
             if self._contains_proposal_markers(response):
                 conversation.metadata["has_proposal"] = True
-                conversation.questionnaire_state.complete_questionnaire()
+                conversation.questionnaire_state.is_complete = True
 
             return response
 
@@ -60,46 +86,86 @@ class AIService:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
-    async def _load_questionnaire_data(self) -> Dict[str, Any]:
-        """Carga los datos del cuestionario"""
-        # Implementación simplificada - en un entorno real podrías cargar desde una base de datos
-        try:
-            # Cargar desde archivo JSON en app/prompts/questionnaire_complete.json
-            import json
-            import os
+    def _update_questionnaire_state(
+        self, conversation: Conversation, user_message: str
+    ) -> None:
+        """Actualiza el estado del cuestionario basado en el mensaje del usuario"""
+        state = conversation.questionnaire_state
 
-            questionnaire_path = os.path.join(
-                os.path.dirname(__file__), "../prompts/questionnaire_complete.json"
+        # Si no hay sector seleccionado, intentar identificarlo
+        if not state.sector:
+            for sector in self.questionnaire_data.get("sectors", []):
+                if sector.lower() in user_message.lower():
+                    state.sector = sector
+                    return
+
+        # Si hay sector pero no subsector, intentar identificarlo
+        elif not state.subsector and state.sector:
+            subsectors = self.questionnaire_data.get("subsectors", {}).get(
+                state.sector, []
+            )
+            for subsector in subsectors:
+                if subsector.lower() in user_message.lower():
+                    state.subsector = subsector
+                    return
+
+        # Si ya tenemos sector y subsector, guardar la respuesta a la pregunta actual
+        elif state.sector and state.subsector:
+            question_key = f"{state.sector}_{state.subsector}"
+            questions = self.questionnaire_data.get("questions", {}).get(
+                question_key, []
             )
 
-            with open(questionnaire_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
-            return {}
+            if state.current_question_index < len(questions):
+                current_question = questions[state.current_question_index]
+                state.update_answer(current_question["id"], user_message)
+                state.mark_question_presented(current_question["id"])
+                state.set_next_question()  # Avanzar a la siguiente pregunta
 
     def _prepare_messages(
-        self,
-        conversation: Conversation,
-        user_message: str = None,
-        questionnaire_data: Dict[str, Any] = None,
+        self, conversation: Conversation, user_message: str = None
     ) -> List[Dict[str, str]]:
         """Prepara los mensajes para la API del LLM"""
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # Añadir contexto de cuestionario al prompt del sistema si está disponible
-        if questionnaire_data:
-            try:
-                current_question = conversation.get_current_question(questionnaire_data)
-                if current_question:
-                    context_message = {
-                        "role": "system",
-                        "content": f"La pregunta actual es: {current_question['text']}",
-                    }
-                    messages.append(context_message)
-            except Exception as e:
-                logger.warning(f"Error al obtener pregunta actual: {str(e)}")
+        # Añadir contexto sobre el estado del cuestionario
+        state = conversation.questionnaire_state
+        if state.sector:
+            sector_context = f"El usuario está en el sector: {state.sector}"
+            if state.subsector:
+                sector_context += f", subsector: {state.subsector}"
+
+            # Añadir información sobre la pregunta actual
+            if state.sector and state.subsector:
+                question_key = f"{state.sector}_{state.subsector}"
+                questions = self.questionnaire_data.get("questions", {}).get(
+                    question_key, []
+                )
+
+                if state.current_question_index < len(questions):
+                    current_question = questions[state.current_question_index]
+                    sector_context += (
+                        f"\nLa siguiente pregunta es: {current_question['text']}"
+                    )
+                    if (
+                        current_question.get("type") == "multiple_choice"
+                        or current_question.get("type") == "multiple_select"
+                    ):
+                        options = current_question.get("options", [])
+                        options_text = "\n".join(
+                            [f"{i+1}. {option}" for i, option in enumerate(options)]
+                        )
+                        sector_context += f"\nOpciones:\n{options_text}"
+
+            messages.append({"role": "system", "content": sector_context})
+
+        # Añadir resumen de respuestas previas
+        if state.answers:
+            answers_summary = "Respuestas proporcionadas hasta ahora:\n"
+            for q_id, answer in state.answers.items():
+                answers_summary += f"- {q_id}: {answer}\n"
+            messages.append({"role": "system", "content": answers_summary})
 
         # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
         for msg in conversation.messages[-15:]:
@@ -154,11 +220,11 @@ class AIService:
     def _contains_proposal_markers(self, text: str) -> bool:
         """Detecta si el texto contiene marcadores de una propuesta completa"""
         markers = [
-            "Propuesta",
+            "Hydrous Management Group",
             "Antecedentes del Proyecto",
             "Objetivo del Proyecto",
-            "Parámetros de Diseño",
-            "Proceso de Tratamiento",
+            "Proceso de Diseño",
+            "CAPEX & OPEX",
         ]
 
         marker_count = sum(1 for marker in markers if marker in text)
