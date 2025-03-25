@@ -1,61 +1,61 @@
 # app/routes/feedback.py
 from fastapi import APIRouter, HTTPException
 import logging
-
-from app.models.feedback import Feedback
-from app.services.feedback_service import feedback_service
-from app.services.storage_service import storage_service
+import os
+import json
+from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
 logger = logging.getLogger("hydrous")
 
 
+class FeedbackModel(BaseModel):
+    """Modelo simple para retroalimentación"""
+
+    conversation_id: str
+    message_id: Optional[str] = None
+    rating: int  # 1-5 donde 5 es excelente
+    comment: Optional[str] = None
+
+
+# Directorio para almacenar retroalimentación
+FEEDBACK_DIR = os.path.join("uploads", "feedback")
+os.makedirs(FEEDBACK_DIR, exist_ok=True)
+
+
 @router.post("/submit")
-async def submit_feedback(feedback: Feedback):
-    """Envía retroalimentación sobre una respuesta específica"""
+async def submit_feedback(feedback: FeedbackModel):
+    """Envía retroalimentación sobre una respuesta"""
     try:
-        # Verificar que la conversación existe
-        conversation = await storage_service.get_conversation(feedback.conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-
-        # Verificar que el mensaje existe
-        message_exists = any(
-            msg.id == feedback.message_id for msg in conversation.messages
+        # Crear un ID único para la retroalimentación
+        feedback_id = (
+            f"{feedback.conversation_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         )
-        if not message_exists:
-            raise HTTPException(status_code=404, detail="Mensaje no encontrado")
 
-        # Guardar retroalimentación
-        success = await feedback_service.save_feedback(feedback)
-        if not success:
-            raise HTTPException(
-                status_code=500, detail="Error al guardar la retroalimentación"
-            )
+        # Preparar datos para guardar
+        feedback_data = {
+            "id": feedback_id,
+            "conversation_id": feedback.conversation_id,
+            "message_id": feedback.message_id,
+            "rating": feedback.rating,
+            "comment": feedback.comment,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        # Guardar en archivo JSON
+        feedback_file = os.path.join(FEEDBACK_DIR, f"{feedback_id}.json")
+        with open(feedback_file, "w", encoding="utf-8") as f:
+            json.dump(feedback_data, f, ensure_ascii=False, indent=2)
 
         return {
             "status": "success",
             "message": "Retroalimentación recibida correctamente",
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error al procesar retroalimentación: {str(e)}")
         raise HTTPException(
             status_code=500, detail="Error al procesar la retroalimentación"
         )
-
-
-@router.get("/stats")
-async def get_feedback_stats():
-    """Obtiene estadísticas de retroalimentación"""
-    try:
-        average_rating = await feedback_service.get_average_rating()
-        return {
-            "average_rating": average_rating,
-            "count": int(average_rating > 0),  # Si hay al menos una calificación
-        }
-    except Exception as e:
-        logger.error(f"Error al obtener estadísticas de retroalimentación: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al obtener estadísticas")
