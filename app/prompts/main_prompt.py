@@ -1,3 +1,6 @@
+import os
+
+
 def get_master_prompt():
     """Carga y combina el prompt maestro con el cuestionario"""
     # Cargar el PROMPT.md original
