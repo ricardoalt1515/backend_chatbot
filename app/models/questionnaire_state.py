@@ -1,3 +1,7 @@
+from pydantic import BaseModel
+from typing import Dict, Any, List, Optional
+
+
 class QuestionnaireState(BaseModel):
     """Modelo para mantener el estado del cuestionario del usuario"""
 
