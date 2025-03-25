@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from app.config import settings
 from app.models.conversation import Conversation
 from app.prompts.main_prompt import get_master_prompt
+from services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
@@ -30,8 +31,19 @@ class AIService:
         Maneja una conversación y genera una respuesta
         """
         try:
+            # Cargar datos del cuestionario
+            questionnaire_data = await self._load_questionnaire_data()
+
+            # Actualizar estado del cuestionario si hay un nuevo mensaje
+            if user_message:
+                conversation.update_questionnaire_state(
+                    user_message, questionnaire_data
+                )
+
             # Preparar los mensajes para la API
-            messages = self._prepare_messages(conversation, user_message)
+            messages = self._prepare_messages(
+                conversation, user_message, questionnaire_data
+            )
 
             # Llamar a la API del LLM
             response = await self._call_llm_api(messages)
@@ -39,6 +51,7 @@ class AIService:
             # Detectar si el mensaje contiene una propuesta completa
             if self._contains_proposal_markers(response):
                 conversation.metadata["has_proposal"] = True
+                conversation.questionnaire_state.is_complete = True
 
             return response
 
@@ -47,14 +60,36 @@ class AIService:
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
     def _prepare_messages(
-        self, conversation: Conversation, user_message: str = None
+        self,
+        conversation: Conversation,
+        user_message: str = None,
+        questionnaire_data: Dict[str, Any] = None,
     ) -> List[Dict[str, str]]:
-        """Prepara los mensajes para la API del LLM"""
+        """Prepara los mensajes para la API del LLM con mejor contexto"""
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
+        # Añadir contexto actual a las instrucciones del sistema
+        context_summary = conversation.questionnaire_state.get_context_summary()
+        if context_summary:
+            context_message = {
+                "role": "system",
+                "content": f"CONTEXTO ACTUAL:\n{context_summary}\n\nUtiliza esta información para personalizar tus respuestas. Si mencionan una ubicación específica, utiliza tu conocimiento interno sobre esa ubicación para proporcionar información relevante sobre estrés hídrico, clima y normativas locales.",
+            }
+            messages.append(context_message)
+
+        # Añadir información sobre la pregunta actual
+        if questionnaire_data:
+            current_question = conversation.get_current_question(questionnaire_data)
+            if current_question:
+                question_info = {
+                    "role": "system",
+                    "content": f"La pregunta actual es: {current_question['text']}\n\nEsta pregunta corresponde a la sección {conversation.questionnaire_state.sector if conversation.questionnaire_state.sector else 'inicial'} del cuestionario.",
+                }
+                messages.append(question_info)
+
         # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
-        for msg in conversation.messages[-15:]:
+        for msg in conversation.messages[-10:]:
             if msg.role != "system":  # No duplicar mensajes del sistema
                 messages.append({"role": msg.role, "content": msg.content})
 
