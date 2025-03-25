@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
 
-from app.routes import chat, documents
+from app.routes import chat, documents, feedback
 from app.config import settings
 
 # Configuración de logging
@@ -34,6 +34,9 @@ app.add_middleware(
 app.include_router(chat.router, prefix=f"{settings.API_V1_STR}/chat", tags=["chat"])
 app.include_router(
     documents.router, prefix=f"{settings.API_V1_STR}/documents", tags=["documents"]
+)
+app.include_router(
+    feedback.router, prefix=f"{settings.API_V1_STR}/feedback", tags=["feedback"]
 )
 
 

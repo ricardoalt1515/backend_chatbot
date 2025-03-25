@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 from app.config import settings
 from app.models.conversation import Conversation
 from app.prompts.main_prompt import get_master_prompt
+from app.services.storage_service import storage_service
+from services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
@@ -30,8 +32,19 @@ class AIService:
         Maneja una conversación y genera una respuesta
         """
         try:
+            # Cargar datos del cuestionario
+            questionnaire_data = await self._load_questionnaire_data()
+
+            # Actualizar estadod el cuestionario si hay un nuevo mensaje
+            if user_message:
+                conversation.update_questionnaire_state(
+                    user_message, questionnaire_data
+                )
+
             # Preparar los mensajes para la API
-            messages = self._prepare_messages(conversation, user_message)
+            messages = self._prepare_messages(
+                conversation, user_message, questionnaire_data
+            )
 
             # Llamar a la API del LLM
             response = await self._call_llm_api(messages)
@@ -39,6 +52,7 @@ class AIService:
             # Detectar si el mensaje contiene una propuesta completa
             if self._contains_proposal_markers(response):
                 conversation.metadata["has_proposal"] = True
+                conversation.questionnaire_state.complete_questionnaire()
 
             return response
 
@@ -46,12 +60,40 @@ class AIService:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
+    async def _load_questionnaire_data(self) -> Dict[str, Any]:
+        """Carga los datos del cuestionario"""
+        # Implementación simplificada - en un entorno real podrías cargar desde una base de datos
+        try:
+            # Cargar desde archivo JSON en app/prompts/questionnaire_complete.json
+            import json
+            import os
+
+            questionnaire_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/questionnaire_complete.json"
+            )
+
+            with open(questionnaire_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
+            return {}
+
     def _prepare_messages(
         self, conversation: Conversation, user_message: str = None
     ) -> List[Dict[str, str]]:
         """Prepara los mensajes para la API del LLM"""
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
+
+        # añadir contexto de cuestionario al prompt del sistema si esta disponible
+        if questionnaire_data:
+            current_question = conversation.get_current_question(questionnaire_data)
+            if current_question:
+                context_message = {
+                    "role": "system",
+                    "content": f"La pregunta actual es: {current_question['text']}",
+                }
+                messages.append(context_message)
 
         # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
         for msg in conversation.messages[-15:]:
