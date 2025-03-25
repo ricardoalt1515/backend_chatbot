@@ -46,85 +46,27 @@ class AIService:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
-    def _prepare_messages(self, conversation: Conversation, user_message: str = None):
-        # Mensaje sistema base con el prompt maestro optimizado
+    def _prepare_messages(
+        self, conversation: Conversation, user_message: str = None
+    ) -> List[Dict[str, str]]:
+        """Prepara los mensajes para la API del LLM"""
+        # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # Detectar fase actual e información clave
-        message_count = sum(1 for m in conversation.messages if m.role == "user")
-        need_summary = message_count > 0 and message_count % 5 == 0
-
-        # Si es momento de hacer resumen, añadir instrucción específica
-        if need_summary:
-            summary_instruction = {
-                "role": "system",
-                "content": "Antes de hacer la siguiente pregunta, proporciona un BREVE RESUMEN de la información clave recopilada hasta ahora. Luego continúa con la siguiente pregunta del cuestionario.",
-            }
-            messages.append(summary_instruction)
-
-        # Si hemos detectado un posible sector, ajustar instrucciones
-        if "sector" in conversation.metadata:
-            sector = conversation.metadata["sector"]
-            sector_instruction = {
-                "role": "system",
-                "content": f"El usuario pertenece al sector {sector}. Utiliza los datos educativos específicos para este sector.",
-            }
-            messages.append(sector_instruction)
-
-        # Añadir mensaje final de recordatorio de estructura
-        structure_reminder = {
-            "role": "system",
-            "content": "RECUERDA: Tu próxima respuesta DEBE seguir la estructura exacta: 1) Validación positiva, 2) Comentario específico, 3) Dato educativo con emoji 💡, 4) Explicación breve, 5) UNA SOLA pregunta en negrita.",
-        }
-        messages.append(structure_reminder)
-
-        # Añadir historial de conversación (limitado)
-        for msg in conversation.messages[-12:]:
-            if msg.role != "system":
+        # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
+        for msg in conversation.messages[-15:]:
+            if msg.role != "system":  # No duplicar mensajes del sistema
                 messages.append({"role": msg.role, "content": msg.content})
 
-        # Añadir nuevo mensaje si existe
-        if user_message:
+        # Si hay un nuevo mensaje y no es igual al último, añadirlo
+        if user_message and (
+            not messages
+            or messages[-1]["role"] != "user"
+            or messages[-1]["content"] != user_message
+        ):
             messages.append({"role": "user", "content": user_message})
 
         return messages
-
-    def _get_phase_instructions(self, phase, conversation):
-        """Genera instrucciones especificas, segun la fase"""
-        if phase == "initial_questions":
-            return "Estas en la fase inicial de recopilacion de información. Concentrate en preguntas basicas sobre la empresa, ubicacion y conusmo de agua"
-
-        elif phase == "detailed_questions":
-            # Es momento de hacer un resumen si hay suficiente información
-            questions_answered = sum(
-                1 for msg in conversation.messages if msg.role == "user"
-            )
-            if questions_answered % 5 == 0 and questions_answered > 0:
-                return """
-                Haz un breve resumen de la información recopilada hasta ahora antes de hacer la siguiente pregunta.
-                El resumen debe ser conciso y destacar los puntos clave que has aprendido sobre el proyecto.
-                """
-            return "Continúa con las preguntas detalladas sobre procesos específicos de agua."
-
-        elif phase == "final_questions":
-            return "Estás en las preguntas finales. Prioriza preguntas sobre restricciones, objetivos principales y plazos."
-
-        elif phase == "proposal_generation":
-            return """
-            Has recopilado suficiente información. Genera una propuesta completa siguiendo el formato establecido:
-            1. Título con nombre del cliente
-            2. Antecedentes del proyecto
-            3. Objetivos
-            4. Parámetros de diseño
-            5. Proceso de tratamiento propuesto
-            6. Capacidades estimadas
-            7. Costos estimados
-            8. Análisis ROI
-            9. Siguientes pasos
-            """
-
-        else:  # proposal_complete
-            return "El usuario ya tiene una propuesta completa. Responde a sus preguntas adicionales o aclaraciones."
 
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
