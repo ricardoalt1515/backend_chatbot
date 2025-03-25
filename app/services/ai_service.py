@@ -103,6 +103,29 @@ class AIService:
 
         return messages
 
+    async def _load_questionnaire_data(self) -> Dict[str, Any]:
+        """Carga los datos del cuestionario"""
+        try:
+            # Cargar desde archivo JSON en app/prompts/questionnaire_complete.json
+            import json
+            import os
+
+            questionnaire_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/questionnaire_complete.json"
+            )
+
+            if os.path.exists(questionnaire_path):
+                with open(questionnaire_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            else:
+                logger.warning(
+                    f"No se encontró el archivo de cuestionario en {questionnaire_path}"
+                )
+                return {}
+        except Exception as e:
+            logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
+            return {}
+
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
         try:
