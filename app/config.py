@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )  # Para compatibilidad
 
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
     MODEL: str = os.getenv(
         "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-3.5-turbo"))
     )
@@ -41,12 +41,6 @@ class Settings(BaseSettings):
     # Almacenamiento
     CONVERSATION_TIMEOUT: int = 60 * 60 * 24  # 24 horas
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
-
-    # Prompt del sistema (versión resumida para inicialización)
-    SYSTEM_PROMPT: str = """
-    Eres un asistente especializado en soluciones de tratamiento de agua. Tu objetivo es recopilar información
-    del usuario siguiendo un cuestionario estructurado, haciendo UNA SOLA PREGUNTA a la vez.
-    """
 
 
 # Crear instancia de configuración
