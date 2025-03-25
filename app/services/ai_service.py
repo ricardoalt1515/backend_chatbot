@@ -46,24 +46,45 @@ class AIService:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
-    def _prepare_messages(
-        self, conversation: Conversation, user_message: str = None
-    ) -> List[Dict[str, str]]:
-        """Prepara los mensajes para la API del LLM"""
-        # Mensaje inicial del sistema con el prompt maestro
+    def _prepare_messages(self, conversation: Conversation, user_message: str = None):
+        # Mensaje sistema base con el prompt maestro optimizado
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
-        for msg in conversation.messages[-15:]:
-            if msg.role != "system":  # No duplicar mensajes del sistema
+        # Detectar fase actual e información clave
+        message_count = sum(1 for m in conversation.messages if m.role == "user")
+        need_summary = message_count > 0 and message_count % 5 == 0
+
+        # Si es momento de hacer resumen, añadir instrucción específica
+        if need_summary:
+            summary_instruction = {
+                "role": "system",
+                "content": "Antes de hacer la siguiente pregunta, proporciona un BREVE RESUMEN de la información clave recopilada hasta ahora. Luego continúa con la siguiente pregunta del cuestionario.",
+            }
+            messages.append(summary_instruction)
+
+        # Si hemos detectado un posible sector, ajustar instrucciones
+        if "sector" in conversation.metadata:
+            sector = conversation.metadata["sector"]
+            sector_instruction = {
+                "role": "system",
+                "content": f"El usuario pertenece al sector {sector}. Utiliza los datos educativos específicos para este sector.",
+            }
+            messages.append(sector_instruction)
+
+        # Añadir mensaje final de recordatorio de estructura
+        structure_reminder = {
+            "role": "system",
+            "content": "RECUERDA: Tu próxima respuesta DEBE seguir la estructura exacta: 1) Validación positiva, 2) Comentario específico, 3) Dato educativo con emoji 💡, 4) Explicación breve, 5) UNA SOLA pregunta en negrita.",
+        }
+        messages.append(structure_reminder)
+
+        # Añadir historial de conversación (limitado)
+        for msg in conversation.messages[-12:]:
+            if msg.role != "system":
                 messages.append({"role": msg.role, "content": msg.content})
 
-        # Si hay un nuevo mensaje y no es igual al último, añadirlo
-        if user_message and (
-            not messages
-            or messages[-1]["role"] != "user"
-            or messages[-1]["content"] != user_message
-        ):
+        # Añadir nuevo mensaje si existe
+        if user_message:
             messages.append({"role": "user", "content": user_message})
 
         return messages
