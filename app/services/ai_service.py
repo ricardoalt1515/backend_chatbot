@@ -7,7 +7,7 @@ from app.config import settings
 from app.models.conversation import Conversation
 from app.prompts.main_prompt import get_master_prompt
 from app.services.storage_service import storage_service
-from services import questionnaire_service
+from app.services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
