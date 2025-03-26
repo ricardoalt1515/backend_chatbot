@@ -2,7 +2,6 @@
 import logging
 import httpx
 from typing import List, Dict, Any
-import os
 
 from app.config import settings
 from app.models.conversation import Conversation
@@ -10,17 +9,6 @@ from app.prompts.main_prompt import get_master_prompt
 from app.services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
-
-# Importación condicional de google-generativeai
-try:
-    import google.generativeai as genai
-
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    logger.warning(
-        "google-generativeai no está instalado. El proveedor Gemini no estará disponible."
-    )
 
 
 class AIService:
@@ -34,12 +22,7 @@ class AIService:
         # Configuración de API
         self.api_key = settings.API_KEY
         self.model = settings.MODEL
-        self.api_provider = settings.API_PROVIDER
         self.api_url = settings.API_URL
-
-        # Inicializar gemini si esta disponible y seleccionado
-        if self.api_provider == "gemini" and GEMINI_AVAILABLE:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
@@ -51,41 +34,24 @@ class AIService:
             # Cargar datos del cuestionario
             questionnaire_data = await self._load_questionnaire_data()
 
-            # Actualizar estado del cuestionario si hay mensaje
-            if user_message and hasattr(conversation, "update_questionnaire_state"):
-                try:
-                    conversation.update_questionnaire_state(
-                        user_message, questionnaire_data
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Error al actualizar estado del cuestionario: {str(e)}"
-                    )
+            # Actualizar estado del cuestionario si hay un nuevo mensaje
+            if user_message:
+                conversation.update_questionnaire_state(
+                    user_message, questionnaire_data
+                )
 
-            # Preparar mensajes
-            messages = self._prepare_messages(conversation, user_message)
+            # Preparar los mensajes para la API
+            messages = self._prepare_messages(
+                conversation, user_message, questionnaire_data
+            )
 
-            # Llamar al LLM según el proveedor configurado
-            if self.api_provider == "gemini" and GEMINI_AVAILABLE:
-                response = await self._call_gemini_api(messages)
-            else:
-                # IMPORTANTE: Verificar que api_url no sea None antes de intentar usar _call_llm_api
-                if self.api_url is None:
-                    # Si estamos configurados para Gemini pero no está disponible, usar OpenAI como fallback
-                    self.api_provider = "openai"
-                    self.api_url = "https://api.openai.com/v1/chat/completions"
-                    self.api_key = settings.OPENAI_API_KEY
-                    logger.warning(
-                        "Gemini no disponible, usando OpenAI como alternativa"
-                    )
+            # Llamar a la API del LLM
+            response = await self._call_llm_api(messages)
 
-                response = await self._call_llm_api(messages)
-
-            # Detectar propuesta completa
+            # Detectar si el mensaje contiene una propuesta completa
             if self._contains_proposal_markers(response):
                 conversation.metadata["has_proposal"] = True
-                if hasattr(conversation, "questionnaire_state"):
-                    conversation.questionnaire_state.is_complete = True
+                conversation.questionnaire_state.is_complete = True
 
             return response
 
@@ -194,54 +160,6 @@ class AIService:
         except Exception as e:
             logger.error(f"Error en _call_llm_api: {str(e)}")
             return "Lo siento, ha ocurrido un error al comunicarse con el servicio. Por favor, inténtalo de nuevo."
-
-    async def _call_gemini_api(self, messages: List[Dict[str, str]]) -> str:
-        """Llama a la API de Gemini"""
-        try:
-            if not GEMINI_AVAILABLE:
-                return "Lo siento, Gemini no está disponible. Por favor, configura otro proveedor."
-
-            # Configurar el modelo
-            model = genai.GenerativeModel(settings.GEMINI_MODEL)
-
-            # Convertir mensajes al formato que espera Gemini
-            gemini_messages = []
-            for msg in messages:
-                role = msg["role"]
-                content = msg["content"]
-
-                if role == "system":
-                    # Gemini no tiene un rol de "system" explícito, lo convertimos a "user"
-                    # pero marcado como instrucción del sistema
-                    gemini_messages.append(
-                        {"role": "user", "parts": [f"[SYSTEM INSTRUCTION] {content}"]}
-                    )
-                elif role == "user":
-                    gemini_messages.append({"role": "user", "parts": [content]})
-                elif role == "assistant":
-                    gemini_messages.append({"role": "model", "parts": [content]})
-
-            # Crear una conversación con Gemini
-            chat = model.start_chat(
-                history=gemini_messages[:-1] if gemini_messages else []
-            )
-
-            # Obtener la última pregunta del usuario
-            last_message = (
-                gemini_messages[-1]
-                if gemini_messages
-                else {"role": "user", "parts": ["Hola"]}
-            )
-
-            # Generar respuesta
-            response = chat.send_message(last_message["parts"][0])
-
-            # Extraer el texto de la respuesta
-            return response.text
-
-        except Exception as e:
-            logger.error(f"Error en _call_gemini_api: {str(e)}")
-            return f"Lo siento, ha ocurrido un error al comunicarse con Gemini: {str(e)}. Por favor, inténtalo de nuevo."
 
     def _contains_proposal_markers(self, text: str) -> bool:
         """Detecta si el texto contiene marcadores de una propuesta completa"""
