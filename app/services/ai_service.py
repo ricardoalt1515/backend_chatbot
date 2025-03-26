@@ -51,29 +51,41 @@ class AIService:
             # Cargar datos del cuestionario
             questionnaire_data = await self._load_questionnaire_data()
 
-            # Actualizar estado del cuestionario si hay un nuevo mensaje
-            if user_message:
-                conversation.update_questionnaire_state(
-                    user_message, questionnaire_data
-                )
+            # Actualizar estado del cuestionario si hay mensaje
+            if user_message and hasattr(conversation, "update_questionnaire_state"):
+                try:
+                    conversation.update_questionnaire_state(
+                        user_message, questionnaire_data
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Error al actualizar estado del cuestionario: {str(e)}"
+                    )
 
-            # Preparar los mensajes para la API
-            messages = self._prepare_messages(
-                conversation, user_message, questionnaire_data
-            )
+            # Preparar mensajes
+            messages = self._prepare_messages(conversation, user_message)
 
-            # Verificar el proveedor de API y llamar al metodo correspondiente
-            response = ""
+            # Llamar al LLM según el proveedor configurado
             if self.api_provider == "gemini" and GEMINI_AVAILABLE:
                 response = await self._call_gemini_api(messages)
             else:
-                # para openai o groq
+                # IMPORTANTE: Verificar que api_url no sea None antes de intentar usar _call_llm_api
+                if self.api_url is None:
+                    # Si estamos configurados para Gemini pero no está disponible, usar OpenAI como fallback
+                    self.api_provider = "openai"
+                    self.api_url = "https://api.openai.com/v1/chat/completions"
+                    self.api_key = settings.OPENAI_API_KEY
+                    logger.warning(
+                        "Gemini no disponible, usando OpenAI como alternativa"
+                    )
+
                 response = await self._call_llm_api(messages)
 
-            # Detectar si el mensaje contiene una propuesta completa
+            # Detectar propuesta completa
             if self._contains_proposal_markers(response):
                 conversation.metadata["has_proposal"] = True
-                conversation.questionnaire_state.is_complete = True
+                if hasattr(conversation, "questionnaire_state"):
+                    conversation.questionnaire_state.is_complete = True
 
             return response
 
