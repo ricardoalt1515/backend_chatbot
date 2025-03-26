@@ -125,6 +125,9 @@ Este documento incluye:
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
 
 
+# En app/routes/chat.py
+
+
 @router.get("/{conversation_id}/download-pdf")
 async def download_pdf(conversation_id: str):
     """Descarga la propuesta en formato PDF"""
@@ -134,37 +137,34 @@ async def download_pdf(conversation_id: str):
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
-        # Verificar que hay una propuesta disponible
-        if not conversation.metadata.get("has_proposal", False):
-            raise HTTPException(
-                status_code=400,
-                detail="No hay propuesta disponible para esta conversación",
-            )
-
-        # Generar PDF
-        pdf_path = await pdf_service.generate_pdf(conversation)
+        # Si ya tenemos un PDF generado, usamos esa ruta
+        if conversation.metadata.get("pdf_path") and os.path.exists(
+            conversation.metadata["pdf_path"]
+        ):
+            pdf_path = conversation.metadata["pdf_path"]
+        else:
+            # Generar PDF
+            pdf_path = await pdf_service.generate_pdf(conversation)
 
         if not pdf_path:
             raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
-        # Extraer nombre para el archivo
+        # Preparar nombre para el archivo
         client_name = "Cliente"
-        # Intentar obtener nombre del cliente de los mensajes
-        for msg in conversation.messages:
-            if msg.role == "user" and len(msg.content) < 100:
-                # Simplemente usamos la primera palabra del primer mensaje corto como nombre
-                words = msg.content.split()
-                if words:
-                    client_name = words[0]
-                break
+        if conversation.questionnaire_state.key_entities.get("company_name"):
+            client_name = conversation.questionnaire_state.key_entities["company_name"]
+
+        # Determinar si es PDF o HTML
+        is_pdf = pdf_path.endswith(".pdf")
+        filename = f"Propuesta_Hydrous_{client_name}.{'pdf' if is_pdf else 'html'}"
 
         return FileResponse(
             path=pdf_path,
-            filename=f"Propuesta_Hydrous_{client_name}.pdf",
-            media_type="application/pdf" if pdf_path.endswith(".pdf") else "text/html",
+            filename=filename,
+            media_type="application/pdf" if is_pdf else "text/html",
         )
     except Exception as e:
-        logging.error(f"Error al descargar PDF: {str(e)}")
+        logger.error(f"Error al descargar PDF: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
 

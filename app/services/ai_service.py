@@ -49,9 +49,67 @@ class AIService:
             response = await self._call_llm_api(messages)
 
             # Detectar si el mensaje contiene una propuesta completa
-            if self._contains_proposal_markers(response):
+            if "[PROPOSAL_COMPLETE:" in response or self._contains_proposal_markers(
+                response
+            ):
                 conversation.metadata["has_proposal"] = True
                 conversation.questionnaire_state.is_complete = True
+
+                # Añadir instrucciones para descargar PDF
+                download_instructions = f"""
+
+## 📥 Descargar Propuesta en PDF
+
+    Para descargar esta propuesta en formato PDF, por favor haz clic en el siguiente enlace:
+
+    **👉 [DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation.id}/download-pdf)**
+
+    Este documento incluye todos los detalles discutidos y puede ser compartido con tu equipo.
+    """
+                # Solo añadir las instrucciones si aún no están presentes
+                if "DESCARGAR PROPUESTA EN PDF" not in response:
+                    response += download_instructions
+
+            # Si ya hay una propuesta pero no se añadieron las instrucciones de descarga
+            elif (
+                conversation.metadata.get("has_proposal", False)
+                and "DESCARGAR PROPUESTA" not in response
+            ):
+                # Verificar si el usuario está solicitando la propuesta
+                download_keywords = [
+                    "pdf",
+                    "descargar",
+                    "documento",
+                    "propuesta",
+                    "guardar",
+                    "enviar",
+                ]
+                if user_message and any(
+                    keyword in user_message.lower() for keyword in download_keywords
+                ):
+                    download_instructions = f"""
+
+## 📥 Descargar Propuesta en PDF
+
+    Puedes descargar la propuesta completa en formato PDF haciendo clic en el siguiente enlace:
+
+    **👉 [DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation.id}/download-pdf)**
+
+    Este documento incluye todos los detalles discutidos y puede ser compartido con tu equipo.
+    """
+                    response += download_instructions
+
+            # Actualizar metadata de la conversación si necesitamos generar un PDF
+            if conversation.metadata.get(
+                "has_proposal", False
+            ) and not conversation.metadata.get("pdf_requested"):
+                conversation.metadata["pdf_requested"] = True
+
+                # Generar PDF en segundo plano si no se ha generado aún
+                if not conversation.metadata.get("pdf_path"):
+                    # Aquí podríamos iniciar un background task para generar el PDF
+                    # pero por simplicidad, simplemente lo marcamos como pendiente
+                    conversation.metadata["pdf_pending"] = True
 
             return response
 
@@ -163,16 +221,24 @@ class AIService:
 
     def _contains_proposal_markers(self, text: str) -> bool:
         """Detecta si el texto contiene marcadores de una propuesta completa"""
-        markers = [
-            "Propuesta",
-            "Antecedentes del Proyecto",
-            "Objetivo del Proyecto",
-            "Parámetros de Diseño",
-            "Proceso de Tratamiento",
+        # Verificar si contiene las secciones principales de la Propuesta
+        key_sections = [
+            "Important Disclaimer",
+            "Introduction to Hydrous Management Group",
+            "Project Background",
+            "Objective of the Project",
+            "Key Design Assumptions",
+            "Process Design & Treatment Alternatives",
+            "Suggested Equipment & Sizing",
+            "Estimated CAPEX & OPEX",
+            "Return on Investment",
         ]
 
-        marker_count = sum(1 for marker in markers if marker in text)
-        return marker_count >= 3
+        # Contar cuatnas secciones estan presentes
+        section_count = sum(1 for section in key_sections if section in text)
+
+        # Si tiene la mayorua de las secciones, consideramos que es una propuesta completa
+        return section_count >= 6
 
 
 # Instancia global

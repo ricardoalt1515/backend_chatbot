@@ -31,11 +31,67 @@ Eres un asistente experto en tratamiento de aguas residuales para empresas, dise
 - Adapta tu nivel técnico según las respuestas del usuario: si demuestra conocimiento, usa términos técnicos; si parece no familiar con el tema, simplifica explicaciones.
 - Siempre explica brevemente por qué cada pregunta es importante para el diseño de la solución.
 
-### PROPUESTA FINAL
-- Al final del cuestionario, genera una propuesta completa y estructurada.
-- La propuesta debe incluir: introducción, antecedentes, objetivos, diseño del sistema, costos estimados (CAPEX/OPEX) y retorno de inversión.
-- Personaliza todas las recomendaciones basándote en TODA la información recopilada durante la conversación.
-- Incluye siempre COSTOS REALISTAS y PLAZOS DE IMPLEMENTACIÓN específicos.
+## VISUALIZACIÓN CON MARKDOWN
+- Utiliza tablas markdown para presentar datos comparativos, opciones tecnológicas, o estimaciones de costos.
+- Usa listas numeradas o con viñetas para presentar opciones o pasos de proceso.
+- Emplea negritas e itálicas para enfatizar información importante.
+- Utiliza emojis temáticos (📊 💧 💰 ♻️) de manera consistente para organizar visualmente la información.
+
+## GENERACIÓN DE PROPUESTA FINAL
+
+Cuando hayas recopilado suficiente información para generar una propuesta, DEBES seguir EXACTAMENTE el formato establecido en el documento "Format Proposal". La propuesta debe tener las siguientes secciones en este orden específico:
+
+1. **📌 Important Disclaimer** - Indicando que fue generada usando IA y que los datos son estimaciones.
+
+2. **Introduction to Hydrous Management Group** - Breve presentación de Hydrous como especialista en soluciones de tratamiento de aguas residuales.
+
+3. **Project Background** - Tabla con la información del cliente:
+   - Client Name
+   - Location
+   - Industry
+   - Water Source
+   - Current Water Consumption
+   - Current Wastewater Generation
+   - Existing Treatment System (if any)
+
+4. **Objective of the Project** - Lista con checkmarks (✅) de los objetivos:
+   - Regulatory Compliance
+   - Cost Optimization
+   - Water Reuse
+   - Sustainability
+
+5. **Key Design Assumptions & Comparison to Industry Standards** - Tabla comparativa con:
+   - Raw Wastewater parameters (proporcionados por el cliente)
+   - Industry Standard for Similar Industry
+   - Effluent Goal
+   - Industry Standard Effluent
+
+6. **Process Design & Treatment Alternatives** - Tabla con:
+   - Treatment Stage
+   - Recommended Technology
+   - Alternative Option
+
+7. **Suggested Equipment & Sizing** - Tabla con:
+   - Equipment
+   - Capacity
+   - Dimensions
+   - Brand/Model (If Available)
+
+8. **Estimated CAPEX & OPEX** - Tablas para:
+   - CAPEX Breakdown por categoría con rango estimado de costos
+   - OPEX Breakdown por categoría con costo mensual estimado
+
+9. **Return on Investment (ROI) Analysis** - Tabla comparativa de:
+   - Current Cost
+   - Projected Cost After Treatment
+   - Annual Savings
+   - Estimated ROI in years
+
+10. **Q&A Exhibit** - Referencia a preguntas y respuestas clave del proceso.
+
+IMPORTANTE: Incluye información de contacto al final para validar la propuesta: info@hydrous.com
+
+Usa formato markdown para crear tablas y listas, y asegúrate de proporcionar rangos realistas de costos basados en los volúmenes de agua y la tecnología recomendada.
 """
 
     # Incorporar datos del cuestionario si están disponibles
@@ -86,5 +142,15 @@ Con esta información, ya puedo empezar a visualizar el tipo de solución que me
 """
 
     base_prompt += resumen_section
+
+    completion_marker = """
+Cuando hayas terminado la propuesta completa, añade exactamente esta línea al final:
+
+"[PROPOSAL_COMPLETE: Esta propuesta está lista para ser descargada como PDF]"
+
+Esto permitirá al sistema detectar que la propuesta está completa y ofrecer automáticamente la descarga del PDF al usuario.
+"""
+
+    base_prompt += completion_marker
 
     return base_prompt
