@@ -62,8 +62,13 @@ class AIService:
                 conversation, user_message, questionnaire_data
             )
 
-            # Llamar a la API del LLM
-            response = await self._call_llm_api(messages)
+            # Verificar el proveedor de API y llamar al metodo correspondiente
+            response = ""
+            if self.api_provider == "gemini" and GEMINI_AVAILABLE:
+                response = await self._call_gemini_api(messages)
+            else:
+                # para openai o groq
+                response = await self._call_llm_api(messages)
 
             # Detectar si el mensaje contiene una propuesta completa
             if self._contains_proposal_markers(response):
