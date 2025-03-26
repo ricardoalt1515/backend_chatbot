@@ -2,6 +2,7 @@
 import logging
 import httpx
 from typing import List, Dict, Any
+import os
 
 from app.config import settings
 from app.models.conversation import Conversation
@@ -12,8 +13,7 @@ logger = logging.getLogger("hydrous")
 
 # Importación condicional de google-generativeai
 try:
-    from google import genai
-    from google.genai import types
+    import google.generativeai as genai
 
     GEMINI_AVAILABLE = True
 except ImportError:
