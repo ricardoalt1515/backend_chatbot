@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     )  # Para compatibilidad
 
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "distil-whisper-large-v3-en")
     MODEL: str = os.getenv(
         "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-3.5-turbo"))
     )
