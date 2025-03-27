@@ -53,10 +53,25 @@ Por favor incluye:
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
-        # Obtener conversación
-        conversation = await storage_service.get_conversation(data.conversation_id)
+        # Obtener conversación con logging adicional para debug
+        conversation_id = data.conversation_id
+        logging.info(f"Buscando conversación con ID: {conversation_id}")
+
+        conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+            logging.error(f"Conversación no encontrada: {conversation_id}")
+            # Intenta crear una nueva conversación en lugar de fallar
+            logging.info(f"Creando nueva conversación como fallback")
+            conversation = await storage_service.create_conversation()
+            logging.info(f"Nueva conversación creada con ID: {conversation.id}")
+
+            # Importante: Devuelve información sobre la nueva conversación
+            return {
+                "error": "Conversación original no encontrada",
+                "new_conversation_created": True,
+                "conversation_id": conversation.id,
+                "message": "Se creó una nueva conversación. Por favor, intenta de nuevo.",
+            }
 
         # Añadir mensaje del usuario
         user_message = Message.user(data.message)

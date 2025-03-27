@@ -34,12 +34,28 @@ class StorageService:
         return conversation
 
     async def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
-        """Obtiene una conversación por su ID"""
-        # Actualizar tiempo de acceso
-        if conversation_id in self.conversations:
+        """Obtiene una conversación por su ID con mejor logging"""
+
+        try:
+            # Verificar si existe la conversación
+            if conversation_id not in self.conversations:
+                logging.warning(
+                    f"Conversación no encontrada en almacenamiento: {conversation_id}"
+                )
+                # Listamos las conversaciones existentes para debug
+                existing_ids = list(self.conversations.keys())
+                logging.info(f"Conversaciones existentes: {existing_ids[:5]}...")
+                return None
+
+            # Actualizar tiempo de acceso
             self.last_access[conversation_id] = time.time()
 
-        return self.conversations.get(conversation_id)
+            return self.conversations[conversation_id]
+        except Exception as e:
+            logging.error(
+                f"Error al recuperar conversación {conversation_id}: {str(e)}"
+            )
+            return None
 
     async def add_message_to_conversation(
         self, conversation_id: str, message: Message
