@@ -22,10 +22,10 @@ class Settings(BaseSettings):
         "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", "")
     )  # Para compatibilidad
 
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "distil-whisper-large-v3-en")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
     MODEL: str = os.getenv(
-        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-3.5-turbo"))
+        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o"))
     )
 
     # Determinar URL de API basado en lo que esté disponible
