@@ -27,9 +27,14 @@ class Conversation(BaseModel):
         """Obtiene la pregunta actual basada en el estado del cuestionario de manera más robusta"""
         # Si no hay sector definido, primero preguntar por el sector
         if not self.questionnaire_state.sector:
+            sectors = questionnaire_data.get("sectors", [])
+            options_text = "\n".join(
+                [f"{i+1}. {sector}" for i, sector in enumerate(sectors)]
+            )
+
             return {
                 "id": "sector_selection",
-                "text": "¿En qué sector se encuentra tu empresa?",
+                "text": "¿En qué sector se encuentra tu empresa?\n\n{options_text}",
             }
 
         # Si no hay subsector definido, preguntar por el subsector dentro del sector elegido
@@ -38,7 +43,7 @@ class Conversation(BaseModel):
                 self.questionnaire_state.sector, []
             )
             if subsectors:
-                options_text = ", ".join(
+                options_text = "\n".join(
                     [f"{i+1}. {sub}" for i, sub in enumerate(subsectors)]
                 )
                 return {
@@ -74,11 +79,12 @@ class Conversation(BaseModel):
         """Actualiza el estado del cuestionario de manera más robusta"""
         # Si aún no se ha definido sector/subsector, procesarlos primero
         if not self.questionnaire_state.sector:
+            sectors = questionnaire_data.get("sectors", [])
             # Intentar identificar sector desde el mensaje
             for sector in questionnaire_data.get("sectors", []):
                 if sector.lower() in user_message.lower():
                     self.questionnaire_state.sector = sector
-                    break
+                    return
 
             # Si no se identifica claramente, usar un valor predeterminado o pedir clarificación
             if not self.questionnaire_state.sector and user_message:
