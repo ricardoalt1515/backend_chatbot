@@ -1,6 +1,7 @@
 # app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routes import pdf_download
 import uvicorn
 import logging
 
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],  # Importante para las descargas
 )
 
 # Incluir rutas
@@ -37,6 +39,9 @@ app.include_router(
 )
 app.include_router(
     feedback.router, prefix=f"{settings.API_V1_STR}/feedback", tags=["feedback"]
+)
+app.include_router(
+    pdf_download.router, prefix=f"{settings.API_V1_STR}/pdf", tags=["pdf"]
 )
 
 

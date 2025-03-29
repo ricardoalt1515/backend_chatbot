@@ -11,7 +11,7 @@ from app.config import settings
 logger = logging.getLogger("hydrous")
 
 
-class PDFService:
+class EnhancedPDFService:
     """Servicio mejorado para generar PDFs de propuestas"""
 
     def __init__(self):
@@ -23,19 +23,6 @@ class PDFService:
         # Crear directorio para recursos (imágenes, CSS, etc.)
         self.resources_dir = os.path.join(settings.UPLOAD_DIR, "resources")
         os.makedirs(self.resources_dir, exist_ok=True)
-
-        # Copiar logo si no existe
-        self._setup_resources()
-
-    def _setup_resources(self):
-        """Configura recursos necesarios para PDFs"""
-        # Aquí se podrían copiar logos, CSS, etc. desde una carpeta de assets
-        # Por ahora simulamos esto con un placeholder
-        logo_path = os.path.join(self.resources_dir, "hydrous_logo.png")
-        if not os.path.exists(logo_path):
-            # En un caso real, copiaríamos el logo desde una ubicación estática
-            # Por ahora solo registramos el evento
-            logger.info("Se necesita configurar el logo para los PDFs")
 
     async def generate_pdf(self, conversation: Conversation) -> Optional[str]:
         """Genera un PDF a partir de una propuesta en la conversación"""
@@ -72,19 +59,90 @@ class PDFService:
             with open(html_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
-            # Intentar generar PDF con varias bibliotecas
+            # Intentar generar PDF
             pdf_path = self._generate_pdf_from_html(html_path, client_name, timestamp)
 
             # Almacenar ruta del PDF en los metadatos de la conversación
             if pdf_path:
                 conversation.metadata["pdf_path"] = pdf_path
                 conversation.metadata["pdf_generated_at"] = datetime.now().isoformat()
-
-            return pdf_path or html_path
+                return pdf_path
+            return html_path
 
         except Exception as e:
             logger.error(f"Error en generate_pdf: {str(e)}")
             return None
+
+    async def get_pdf_data(
+        self, conversation_id: str
+    ) -> Tuple[Optional[bytes], Optional[str], Optional[str]]:
+        """
+        Obtiene los datos binarios del PDF para engrega diracta o como data URL
+
+        Returns:
+            Tuple: (pdf_data, filename, content_type)
+        """
+        from app.services.storage_service import storage_service
+
+        try:
+            # Obtener conversación
+            conversation = await storage_service.get_conversation(conversation_id)
+            if not conversation:
+                logger.error(f"Conversación no encontrada: {conversation_id}")
+                return None, None, None
+
+            # Verificar si ya hay un PDF generado
+            pdf_path = conversation.metadata.get("pdf_path")
+            if not pdf_path or not os.path.exists(pdf_path):
+                # Generar PDF si no existe
+                pdf_path = await self.generate_pdf(conversation)
+
+            if not pdf_path:
+                logger.error(f"No se pudo generar PDF para {conversation_id}")
+                return None, None, None
+
+            # Determinar tipo de contenido
+            is_pdf = pdf_path.endswith(".pdf")
+            content_type = "application/pdf" if is_pdf else "text/html"
+
+            # Prepara nombre del archivo
+            client_name = "Cliente"
+            if conversation.questionnaire_state.key_entities.get("company_name"):
+                client_name = conversation.questionnaire_state.key_entities[
+                    "company_name"
+                ]
+            filename = f"Propuesta_Hydrous_{client_name}.{'pdf' if is_pdf else 'html'}"
+
+            # Leer el archivo
+            with open(pdf_path, "rb") as f:
+                file_data = f.read()
+
+            return file_data, filename, content_type
+
+        except Exception as e:
+            logger.error(f"Error al obtener datos del PDF: {str(e)}")
+
+    async def get_pdf_data_url(self, conversation_id: str) -> Optional[Dict[str, str]]:
+        """
+        Genera una data URL para el PDF o HTML
+
+        Returns:
+            Dict con data_url, filename y content_type
+        """
+        pdf_data, filename, content_type = await self.get_pdf_data(conversation_id)
+
+        if not pdf_data:
+            return None
+
+        # Convertir a Base64
+        b64_data = base64.b64encode(pdf_data).decode("utf-8")
+        data_url = f"data:{content_type};base64,{b64_data}"
+
+        return {
+            "data_url": data_url,
+            "filename": filename,
+            "content_type": content_type,
+        }
 
     def _extract_client_info(self, conversation: Conversation) -> Dict[str, Any]:
         """Extrae información del cliente de la conversación"""

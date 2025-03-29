@@ -12,8 +12,17 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "hydrous-backend"
     DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
 
+    # URL del backend para enlaces absolutos
+    BACKEND_URL: str = os.getenv(
+        "BACKEND_URL", "https://backend-chatbot-owzs.onrender.com"
+    )
+
     # CORS
-    CORS_ORIGINS: List[str] = ["*"]
+    CORS_ORIGINS: List[str] = [
+        "https://ricardoalt1515.github.io",
+        "http://localhost:3000",  # Para desarrollo local
+        "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
+    ]
 
     # Configuración IA - Añadimos compatibilidad con los nombres antiguos y nuevos
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -22,10 +31,10 @@ class Settings(BaseSettings):
         "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", "")
     )  # Para compatibilidad
 
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
     MODEL: str = os.getenv(
-        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o"))
+        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o-mini"))
     )
 
     # Determinar URL de API basado en lo que esté disponible

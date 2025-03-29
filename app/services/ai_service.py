@@ -55,6 +55,9 @@ class AIService:
                 conversation.metadata["has_proposal"] = True
                 conversation.questionnaire_state.is_complete = True
 
+                # Usar URL completa en lugar de relativa
+                backend_url = settings.BACKEND_URL
+
                 # Añadir instrucciones para descargar PDF
                 download_instructions = f"""
 
@@ -62,8 +65,8 @@ class AIService:
 
     Para descargar esta propuesta en formato PDF, por favor haz clic en el siguiente enlace:
 
-    **👉 [DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation.id}/download-pdf)**
-
+    **👉 [DESCARGAR PROPUESTA EN PDF]({backend_url}/api/chat/{conversation.id}/download-pdf)**
+    
     Este documento incluye todos los detalles discutidos y puede ser compartido con tu equipo.
     """
                 # Solo añadir las instrucciones si aún no están presentes
