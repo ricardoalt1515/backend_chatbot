@@ -120,45 +120,41 @@ class AIService:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
-    def _prepare_messages_simple(
-        self, conversation: Conversation, user_message: str = None
+    def _prepare_messages(
+        self,
+        conversation: Conversation,
+        user_message: str = None,
+        questionnaire_data: Dict[str, Any] = None,
     ) -> List[Dict[str, str]]:
-        """
-        Versión simplificada para preparar mensajes con el contexto necesario
-        """
+        """Prepara los mensajes para la API del LLM con mejor contexto"""
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # Añadir contexto resumido para que la IA sepa lo que ya se habló
-        if conversation.questionnaire_state.answers:
-            # Preparar resumen de respuestas previas
-            context = "INFORMACIÓN YA RECOPILADA:\n"
+        # Añadir contexto actual a las instrucciones del sistema
+        context_summary = conversation.questionnaire_state.get_context_summary()
+        if context_summary:
+            context_message = {
+                "role": "system",
+                "content": f"CONTEXTO ACTUAL:\n{context_summary}\n\nUtiliza esta información para personalizar tus respuestas. Si mencionan una ubicación específica, utiliza tu conocimiento interno sobre esa ubicación para proporcionar información relevante sobre estrés hídrico, clima y normativas locales.",
+            }
+            messages.append(context_message)
 
-            # Añadir sector/subsector si se conocen
-            if conversation.questionnaire_state.sector:
-                context += f"- Sector: {conversation.questionnaire_state.sector}\n"
-            if conversation.questionnaire_state.subsector:
-                context += (
-                    f"- Subsector: {conversation.questionnaire_state.subsector}\n"
-                )
+        # Añadir información sobre la pregunta actual
+        if questionnaire_data:
+            current_question = conversation.get_current_question(questionnaire_data)
+            if current_question:
+                question_info = {
+                    "role": "system",
+                    "content": f"La pregunta actual es: {current_question['text']}\n\nEsta pregunta corresponde a la sección {conversation.questionnaire_state.sector if conversation.questionnaire_state.sector else 'inicial'} del cuestionario.",
+                }
+                messages.append(question_info)
 
-            # Añadir respuestas ya proporcionadas
-            for q_id, answer in conversation.questionnaire_state.answers.items():
-                context += f"- {q_id}: {answer}\n"
-
-            # Añadir entidades clave
-            for entity, value in conversation.questionnaire_state.key_entities.items():
-                if value:
-                    context += f"- {entity}: {value}\n"
-
-            messages.append({"role": "system", "content": context})
-
-        # Añadir historial de la conversación (limitar a últimos 10 mensajes)
+        # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
         for msg in conversation.messages[-10:]:
             if msg.role != "system":  # No duplicar mensajes del sistema
                 messages.append({"role": msg.role, "content": msg.content})
 
-        # Si hay un nuevo mensaje, añadirlo
+        # Si hay un nuevo mensaje y no es igual al último, añadirlo
         if user_message and (
             not messages
             or messages[-1]["role"] != "user"
