@@ -1,4 +1,5 @@
 import logging
+import os
 from openai import OpenAI
 from typing import List, Dict, Any
 
@@ -18,6 +19,26 @@ class AIService:
         self.client = OpenAI(api_key=settings.API_KEY)  # Nuevo cliente de OpenAI
         self.model = settings.MODEL  # Por ejemplo, "gpt-4o"
         self.master_prompt = get_master_prompt()
+
+    async def _load_questionnaire_data(self):
+        """Carga los datos del cuestionario desde JSON"""
+        try:
+            questionnaire_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/questionnaire_complete.json"
+            )
+
+            if os.path.exists(questionnaire_path):
+                with open(questionnaire_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            else:
+                logger.warning(
+                    f"No se encontró el archivo de cuestionario en {questionnaire_path}"
+                )
+                return {}
+
+        except Exception as e:
+            logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
+            return {}
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
