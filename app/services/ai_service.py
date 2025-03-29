@@ -8,8 +8,6 @@ from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.models.conversation import Conversation
 from app.prompts.main_prompt import get_master_prompt
-from app.services.conversation_flow_service import ConversationFlowService
-from app.services.proposal_generator import proposal_generator
 
 logger = logging.getLogger("hydrous")
 
@@ -25,10 +23,9 @@ class AIService:
         # Cargar el prompt maestro
         self.master_prompt = get_master_prompt(self.questionnaire_data)
 
-        # Inicializar servicio de flujo de conversación
-        self.conversation_flow_service = ConversationFlowService(
-            self.questionnaire_data
-        )
+        # Inicialmente no tenemos referencia al servicio de flujo
+        # Esto se establece posteriormente durante la inicialización de la app
+        self.conversation_flow_service = None
 
         # Configuración de API
         self.api_key = settings.API_KEY
@@ -62,6 +59,11 @@ class AIService:
             logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
             return {"sectors": [], "subsectors": {}, "questions": {}}
 
+    def set_conversation_flow_service(self, service):
+        """Establece el servicio de flujo de conversación"""
+        self.conversation_flow_service = service
+        logger.info("Servicio de flujo de conversación conectado a AIService")
+
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
     ) -> str:
@@ -75,30 +77,39 @@ class AIService:
                     user_message, self.questionnaire_data
                 )
 
-            # Verificar si el cuestionario está completo
-            is_complete = self.conversation_flow_service.is_questionnaire_complete(
-                conversation
-            )
-
-            # Si está completo, actualizar metadata
-            if is_complete and not conversation.questionnaire_state.is_complete:
-                conversation.questionnaire_state.is_complete = True
-                conversation.metadata["questionnaire_complete"] = True
-                logger.info(
-                    f"Cuestionario completo para conversación {conversation.id}"
+            # Si no tenemos servicio de flujo, usar métodos básicos
+            if self.conversation_flow_service is None:
+                is_complete = False  # Fallback simple
+                next_question = conversation.get_current_question(
+                    self.questionnaire_data
+                )
+                # Preparar los mensajes sin flujo avanzado
+                messages = self._prepare_messages_basic(conversation, user_message)
+            else:
+                # Verificar si el cuestionario está completo
+                is_complete = self.conversation_flow_service.is_questionnaire_complete(
+                    conversation
                 )
 
-            # Obtener próxima pregunta si no está completo
-            next_question = (
-                None
-                if is_complete
-                else conversation.get_current_question(self.questionnaire_data)
-            )
+                # Si está completo, actualizar metadata
+                if is_complete and not conversation.questionnaire_state.is_complete:
+                    conversation.questionnaire_state.is_complete = True
+                    conversation.metadata["questionnaire_complete"] = True
+                    logger.info(
+                        f"Cuestionario completo para conversación {conversation.id}"
+                    )
 
-            # Preparar los mensajes para la API con contexto mejorado
-            messages = self._prepare_messages_enhanced(
-                conversation, user_message, next_question, is_complete
-            )
+                # Obtener próxima pregunta si no está completo
+                next_question = (
+                    None
+                    if is_complete
+                    else conversation.get_current_question(self.questionnaire_data)
+                )
+
+                # Preparar los mensajes para la API con contexto mejorado
+                messages = self._prepare_messages_enhanced(
+                    conversation, user_message, next_question, is_complete
+                )
 
             # Llamar a la API del LLM
             response = await self._call_llm_api(messages)
@@ -175,6 +186,47 @@ Este documento incluye todos los detalles discutidos y puede ser compartido con 
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
+    def _prepare_messages_basic(
+        self, conversation: Conversation, user_message: str = None
+    ) -> List[Dict[str, str]]:
+        """Prepara los mensajes de manera básica cuando no hay servicio de flujo"""
+        # Mensaje inicial del sistema con el prompt maestro
+        messages = [{"role": "system", "content": self.master_prompt}]
+
+        # Añadir contexto actual como mensaje del sistema
+        context_summary = conversation.questionnaire_state.get_context_summary()
+        if context_summary:
+            context_message = {
+                "role": "system",
+                "content": f"CONTEXTO ACTUAL:\n{context_summary}\n\nUtiliza esta información para personalizar tus respuestas.",
+            }
+            messages.append(context_message)
+
+        # Información sobre la siguiente pregunta
+        next_question = conversation.get_current_question(self.questionnaire_data)
+        if next_question:
+            question_info = {
+                "role": "system",
+                "content": f"SIGUIENTE PREGUNTA:\n{next_question['text']}\n\nAsegúrate de hacer SOLO esta pregunta en tu próxima respuesta.",
+            }
+            messages.append(question_info)
+
+        # Añadir mensajes anteriores de la conversación
+        hist_limit = 10  # Usar un límite básico
+        for msg in conversation.messages[-hist_limit:]:
+            if msg.role != "system":  # No duplicar mensajes del sistema
+                messages.append({"role": msg.role, "content": msg.content})
+
+        # Si hay un nuevo mensaje, añadirlo
+        if user_message and (
+            not messages
+            or messages[-1]["role"] != "user"
+            or messages[-1]["content"] != user_message
+        ):
+            messages.append({"role": "user", "content": user_message})
+
+        return messages
+
     def _prepare_messages_enhanced(
         self,
         conversation: Conversation,
@@ -196,13 +248,16 @@ Este documento incluye todos los detalles discutidos y puede ser compartido con 
             messages.append(context_message)
 
         # Obtener hechos relevantes para el sector/industria
-        relevant_facts = self.conversation_flow_service.get_relevant_facts(conversation)
-        if relevant_facts:
-            facts_message = {
-                "role": "system",
-                "content": f"HECHOS EDUCATIVOS PARA USAR:\n- {relevant_facts[0]}\n- {relevant_facts[1] if len(relevant_facts) > 1 else 'Las soluciones personalizadas pueden reducir significativamente los costos operativos.'}",
-            }
-            messages.append(facts_message)
+        if self.conversation_flow_service:
+            relevant_facts = self.conversation_flow_service.get_relevant_facts(
+                conversation
+            )
+            if relevant_facts:
+                facts_message = {
+                    "role": "system",
+                    "content": f"HECHOS EDUCATIVOS PARA USAR:\n- {relevant_facts[0]}\n- {relevant_facts[1] if len(relevant_facts) > 1 else 'Las soluciones personalizadas pueden reducir significativamente los costos operativos.'}",
+                }
+                messages.append(facts_message)
 
         # Información específica de la próxima pregunta
         if next_question:
@@ -214,6 +269,10 @@ Este documento incluye todos los detalles discutidos y puede ser compartido con 
 
         # Indicar si es momento de generar la propuesta
         if is_complete:
+            # Importar el generador de propuestas solo cuando se necesita
+            # para evitar importaciones circulares
+            from app.services.proposal_generator import proposal_generator
+
             # Generar instrucciones específicas para la propuesta
             proposal_instructions = proposal_generator.generate_proposal_instructions(
                 conversation

@@ -59,32 +59,41 @@ async def startup_event():
         os.makedirs(dir_path, exist_ok=True)
         logger.info(f"Directorio verificado: {dir_path}")
 
-    # Inicializar servicios necesarios
+    # 1. Inicializar servicios en el orden correcto
     try:
-        # Asegurar que el servicio de flujo de conversación está inicializado
+        # Ya tenemos los servicios básicos cargados por las importaciones:
+        # - storage_service
+        # - ai_service
+        # - pdf_service
+
+        # Ahora creamos e inicializamos el servicio de flujo de conversación
         from app.services.ai_service import ai_service
         from app.services.conversation_flow_service import ConversationFlowService
 
-        # Obtener datos del cuestionario ya cargados desde ai_service
-        questionnaire_data = ai_service.questionnaire_data
+        # Crear una instancia del servicio de flujo con los datos del cuestionario
+        conversation_flow_service = ConversationFlowService(
+            ai_service.questionnaire_data
+        )
 
-        # Verificar si el servicio de flujo de conversación necesita ser inicializado explícitamente
-        global conversation_flow_service
-        if not hasattr(app.state, "conversation_flow_service"):
-            app.state.conversation_flow_service = ConversationFlowService(
-                questionnaire_data
-            )
-            logger.info("Servicio de flujo de conversación inicializado")
+        # Conectar el servicio de flujo con el servicio de IA
+        ai_service.set_conversation_flow_service(conversation_flow_service)
+
+        # Almacenar la referencia en el estado de la aplicación para uso global
+        app.state.conversation_flow_service = conversation_flow_service
+
+        logger.info("Servicios principales inicializados correctamente")
     except Exception as e:
-        logger.error(f"Error al inicializar servicios: {e}")
+        logger.error(f"Error al inicializar servicios principales: {e}")
 
-    # Cargar datos de hechos y stats si existen
+    # 2. Cargar datos adicionales (hechos, estadísticas, etc.)
     try:
         facts_path = os.path.join(os.path.dirname(__file__), "data/facts.json")
         if os.path.exists(facts_path):
             with open(facts_path, "r", encoding="utf-8") as f:
                 app.state.facts_data = json.load(f)
                 logger.info("Datos de hechos cargados")
+        else:
+            logger.info(f"Archivo de hechos no encontrado en: {facts_path}")
     except Exception as e:
         logger.error(f"Error al cargar datos de hechos: {e}")
         app.state.facts_data = {}

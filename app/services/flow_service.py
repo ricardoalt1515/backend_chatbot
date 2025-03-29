@@ -1,12 +1,9 @@
+# app/services/conversation_flow_service.py
 from typing import Dict, Any, Optional, List
 import logging
 from app.models.conversation import Conversation
-from app.models.questionnaire_state import QuestionnaireState
 
 logger = logging.getLogger("hydrous")
-
-# Definimos la variable global aqui, se inicializara mas tarde
-conversation_flow_service = None
 
 
 class ConversationFlowService:
@@ -75,30 +72,7 @@ class ConversationFlowService:
 
     def get_context_summary(self, conversation: Conversation) -> str:
         """Genera un resumen del contexto actual para el prompt"""
-        summary_parts = []
-
-        # Añadir entidades clave
-        for entity_name, value in conversation.questionnaire_state.key_entities.items():
-            if value:
-                summary_parts.append(f"{entity_name}: {value}")
-
-        # Añadir sector/subsector
-        if conversation.questionnaire_state.sector:
-            summary_parts.append(f"Sector: {conversation.questionnaire_state.sector}")
-        if conversation.questionnaire_state.subsector:
-            summary_parts.append(
-                f"Subsector: {conversation.questionnaire_state.subsector}"
-            )
-
-        # Añadir respuestas a preguntas
-        for q_id, answer in conversation.questionnaire_state.answers.items():
-            # Buscar el texto de la pregunta
-            q_text = self._find_question_text(q_id)
-            if q_text and answer:
-                summary_parts.append(f"Pregunta: {q_text}")
-                summary_parts.append(f"Respuesta: {answer}")
-
-        return "\n".join(summary_parts)
+        return conversation.questionnaire_state.get_context_summary()
 
     def _find_question_text(self, question_id: str) -> Optional[str]:
         """Busca el texto de una pregunta dado su ID"""
@@ -155,9 +129,10 @@ class ConversationFlowService:
                     "Los edificios comerciales pueden reducir su consumo de agua hasta en un 40% implementando soluciones de reutilización.",
                     "Invertir en sistemas de tratamiento de agua puede mejorar la imagen de sostenibilidad de su empresa.",
                 ]
+            else:
+                facts = [
+                    "Los sistemas de tratamiento de agua modernos pueden recuperar hasta el 80% del agua utilizada para su reutilización.",
+                    "La implementación de tecnologías de tratamiento de agua tiene períodos típicos de retorno de inversión de 2-4 años.",
+                ]
 
         return facts[:2]  # Devolver solo los 2 primeros para no sobrecargar el contexto
-
-
-# Variable global que se inicializará en la aplicación
-conversation_flow_service = None
