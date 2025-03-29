@@ -7,7 +7,7 @@ from app.models.conversation import ConversationResponse
 from app.models.message import Message, MessageCreate
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service
-from app.services.pdf_service import pdf_service
+from app.services.enhanced_pdf_service import enhanced_pdf_service
 
 router = APIRouter()
 
