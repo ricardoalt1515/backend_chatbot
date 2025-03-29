@@ -40,9 +40,6 @@ app.include_router(
 app.include_router(
     feedback.router, prefix=f"{settings.API_V1_STR}/feedback", tags=["feedback"]
 )
-app.include_router(
-    pdf_download.router, prefix=f"{settings.API_V1_STR}/pdf", tags=["pdf"]
-)
 
 
 @app.get(f"{settings.API_V1_STR}/health")
