@@ -130,37 +130,39 @@ class AIService:
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # Añadir contexto actual a las instrucciones del sistema
-        context_summary = conversation.questionnaire_state.get_context_summary()
-        if context_summary:
+        # Crear un resumen estructurado de toda la informacion ya recopilada
+        context_parts = []
+
+        # Añadir datos del cliente si estan disponibles
+        if conversation.questionnaire_state.key_entities:
+            context_parts.append("INFORMACION DEL CLIENTE:")
+            for key, value in conversation.questionnaire_state.key_entities.items():
+                if value:
+                    context_parts.append(f"- {key}: {value}")
+
+        # Añadir respuestas previas
+        if conversation.questionnaire_state.answers:
+            context_parts.append("\nRESPUESTAS PROPORCIONADAS:")
+            for key, value in conversation.questionnaire_state.answers.items():
+                context_parts.append(f"- {key}: {value}")
+
+        # Crear el mensaje de contexto
+        if context_parts:
             context_message = {
                 "role": "system",
-                "content": f"CONTEXTO ACTUAL:\n{context_summary}\n\nUtiliza esta información para personalizar tus respuestas. Si mencionan una ubicación específica, utiliza tu conocimiento interno sobre esa ubicación para proporcionar información relevante sobre estrés hídrico, clima y normativas locales.",
+                "content": "\n".join(context_parts)
+                + "\n\nIMPORTANTE: Utiliza esta información para personalizar tu respuesta. NO REPITAS preguntas sobre datos que ya están aquí.",
             }
             messages.append(context_message)
 
-        # Añadir información sobre la pregunta actual
-        if questionnaire_data:
-            current_question = conversation.get_current_question(questionnaire_data)
-            if current_question:
-                question_info = {
-                    "role": "system",
-                    "content": f"La pregunta actual es: {current_question['text']}\n\nEsta pregunta corresponde a la sección {conversation.questionnaire_state.sector if conversation.questionnaire_state.sector else 'inicial'} del cuestionario.",
-                }
-                messages.append(question_info)
-
-        # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
-        for msg in conversation.messages[-10:]:
-            if msg.role != "system":  # No duplicar mensajes del sistema
-                messages.append({"role": msg.role, "content": msg.content})
-
-        # Si hay un nuevo mensaje y no es igual al último, añadirlo
-        if user_message and (
-            not messages
-            or messages[-1]["role"] != "user"
-            or messages[-1]["content"] != user_message
-        ):
-            messages.append({"role": "user", "content": user_message})
+        # Crear el mensaje de contexto
+        if context_parts:
+            context_message = {
+                "role": "system",
+                "content": "\n".join(context_parts)
+                + "\n\nIMPORTANTE: Utiliza esta información para personalizar tu respuesta. NO REPITAS preguntas sobre datos que ya están aquí.",
+            }
+            messages.append(context_message)
 
         return messages
 
@@ -190,6 +192,15 @@ class AIService:
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
         try:
+            # Verificar si hay API key configurada
+            if not self.api_key:
+                logger.error("API Key no configurada. Revisa tus variables de entorno.")
+
+            # Mostrar qué proveedor y modelo estamos usando (para debugging)
+            logger.info(
+                f"Usando proveedor: {settings.API_PROVIDER} con modelo: {self.model}"
+            )
+
             # Llamar a la API usando httpx
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -204,14 +215,20 @@ class AIService:
                     "max_tokens": 1500,
                 }
 
+                # Añadir timeout más largo para evitar problemas con respuestas lentas
                 response = await client.post(
-                    self.api_url, json=payload, headers=headers, timeout=30.0
+                    self.api_url, json=payload, headers=headers, timeout=60.0
                 )
 
                 if response.status_code == 200:
                     data = response.json()
                     content = data["choices"][0]["message"]["content"]
                     return content
+                elif response.status_code == 401:
+                    logger.error(
+                        f"Error de autenticación: API Key inválida para {settings.API_PROVIDER}"
+                    )
+                    return "Lo siento, hay un problema de autenticación con el servicio. Por favor, contacta al administrador del sistema."
                 else:
                     logger.error(
                         f"Error en API LLM: {response.status_code} - {response.text}"
