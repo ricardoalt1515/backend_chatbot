@@ -2,7 +2,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 import logging
-import os
 
 from app.models.conversation import ConversationResponse
 from app.models.message import Message, MessageCreate
@@ -11,7 +10,6 @@ from app.services.ai_service import ai_service
 from app.services.pdf_service import pdf_service
 
 router = APIRouter()
-logger = logging.getLogger("hydrous")
 
 
 @router.post("/start", response_model=ConversationResponse)
@@ -26,9 +24,7 @@ async def start_conversation():
             """
 # 👋 ¡Bienvenido a Hydrous AI!
 
-Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento normativo y sostenibilidad.
-
-Para desarrollar la mejor solución para tus instalaciones, comenzaré haciéndote algunas preguntas específicas basadas en tu industria y operaciones. Esto nos ayudará a personalizar una propuesta específicamente para ti.
+Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
 
 💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
 
@@ -43,21 +39,13 @@ Por favor incluye:
         )
         conversation.add_message(welcome_message)
 
-        # Registrar el inicio de la conversación (si tenemos un servicio de analítica)
-        try:
-            from app.services.analytics_improved import chatbot_analytics
-
-            chatbot_analytics.log_conversation_start()
-        except ImportError:
-            pass
-
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
             messages=[welcome_message],
         )
     except Exception as e:
-        logger.error(f"Error al iniciar conversación: {str(e)}")
+        logging.error(f"Error al iniciar conversación: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al iniciar la conversación")
 
 
@@ -65,19 +53,19 @@ Por favor incluye:
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
-        # Obtener conversación
+        # Obtener conversación con logging adicional para debug
         conversation_id = data.conversation_id
-        logger.info(f"Procesando mensaje para conversación: {conversation_id}")
+        logging.info(f"Buscando conversación con ID: {conversation_id}")
 
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
-            logger.error(f"Conversación no encontrada: {conversation_id}")
-            # Crear una nueva conversación como fallback
-            logger.info(f"Creando nueva conversación como fallback")
+            logging.error(f"Conversación no encontrada: {conversation_id}")
+            # Intenta crear una nueva conversación en lugar de fallar
+            logging.info(f"Creando nueva conversación como fallback")
             conversation = await storage_service.create_conversation()
-            logger.info(f"Nueva conversación creada con ID: {conversation.id}")
+            logging.info(f"Nueva conversación creada con ID: {conversation.id}")
 
-            # Devolver información sobre la nueva conversación
+            # Importante: Devuelve información sobre la nueva conversación
             return {
                 "error": "Conversación original no encontrada",
                 "new_conversation_created": True,
@@ -122,16 +110,6 @@ Este documento incluye:
             # Generar PDF en segundo plano
             background_tasks.add_task(pdf_service.generate_pdf, conversation)
 
-            # Registrar descarga de PDF si tenemos analítica
-            try:
-                from app.services.analytics_improved import chatbot_analytics
-
-                background_tasks.add_task(
-                    chatbot_analytics.log_pdf_download, conversation_id=conversation.id
-                )
-            except ImportError:
-                pass
-
             return {
                 "id": pdf_message.id,
                 "conversation_id": data.conversation_id,
@@ -139,32 +117,8 @@ Este documento incluye:
                 "created_at": pdf_message.created_at,
             }
 
-        # Generar respuesta usando el servicio de IA mejorado
+        # Generar respuesta usando el servicio de IA
         ai_response = await ai_service.handle_conversation(conversation, data.message)
-
-        # Detectar si se completó el cuestionario y es la primera vez
-        if (
-            conversation.questionnaire_state.is_complete
-            and not conversation.metadata.get("completion_registered", False)
-        ):
-            # Marcar como registrado para no duplicar eventos
-            conversation.metadata["completion_registered"] = True
-
-            # Registrar analítica
-            try:
-                from app.services.analytics_improved import chatbot_analytics
-
-                background_tasks.add_task(
-                    chatbot_analytics.log_conversation_completed,
-                    conversation_id=conversation.id,
-                    details={
-                        "sector": conversation.questionnaire_state.sector,
-                        "subsector": conversation.questionnaire_state.subsector,
-                        "entities": conversation.questionnaire_state.key_entities,
-                    },
-                )
-            except ImportError:
-                pass
 
         # Crear mensaje del asistente
         assistant_message = Message.assistant(ai_response)
@@ -182,8 +136,11 @@ Este documento incluye:
             "created_at": assistant_message.created_at,
         }
     except Exception as e:
-        logger.error(f"Error al procesar mensaje: {str(e)}")
+        logging.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
+
+
+# En app/routes/chat.py
 
 
 @router.get("/{conversation_id}/download-pdf")
@@ -193,7 +150,6 @@ async def download_pdf(conversation_id: str):
         # Verificar que la conversación existe
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
-            logger.warning(f"Conversación no encontrada para PDF: {conversation_id}")
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
         # Si ya tenemos un PDF generado, usamos esa ruta
@@ -201,14 +157,11 @@ async def download_pdf(conversation_id: str):
             conversation.metadata["pdf_path"]
         ):
             pdf_path = conversation.metadata["pdf_path"]
-            logger.info(f"Usando PDF existente: {pdf_path}")
         else:
             # Generar PDF
-            logger.info(f"Generando nuevo PDF para conversación: {conversation_id}")
             pdf_path = await pdf_service.generate_pdf(conversation)
 
         if not pdf_path:
-            logger.error(f"No se pudo generar PDF para: {conversation_id}")
             raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
         # Preparar nombre para el archivo
@@ -216,13 +169,10 @@ async def download_pdf(conversation_id: str):
         if conversation.questionnaire_state.key_entities.get("company_name"):
             client_name = conversation.questionnaire_state.key_entities["company_name"]
 
-        client_name = client_name.replace(" ", "_").replace("/", "_")
-
         # Determinar si es PDF o HTML
         is_pdf = pdf_path.endswith(".pdf")
         filename = f"Propuesta_Hydrous_{client_name}.{'pdf' if is_pdf else 'html'}"
 
-        logger.info(f"Enviando archivo: {filename} desde {pdf_path}")
         return FileResponse(
             path=pdf_path,
             filename=filename,
