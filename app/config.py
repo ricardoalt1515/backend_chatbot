@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     )
 
     # Determinar URL de API basado en lo que esté disponible
-    API_PROVIDER: str = os.getenv("AI_PROVIDER", "openai")  # "openai" o "groq"
+    API_PROVIDER: str = os.getenv("AI_PROVIDER", "groq")  # "openai" o "groq"
 
     @property
     def API_URL(self):
