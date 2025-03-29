@@ -1,10 +1,11 @@
 # app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from routes import pdf_download
 import uvicorn
 import logging
 
-from app.routes import chat, documents, feedback, enhanced_pdf_download
+from app.routes import chat, documents, feedback
 from app.config import settings
 
 # Configuración de logging

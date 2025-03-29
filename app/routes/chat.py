@@ -7,7 +7,7 @@ from app.models.conversation import ConversationResponse
 from app.models.message import Message, MessageCreate
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service
-from app.services.enhanced_pdf_service import enhanced_pdf_service
+from app.services.pdf_service import pdf_service
 
 router = APIRouter()
 
@@ -172,10 +172,6 @@ async def download_pdf(conversation_id: str):
         # Determinar si es PDF o HTML
         is_pdf = pdf_path.endswith(".pdf")
         filename = f"Propuesta_Hydrous_{client_name}.{'pdf' if is_pdf else 'html'}"
-
-        # Añadir headers para ayudar con la descarga en iframes
-        response.headers["X-Frame-Options"] = "ALLOWALL"
-        response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
 
         return FileResponse(
             path=pdf_path,
