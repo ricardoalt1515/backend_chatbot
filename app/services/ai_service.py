@@ -130,39 +130,37 @@ class AIService:
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
-        # Crear un resumen estructurado de toda la informacion ya recopilada
-        context_parts = []
-
-        # Añadir datos del cliente si estan disponibles
-        if conversation.questionnaire_state.key_entities:
-            context_parts.append("INFORMACION DEL CLIENTE:")
-            for key, value in conversation.questionnaire_state.key_entities.items():
-                if value:
-                    context_parts.append(f"- {key}: {value}")
-
-        # Añadir respuestas previas
-        if conversation.questionnaire_state.answers:
-            context_parts.append("\nRESPUESTAS PROPORCIONADAS:")
-            for key, value in conversation.questionnaire_state.answers.items():
-                context_parts.append(f"- {key}: {value}")
-
-        # Crear el mensaje de contexto
-        if context_parts:
+        # Añadir contexto actual a las instrucciones del sistema
+        context_summary = conversation.questionnaire_state.get_context_summary()
+        if context_summary:
             context_message = {
                 "role": "system",
-                "content": "\n".join(context_parts)
-                + "\n\nIMPORTANTE: Utiliza esta información para personalizar tu respuesta. NO REPITAS preguntas sobre datos que ya están aquí.",
+                "content": f"CONTEXTO ACTUAL:\n{context_summary}\n\nUtiliza esta información para personalizar tus respuestas. Si mencionan una ubicación específica, utiliza tu conocimiento interno sobre esa ubicación para proporcionar información relevante sobre estrés hídrico, clima y normativas locales.",
             }
             messages.append(context_message)
 
-        # Crear el mensaje de contexto
-        if context_parts:
-            context_message = {
-                "role": "system",
-                "content": "\n".join(context_parts)
-                + "\n\nIMPORTANTE: Utiliza esta información para personalizar tu respuesta. NO REPITAS preguntas sobre datos que ya están aquí.",
-            }
-            messages.append(context_message)
+        # Añadir información sobre la pregunta actual
+        if questionnaire_data:
+            current_question = conversation.get_current_question(questionnaire_data)
+            if current_question:
+                question_info = {
+                    "role": "system",
+                    "content": f"La pregunta actual es: {current_question['text']}\n\nEsta pregunta corresponde a la sección {conversation.questionnaire_state.sector if conversation.questionnaire_state.sector else 'inicial'} del cuestionario.",
+                }
+                messages.append(question_info)
+
+        # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
+        for msg in conversation.messages[-10:]:
+            if msg.role != "system":  # No duplicar mensajes del sistema
+                messages.append({"role": msg.role, "content": msg.content})
+
+        # Si hay un nuevo mensaje y no es igual al último, añadirlo
+        if user_message and (
+            not messages
+            or messages[-1]["role"] != "user"
+            or messages[-1]["content"] != user_message
+        ):
+            messages.append({"role": "user", "content": user_message})
 
         return messages
 
