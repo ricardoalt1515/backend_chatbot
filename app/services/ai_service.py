@@ -84,3 +84,6 @@ class AIService:
         except Exception as e:
             logger.error(f"Error en _call_llm_api: {str(e)}")
             return "Lo siento, hubo un problema con el servicio de IA."
+
+
+ai_service = AIService()
