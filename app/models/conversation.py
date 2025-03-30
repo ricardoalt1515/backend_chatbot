@@ -34,7 +34,8 @@ class Conversation(BaseModel):
 
             return {
                 "id": "sector_selection",
-                "text": "¿En qué sector se encuentra tu empresa?\n\n{options_text}",
+                "text": f"¿En qué sector se encuentra tu empresa?\n\n{options_text}",
+                "explanation": "Este dato nos ayuda a entender el tipo de agua que necesitarás tratar y las tecnologías más adecuadas para tu industria.",
             }
 
         # Si no hay subsector definido, preguntar por el subsector dentro del sector elegido
@@ -49,6 +50,7 @@ class Conversation(BaseModel):
                 return {
                     "id": "subsector_selection",
                     "text": f"¿Qué tipo específico de {self.questionnaire_state.sector} es?\n\n{options_text}",
+                    "explanation": "Esto nos permite personalizar aún más la solución para tu tipo específico de operación.",
                 }
             else:
                 # Si no hay subsectores disponibles, pasar a las preguntas generales

@@ -65,3 +65,13 @@ class QuestionnaireState(BaseModel):
                 summary_parts.append(f"{q_id}: {answer}")
 
         return "\n".join(summary_parts)
+
+    def should_present_summary(self) -> bool:
+        """Determina si es momento de presentar un resumen"""
+        # Presentar un resumen cada 3-4 preguntas
+        if self.current_question_index > 0 and self.current_question_index % 3 == 0:
+            # Verificar que no se haya presentado un resumen en esta posición antes
+            if getattr(self, "last_summary_at", -1) != self.current_question_index:
+                self.last_summary_at = self.current_question_index
+                return True
+        return False

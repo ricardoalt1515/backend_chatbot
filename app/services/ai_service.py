@@ -139,15 +139,35 @@ class AIService:
             }
             messages.append(context_message)
 
-        # Añadir información sobre la pregunta actual
-        if questionnaire_data:
-            current_question = conversation.get_current_question(questionnaire_data)
-            if current_question:
-                question_info = {
+        # Obtener la siguiente pregunta del cuestionario
+        current_question = conversation.get_current_question(questionnaire_data)
+
+        # Si tenemos una pregunta actual del cuestionario, indicarla explícitamente
+        if current_question:
+            next_question_instruction = {
+                "role": "system",
+                "content": f"INSTRUCCIÓN CRÍTICA: La siguiente pregunta que debes hacer es EXACTAMENTE: '{current_question['text']}'. Explica por qué esta pregunta es importante y proporciona un dato educativo relevante después de recibir la respuesta del usuario. Haz SOLO esta pregunta, no añadas otras preguntas adicionales.",
+            }
+            messages.append(next_question_instruction)
+
+            # Añadir explicación de la pregunta si está disponible
+            if "explanation" in current_question:
+                explanation_instruction = {
                     "role": "system",
-                    "content": f"La pregunta actual es: {current_question['text']}\n\nEsta pregunta corresponde a la sección {conversation.questionnaire_state.sector if conversation.questionnaire_state.sector else 'inicial'} del cuestionario.",
+                    "content": f"EXPLICACIÓN PARA ESTA PREGUNTA: {current_question['explanation']} - Puedes usar esta información para explicar por qué esta pregunta es importante.",
                 }
-                messages.append(question_info)
+                messages.append(explanation_instruction)
+
+        # Verificar si debemos presentar un resumen
+        if (
+            hasattr(conversation.questionnaire_state, "should_present_summary")
+            and conversation.questionnaire_state.should_present_summary()
+        ):
+            summary_instruction = {
+                "role": "system",
+                "content": "INSTRUCCIÓN: Antes de hacer la siguiente pregunta, presenta un RESUMEN de la información recopilada hasta ahora.",
+            }
+            messages.append(summary_instruction)
 
         # Añadir mensajes anteriores de la conversación (limitar para evitar exceder tokens)
         for msg in conversation.messages[-10:]:
