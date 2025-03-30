@@ -25,6 +25,9 @@ class QuestionnaireState(BaseModel):
     # Si el cuestionario está completo
     is_complete: bool = False
 
+    # Ultimo resumen presentado (indice)
+    last_summary_at: int = 0
+
     def update_answer(self, question_id: str, answer: Any) -> None:
         """Actualiza la respuesta a una pregunta específica"""
         self.answers[question_id] = answer
