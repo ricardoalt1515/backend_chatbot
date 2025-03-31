@@ -89,14 +89,15 @@ class Conversation(BaseModel):
                     return
 
             # Si no se identifica claramente, usar un valor predeterminado o pedir clarificación
-            if not self.questionnaire_state.sector and user_message:
-                # Podríamos implementar una lógica más sofisticada aquí para determinar el sector
-                # Por ahora, simplemente usamos el primer sector si no hay una coincidencia clara
-                self.questionnaire_state.sector = questionnaire_data.get(
-                    "sectors", ["Industrial"]
-                )[0]
-
-            return
+            try:
+                # Si el usuario ingreso un numero, intentar usarlo como indice de sector
+                index = int(user_message.strip()) - 1
+                if 0 <= index < len(sectors):
+                    self.questionnaire_state.sector = sectors[index]
+                    return
+            except ValueError:
+                # Si no es un numero valido, no hacer nada y esperar mas input
+                pass
 
         if not self.questionnaire_state.subsector:
             # Intentar identificar subsector desde el mensaje
