@@ -83,6 +83,25 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         if _is_pdf_request(data.message) and conversation.metadata.get(
             "has_proposal", False
         ):
+            # Generar PDF desde la propuesta
+            from app.services.proposal_service import proposal_service
+
+            # Generar estructura de propuesta
+            proposal = proposal_service.generate_proposal(conversation)
+
+            # Generar HTML formateado
+            html_content = proposal_service.generate_proposal_html(proposal)
+
+            # Guardar HTML
+            html_path = os.path.join(
+                settings.UPLOAD_DIR, f"propuesta_{conversation.id}.html"
+            )
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+
+            # Almacenar ruta en metadatos
+            conversation.metadata["proposal_html_path"] = html_path
+
             # Generar mensaje con enlace a PDF
             pdf_message = Message.assistant(
                 f"""

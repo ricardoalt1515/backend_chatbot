@@ -40,47 +40,39 @@ class PDFService:
     async def generate_pdf(self, conversation: Conversation) -> Optional[str]:
         """Genera un PDF a partir de una propuesta en la conversación"""
         try:
-            # Extraer información del cliente
+            # Verificar si ya tenemos un HTML generado
+            html_path = conversation.metadata.get("proposal_html_path")
+            if not html_path or not os.path.exists(html_path):
+                # Si no hay HTML generado, usar el enfoque anterior
+                return await self._generate_pdf_legacy(conversation)
+
+            # Generar PDF a partir del HTML
             client_info = self._extract_client_info(conversation)
-
-            # Extraer propuesta
-            proposal_text = self._extract_proposal_text(conversation)
-            if not proposal_text:
-                logger.warning(
-                    f"No se encontró propuesta en la conversación {conversation.id}"
-                )
-                return None
-
-            # Generar identificador único para la propuesta
-            proposal_id = (
-                f"HYD-{datetime.now().strftime('%Y%m%d')}-{conversation.id[:8]}"
-            )
-
-            # Convertir a HTML con diseño mejorado
-            html_content = self._markdown_to_html_enhanced(
-                proposal_text, client_info, proposal_id
-            )
-
-            # Generar nombre de archivo
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             client_name = client_info.get("name", "Cliente").replace(" ", "_")
-            html_path = os.path.join(
-                self.pdf_dir, f"Propuesta_Hydrous_{client_name}_{timestamp}.html"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            pdf_path = os.path.join(
+                self.pdf_dir, f"Propuesta_Hydrous_{client_name}_{timestamp}.pdf"
             )
 
-            # Guardar HTML
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(html_content)
+            # Intentar con WeasyPrint
+            try:
+                from weasyprint import HTML
 
-            # Intentar generar PDF con varias bibliotecas
-            pdf_path = self._generate_pdf_from_html(html_path, client_name, timestamp)
+                HTML(filename=html_path).write_pdf(pdf_path)
+                logger.info(f"PDF generado con WeasyPrint: {pdf_path}")
 
-            # Almacenar ruta del PDF en los metadatos de la conversación
-            if pdf_path:
+                # Almacenar ruta del PDF en los metadatos
                 conversation.metadata["pdf_path"] = pdf_path
                 conversation.metadata["pdf_generated_at"] = datetime.now().isoformat()
 
-            return pdf_path or html_path
+                return pdf_path
+            except Exception as e:
+                logger.error(f"Error al generar PDF con WeasyPrint: {str(e)}")
+
+                # Intentar con pdfkit u otras opciones...
+
+            return html_path  # Devolver HTML como alternativa si falla la generación del PDF
 
         except Exception as e:
             logger.error(f"Error en generate_pdf: {str(e)}")
