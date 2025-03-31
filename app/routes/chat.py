@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 import logging
+import os
 
 from app.models.conversation import ConversationResponse
 from app.models.message import Message, MessageCreate
