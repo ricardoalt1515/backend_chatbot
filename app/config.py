@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
     MODEL: str = os.getenv(
-        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o-mini"))
+        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o"))
     )
 
     # Determinar URL de API basado en lo que esté disponible
