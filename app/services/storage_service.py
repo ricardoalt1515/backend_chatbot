@@ -60,7 +60,7 @@ class StorageService:
     async def add_message_to_conversation(
         self, conversation_id: str, message: Message
     ) -> Optional[Conversation]:
-        """Añade un mensaje a una conversación"""
+        """Añade un mensaje a una conversación y guarda metadatos"""
         conversation = await self.get_conversation(conversation_id)
         if not conversation:
             return None

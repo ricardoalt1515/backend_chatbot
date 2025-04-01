@@ -3,6 +3,7 @@ import logging
 import httpx
 import os
 from typing import List, Dict, Any
+from openai import OpenAI
 
 from app.config import settings
 from app.models.conversation import Conversation
@@ -17,6 +18,9 @@ class AIService:
 
     def __init__(self):
         """Inicialización del servicio AI"""
+        # crear cliente OpenAI
+        self.client = openAI(api_key=settings.API_KEY)
+
         # Cargar el prompt maestro
         self.master_prompt = get_master_prompt()
 
@@ -48,21 +52,71 @@ class AIService:
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
     ) -> str:
-        """Maneja una conversación y genera una respuesta simplificada"""
+        """Maneja una conversación usando la API Responses"""
         try:
-            # Preparar los mensajes para la API de forma mucho más simple
-            messages = self._prepare_messages(conversation, user_message)
+            # Si no hay un ID de respuesta en los metadatos de la conversación, iniciar una nueva
+            openai_response_id = conversation.metadata.get("openai_response_id")
 
-            # Llamar a la API del LLM
-            response = await self._call_llm_api(messages)
+            if not openai_response_id:
+                # Primera interacción - iniciar con el prompt completo
+                system_prompt = f"{self.master_prompt}\n\n"
 
-            # Detectar si contiene una propuesta completa para PDF
-            if "[PROPOSAL_COMPLETE:" in response:
+                # Añadir contenido de los archivos si están disponibles
+                if self.questionnaire_content:
+                    system_prompt += (
+                        "\n\n# CUESTIONARIO:\n" + self.questionnaire_content
+                    )
+
+                if self.format_proposal_content:
+                    system_prompt += (
+                        "\n\n# FORMATO DE PROPUESTA:\n" + self.format_proposal_content
+                    )
+
+                # Crear respuesta inicial
+                response = self.client.responses.create(
+                    model=settings.MODEL,
+                    input=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": user_message
+                            or "Hola, necesito ayuda con una solución de tratamiento de agua.",
+                        },
+                    ],
+                )
+
+                # Guardar el ID de respuesta en los metadatos
+                conversation.metadata["openai_response_id"] = response.id
+
+            else:
+                # Continuación de conversación existente
+                # Simplemente añadir el nuevo mensaje del usuario a la conversación existente
+                response = self.client.responses.create(
+                    model=settings.MODEL,
+                    input=user_message,
+                    previous_response_id=openai_response_id,
+                )
+
+                # Actualizar el ID de respuesta
+                conversation.metadata["openai_response_id"] = response.id
+
+            # Extraer el texto de respuesta
+            output_text = ""
+            for item in response.output:
+                if item.role == "assistant" and hasattr(item, "content"):
+                    for content_item in item.content:
+                        if content_item.type == "output_text":
+                            output_text += content_item.text
+
+            # Detectar si contiene propuesta completa
+            if (
+                "[PROPOSAL_COMPLETE:" in output_text
+                or "# PROPUESTA DE SOLUCIÓN HYDROUS" in output_text
+            ):
                 conversation.metadata["has_proposal"] = True
-                # Añadir instrucciones para descargar PDF si es necesario
-                # ...
 
-            return response
+            return output_text
+
         except Exception as e:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
