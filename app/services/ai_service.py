@@ -1,155 +1,162 @@
 # app/services/ai_service.py
-
-from openai import OpenAI
-import os
 import logging
-from typing import Dict, Any, List, Optional
+import httpx
+import os
+from typing import List, Dict, Any
 
 from app.config import settings
 from app.models.conversation import Conversation
+from app.prompts.main_prompt import get_master_prompt
+from app.services import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
 
 class AIService:
-    """Servicio que utiliza la API Responses para mantener el contexto de conversación"""
+    """Servicio simplificado para interactuar con LLMs"""
 
     def __init__(self):
-        """Inicialización del servicio"""
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        """Inicialización del servicio AI"""
+        # Cargar el prompt maestro
+        self.master_prompt = get_master_prompt()
 
-        # Cargar instrucciones desde archivos
-        self.instruction_content = self._load_instructions()
-
-    def _load_instructions(self) -> str:
-        """Carga las instrucciones desde los archivos de prompt"""
-        instructions = ""
-
-        # Cargar el prompt principal
-        prompt_path = os.path.join(
-            os.path.dirname(__file__), "../prompts/main_prompt.py"
-        )
-        if os.path.exists(prompt_path):
-            # Extraer contenido del prompt desde el archivo Python
-            with open(prompt_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                # Extraer el texto entre comillas triples dentro de base_prompt
-                import re
-
-                base_prompt_match = re.search(
-                    r'base_prompt\s*=\s*"""(.*?)"""', content, re.DOTALL
-                )
-                if base_prompt_match:
-                    instructions += base_prompt_match.group(1).strip()
-
-        # Cargar cuestionario
+        # Cargar archivos de cuestionario y formato de propuesta
         questionnaire_path = os.path.join(
             os.path.dirname(__file__), "../prompts/cuestionario.txt"
         )
-        if os.path.exists(questionnaire_path):
-            with open(questionnaire_path, "r", encoding="utf-8") as f:
-                questionnaire_content = f.read()
-                instructions += f"\n\n# CUESTIONARIO:\n{questionnaire_content}"
-
-        # Cargar formato de propuesta
-        proposal_path = os.path.join(
+        proposal_format_path = os.path.join(
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"
         )
-        if os.path.exists(proposal_path):
-            with open(proposal_path, "r", encoding="utf-8") as f:
-                proposal_content = f.read()
-                instructions += f"\n\n# FORMATO DE PROPUESTA:\n{proposal_content}"
 
-        return instructions
+        # Leer estos archivos si existen (asegúrate de tener versiones .txt de ellos)
+        self.questionnaire_content = ""
+        self.proposal_format_content = ""
 
-    async def initialize_conversation(self) -> Dict[str, Any]:
-        """Inicializa una conversación con la API Responses"""
-        try:
-            # Crear una nueva conversación usando la API Responses
-            response = self.client.responses.create(
-                model=settings.MODEL,
-                instructions=self.instruction_content,
-                input="Inicializar asistente de agua Hydrous. Saluda al usuario y pregunta por su sector.",
-            )
+        if os.path.exists(questionnaire_path):
+            with open(questionnaire_path, "r", encoding="utf-8") as f:
+                self.questionnaire_content = f.read()
 
-            # Devolver información de la conversación iniciada
-            return {"response_id": response.id, "output_text": response.output_text}
-        except Exception as e:
-            logger.error(f"Error al inicializar conversación: {str(e)}")
-            raise
+        if os.path.exists(proposal_format_path):
+            with open(proposal_format_path, "r", encoding="utf-8") as f:
+                self.proposal_format_content = f.read()
 
-    async def continue_conversation(
-        self, previous_response_id: str, user_message: str
-    ) -> Dict[str, Any]:
-        """Continúa una conversación existente usando previous_response_id"""
-        try:
-            # Continuar conversación con la API Responses
-            response = self.client.responses.create(
-                model=settings.MODEL,
-                previous_response_id=previous_response_id,
-                input=user_message,
-            )
-
-            # Devolver información de la respuesta
-            return {"response_id": response.id, "output_text": response.output_text}
-        except Exception as e:
-            logger.error(f"Error al continuar conversación: {str(e)}")
-            raise
+        # Configuración de API
+        self.api_key = settings.API_KEY
+        self.model = settings.MODEL
+        self.api_url = settings.API_URL
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
     ) -> str:
-        """Maneja una conversación usando la API Responses"""
+        """Maneja una conversación y genera una respuesta simplificada"""
         try:
-            # Verificar si ya hay un ID de respuesta en los metadatos
-            previous_response_id = conversation.metadata.get("openai_response_id")
+            # Preparar los mensajes para la API de forma mucho más simple
+            messages = self._prepare_messages(conversation, user_message)
 
-            if not previous_response_id:
-                # Primera interacción - inicializar conversación
-                result = await self.initialize_conversation()
+            # Llamar a la API del LLM
+            response = await self._call_llm_api(messages)
 
-                # Guardar ID de respuesta en los metadatos
-                conversation.metadata["openai_response_id"] = result["response_id"]
+            # Detectar si contiene una propuesta completa para PDF
+            if "[PROPOSAL_COMPLETE:" in response:
+                conversation.metadata["has_proposal"] = True
+                # Añadir instrucciones para descargar PDF si es necesario
+                # ...
 
-                return result["output_text"]
-            else:
-                # Continuación de conversación existente
-                result = await self.continue_conversation(
-                    previous_response_id, user_message
-                )
-
-                # Actualizar ID de respuesta en los metadatos
-                conversation.metadata["openai_response_id"] = result["response_id"]
-
-                # Detectar si la respuesta contiene una propuesta completa
-                if self._contains_proposal_markers(result["output_text"]):
-                    conversation.metadata["has_proposal"] = True
-
-                return result["output_text"]
+            return response
         except Exception as e:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
+    def _prepare_messages(
+        self, conversation: Conversation, user_message: str = None
+    ) -> List[Dict[str, str]]:
+        """Prepara los mensajes para la API del LLM de forma simplificada"""
+        # Mensaje inicial del sistema con el prompt maestro
+        system_prompt = self.master_prompt
+
+        # Añadir contenido de los archivos al prompt del sistema
+        if self.questionnaire_content:
+            system_prompt += (
+                "\n\n<questionnaire>\n"
+                + self.questionnaire_content
+                + "\n</questionnaire>"
+            )
+
+        if self.proposal_format_content:
+            system_prompt += (
+                "\n\n<proposal_format>\n"
+                + self.proposal_format_content
+                + "\n</proposal_format>"
+            )
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Añadir mensajes anteriores de la conversación
+        for msg in conversation.messages:
+            if msg.role != "system":  # No duplicar mensajes del sistema
+                messages.append({"role": msg.role, "content": msg.content})
+
+        # Si hay un nuevo mensaje del usuario, añadirlo
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
+
+        return messages
+
+    async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
+        """Llama a la API del LLM"""
+        try:
+            # Llamar a la API usando httpx
+            async with httpx.AsyncClient() as client:
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                }
+
+                payload = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 4000,
+                }
+
+                response = await client.post(
+                    self.api_url, json=payload, headers=headers, timeout=60.0
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data["choices"][0]["message"]["content"]
+                    return content
+                else:
+                    logger.error(
+                        f"Error en API LLM: {response.status_code} - {response.text}"
+                    )
+                    return "Lo siento, ha habido un problema con el servicio. Por favor, inténtalo de nuevo más tarde."
+
+        except Exception as e:
+            logger.error(f"Error en _call_llm_api: {str(e)}")
+            return "Lo siento, ha ocurrido un error al comunicarse con el servicio. Por favor, inténtalo de nuevo."
+
     def _contains_proposal_markers(self, text: str) -> bool:
         """Detecta si el texto contiene marcadores de una propuesta completa"""
-        key_terms = [
-            "CAPEX",
-            "OPEX",
+        # Verificar si contiene las secciones principales de la Propuesta
+        key_sections = [
+            "Important Disclaimer",
+            "Introduction to Hydrous Management Group",
+            "Project Background",
+            "Objective of the Project",
+            "Key Design Assumptions",
+            "Process Design & Treatment Alternatives",
+            "Suggested Equipment & Sizing",
+            "Estimated CAPEX & OPEX",
             "Return on Investment",
-            "ROI",
-            "Estimated Cost",
-            "Process Design",
-            "Treatment Alternatives",
-            "Equipment & Sizing",
-            "PROPUESTA COMPLETA",
-            "HYDROUS MANAGEMENT GROUP",
         ]
 
-        # Contar cuántos términos clave están presentes
-        term_count = sum(1 for term in key_terms if term in text)
+        # Contar cuatnas secciones estan presentes
+        section_count = sum(1 for section in key_sections if section in text)
 
-        # Si hay varios términos clave, considerar que es una propuesta
-        return term_count >= 3 or "PROPUESTA" in text.upper()
+        # Si tiene la mayorua de las secciones, consideramos que es una propuesta completa
+        return section_count >= 6
 
 
 # Instancia global

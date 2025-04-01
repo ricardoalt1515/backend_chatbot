@@ -15,16 +15,29 @@ router = APIRouter()
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation():
-    """Inicia una nueva conversación usando la API Responses"""
+    """Inicia una nueva conversación"""
     try:
         # Crear nueva conversación
         conversation = await storage_service.create_conversation()
 
-        # Obtener mensaje de bienvenida inicial
-        ai_response = await ai_service.handle_conversation(conversation)
-
         # Añadir mensaje de bienvenida
-        welcome_message = Message.assistant(ai_response)
+        welcome_message = Message.assistant(
+            """
+# 👋 ¡Bienvenido a Hydrous AI!
+
+Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
+
+💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
+
+**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
+
+Por favor incluye:
+- Nombre de tu empresa o proyecto
+- Ubicación (ciudad, estado, país)
+
+🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
+"""
+        )
         conversation.add_message(welcome_message)
 
         return ConversationResponse(
@@ -41,15 +54,19 @@ async def start_conversation():
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
-        # Obtener conversación
+        # Obtener conversación con logging adicional para debug
         conversation_id = data.conversation_id
-        conversation = await storage_service.get_conversation(conversation_id)
+        logging.info(f"Buscando conversación con ID: {conversation_id}")
 
+        conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
-            # Crear nueva conversación si no existe
+            logging.error(f"Conversación no encontrada: {conversation_id}")
+            # Intenta crear una nueva conversación en lugar de fallar
+            logging.info(f"Creando nueva conversación como fallback")
             conversation = await storage_service.create_conversation()
             logging.info(f"Nueva conversación creada con ID: {conversation.id}")
 
+            # Importante: Devuelve información sobre la nueva conversación
             return {
                 "error": "Conversación original no encontrada",
                 "new_conversation_created": True,
@@ -59,40 +76,91 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 
         # Añadir mensaje del usuario
         user_message = Message.user(data.message)
-        await storage_service.add_message_to_conversation(conversation_id, user_message)
+        await storage_service.add_message_to_conversation(
+            data.conversation_id, user_message
+        )
 
-        # Verificar si es una solicitud de PDF
+        # Verificar si es una solicitud de PDF y si hay propuesta completa
         if _is_pdf_request(data.message) and conversation.metadata.get(
             "has_proposal", False
         ):
-            # Generar PDF...
-            pass
+            # Generar PDF desde la propuesta
+            from app.services.proposal_service import proposal_service
 
-        # Generar respuesta usando la API Responses
+            # Generar estructura de propuesta
+            proposal = proposal_service.generate_proposal(conversation)
+
+            # Generar HTML formateado
+            html_content = proposal_service.generate_proposal_html(proposal)
+
+            # Guardar HTML
+            html_path = os.path.join(
+                settings.UPLOAD_DIR, f"propuesta_{conversation.id}.html"
+            )
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+
+            # Almacenar ruta en metadatos
+            conversation.metadata["proposal_html_path"] = html_path
+
+            # Generar mensaje con enlace a PDF
+            pdf_message = Message.assistant(
+                f"""
+# 📄 Propuesta Lista para Descargar
+
+He preparado tu propuesta personalizada basada en la información proporcionada. Puedes descargarla como PDF usando el siguiente enlace:
+
+## [👉 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation.id}/download-pdf)
+
+Este documento incluye:
+- Análisis de tus necesidades específicas
+- Solución tecnológica recomendada
+- Estimación de costos y retorno de inversión
+- Pasos siguientes recomendados
+
+¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
+"""
+            )
+
+            # Guardar mensaje
+            await storage_service.add_message_to_conversation(
+                data.conversation_id, pdf_message
+            )
+
+            # Generar PDF en segundo plano
+            background_tasks.add_task(pdf_service.generate_pdf, conversation)
+
+            return {
+                "id": pdf_message.id,
+                "conversation_id": data.conversation_id,
+                "message": pdf_message.content,
+                "created_at": pdf_message.created_at,
+            }
+
+        # Generar respuesta usando el servicio de IA
         ai_response = await ai_service.handle_conversation(conversation, data.message)
 
         # Crear mensaje del asistente
         assistant_message = Message.assistant(ai_response)
         await storage_service.add_message_to_conversation(
-            conversation_id, assistant_message
+            data.conversation_id, assistant_message
         )
 
-        # Verificar si hay propuesta
-        has_proposal = (
-            "has_proposal" in conversation.metadata
-            and conversation.metadata["has_proposal"]
-        )
+        # Limpieza en segundo plano
+        background_tasks.add_task(storage_service.cleanup_old_conversations)
 
         return {
             "id": assistant_message.id,
-            "conversation_id": conversation_id,
+            "conversation_id": data.conversation_id,
             "message": ai_response,
             "created_at": assistant_message.created_at,
-            "has_proposal": has_proposal,
         }
     except Exception as e:
         logging.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
+
+
+# En app/routes/chat.py
 
 
 @router.get("/{conversation_id}/download-pdf")
