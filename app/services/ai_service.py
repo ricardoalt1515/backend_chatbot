@@ -127,6 +127,7 @@ class AIService:
         questionnaire_data: Dict[str, Any] = None,
     ) -> List[Dict[str, str]]:
         """Prepara los mensajes para la API del LLM con mejor contexto"""
+
         # Mensaje inicial del sistema con el prompt maestro
         messages = [{"role": "system", "content": self.master_prompt}]
 
@@ -192,7 +193,7 @@ class AIService:
             import os
 
             questionnaire_path = os.path.join(
-                os.path.dirname(__file__), "../prompts/questionnaire_complete.json"
+                os.path.dirname(__file__), "../data/mplete.json"
             )
 
             if os.path.exists(questionnaire_path):
@@ -206,6 +207,22 @@ class AIService:
         except Exception as e:
             logger.error(f"Error al cargar datos del cuestionario: {str(e)}")
             return {}
+
+    def _get_format_proposal_template(self) -> str:
+        """Obtiene la plantilla de propuesta desde el archivo"""
+        try:
+            import os
+
+            format_path = os.path.join(
+                os.path.dirname(__file__), "../data/format_proposal.txt"
+            )
+            if os.path.exists(format_path):
+                with open(format_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            return None
+        except Exception as e:
+            logger.error(f"Error al cargar plantilla de propuesta: {str(e)}")
+            return None
 
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
@@ -221,11 +238,11 @@ class AIService:
                     "model": self.model,
                     "messages": messages,
                     "temperature": 0.7,
-                    "max_tokens": 1500,
+                    "max_tokens": 4000,
                 }
 
                 response = await client.post(
-                    self.api_url, json=payload, headers=headers, timeout=30.0
+                    self.api_url, json=payload, headers=headers, timeout=60.0
                 )
 
                 if response.status_code == 200:
