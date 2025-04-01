@@ -72,34 +72,8 @@ class Conversation(BaseModel):
             questions
         ):
             return None
-        # Identificar si la pregunta contiene opciones múltiples
 
-    question_text = questions[self.current_question_index]["text"]
-
-    # Detectar opciones múltiples (marcadas con asteriscos o en múltiples líneas)
-    options = []
-    if "* " in question_text or "\n- " in question_text:
-        # Extraer opciones
-        option_lines = [
-            line.strip()
-            for line in question_text.split("\n")
-            if line.strip().startswith("* ") or line.strip().startswith("- ")
-        ]
-
-            if option_lines:
-                # Reformatear la pregunta con opciones numeradas
-                base_question = (
-                    question_text.split("\n")[0] if "\n" in question_text else question_text
-                )
-                formatted_options = [
-                    f"{i+1}. {option.replace('* ', '').replace('- ', '')}"
-                    for i, option in enumerate(option_lines)
-                ]
-
-                question_text = f"{base_question}\n\n" + "\n".join(formatted_options)
-                questions[self.current_question_index]["text"] = question_text
-
-            return questions[self.questionnaire_state.current_question_index]
+        return questions[self.questionnaire_state.current_question_index]
 
     def update_questionnaire_state(
         self, user_message: str, questionnaire_data: Dict[str, Any]
