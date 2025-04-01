@@ -3,6 +3,7 @@ import logging
 import httpx
 import os
 from typing import List, Dict, Any
+import re
 
 from app.config import settings
 from app.models.conversation import Conversation
@@ -28,7 +29,7 @@ class AIService:
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"
         )
 
-        # Leer estos archivos si existen (asegúrate de tener versiones .txt de ellos)
+        # Leer estos archivos si existen
         self.questionnaire_content = ""
         self.proposal_format_content = ""
 
@@ -40,29 +41,84 @@ class AIService:
             with open(proposal_format_path, "r", encoding="utf-8") as f:
                 self.proposal_format_content = f.read()
 
+        # Extraer preguntas del cuestionario
+        self.questions = self._parse_questionnaire(self.questionnaire_content)
+
         # Configuración de API
         self.api_key = settings.API_KEY
         self.model = settings.MODEL
         self.api_url = settings.API_URL
+
+    def _parse_questionnaire(self, content: str) -> List[Dict[str, Any]]:
+        """Extrae preguntas y opciones del cuestionario"""
+        questions = []
+        lines = content.split("\n")
+        current_question = None
+
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Pregunta ") or re.match(r"^\d+\.", line):
+                if current_question:
+                    questions.append(current_question)
+                question_text = re.sub(r"^(Pregunta \d+|\d+\.)\s*", "", line)
+                current_question = {
+                    "text": question_text,
+                    "options": [],
+                    "id": len(questions) + 1,
+                }
+            elif line and current_question and re.match(r"^[A-Za-z]\.|^\*\s", line):
+                option_text = re.sub(r"^[A-Za-z]\.|\*\s", "", line).strip()
+                current_question["options"].append(option_text)
+
+        if current_question:
+            questions.append(current_question)
+
+        return questions
 
     async def handle_conversation(
         self, conversation: Conversation, user_message: str = None
     ) -> str:
         """Maneja una conversación y genera una respuesta simplificada"""
         try:
-            # Preparar los mensajes para la API de forma mucho más simple
+            # Inicializar el estado si es la primera interacción
+            if "current_question" not in conversation.metadata:
+                conversation.metadata["current_question"] = 0
+                conversation.metadata["responses"] = {}
+
+            current_question_idx = conversation.metadata["current_question"]
+
+            if current_question_idx >= len(self.questions):
+                # Fin del cuestionario, generar propuesta
+                return await self._generate_proposal(conversation)
+
+            # Preparar los mensajes para la API
             messages = self._prepare_messages(conversation, user_message)
 
             # Llamar a la API del LLM
             response = await self._call_llm_api(messages)
 
-            # Detectar si contiene una propuesta completa para PDF
-            if "[PROPOSAL_COMPLETE:" in response:
-                conversation.metadata["has_proposal"] = True
-                # Añadir instrucciones para descargar PDF si es necesario
-                # ...
+            # Procesar la respuesta del usuario
+            if user_message:
+                selected_option = self._extract_option(
+                    user_message, current_question_idx
+                )
+                if selected_option:
+                    conversation.metadata["responses"][
+                        str(current_question_idx)
+                    ] = selected_option
+                    conversation.metadata["current_question"] += 1
+                    if conversation.metadata["current_question"] < len(self.questions):
+                        next_question = self._format_question(
+                            conversation.metadata["current_question"]
+                        )
+                        return next_question
+                    else:
+                        return await self._generate_proposal(conversation)
+                else:
+                    return "Por favor, selecciona una opción válida usando el número o el texto de la opción."
 
             return response
+
         except Exception as e:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
@@ -70,88 +126,125 @@ class AIService:
     def _prepare_messages(
         self, conversation: Conversation, user_message: str = None
     ) -> List[Dict[str, str]]:
-        """Prepara los mensajes para la API del LLM de forma simplificada"""
-        # Mensaje inicial del sistema con el prompt maestro
+        """Prepara los mensajes para la API del LLM"""
         system_prompt = self.master_prompt
 
-        # Añadir contenido del cuestionario como un bloque específico con formato preservado
+        # Instrucciones específicas
+        system_prompt += f"""
+        \n\nTu tarea es seguir este cuestionario estrictamente, una pregunta a la vez, en el orden dado. Aquí está el cuestionario completo:
 
-        if self.questionnaire_content:
-            system_prompt += (
-                "\n\n<cuestionario>\n"
-                + self.questionnaire_content
-                + "\n</cuestionario>"
-            )
+        <cuestionario>
+        {self.questionnaire_content}
+        </cuestionario>
 
-        if self.proposal_format_content:
-            system_prompt += (
-                "\n\n<formato_propuesta>\n"
-                + self.proposal_format_content
-                + "\n</formato_propuesta>"
-            )
+        Instrucciones:
+        1. Haz la pregunta actual y muestra sus opciones numeradas (1, 2, 3, etc.).
+        2. Espera la respuesta del usuario (puede ser un número o el texto de la opción).
+        3. No pases a la siguiente pregunta hasta que el usuario responda.
+        4. Una vez que todas las preguntas estén respondidas, genera una propuesta siguiendo este formato:
 
-        # Añadir instrucciones específicas para el manejo de opciones múltiples
-        system_prompt += """
-        \n\nIMPORTANTE: Cuando encuentres una lista de opciones marcada con asteriscos (*) o números, DEBES presentarla como opciones numeradas para que el usuario pueda elegir por número. Ejemplo:
-        1. Opción A
-        2. Opción B
-        3. Opción C
+        <formato_propuesta>
+        {self.proposal_format_content}
+        </formato_propuesta>
 
-        Al procesar la respuesta del usuario, acepta tanto el número como el texto de la opción.
+        Pregunta actual: {self._format_question(conversation.metadata["current_question"])}
         """
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Añadir mensajes anteriores de la conversación
+        # Añadir mensajes anteriores
         for msg in conversation.messages:
-            if msg.role != "system":  # No duplicar mensajes del sistema
+            if msg.role != "system":
                 messages.append({"role": msg.role, "content": msg.content})
 
-        # Si hay un nuevo mensaje del usuario, añadirlo
         if user_message:
             messages.append({"role": "user", "content": user_message})
 
         return messages
 
-    async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
-        """Llama a la API del LLM"""
-        try:
+    def _format_question(self, idx: int) -> str:
+        """Formatea una pregunta con sus opciones numeradas"""
+        if idx >= len(self.questions):
+            return ""
+        question = self.questions[idx]
+        options_text = "\n".join(
+            f"{i+1}. {opt}" for i, opt in enumerate(question["options"])
+        )
+        return f"{question['text']}\n{options_text}"
 
-            # Llamar a la API usando httpx
+    def _extract_option(self, user_message: str, question_idx: int) -> str | None:
+        """Extrae la opción seleccionada del mensaje del usuario"""
+        question = self.questions[question_idx]
+        try:
+            # Si el usuario ingresó un número
+            option_idx = int(user_message.strip()) - 1
+            if 0 <= option_idx < len(question["options"]):
+                return question["options"][option_idx]
+        except ValueError:
+            # Si el usuario ingresó el texto de la opción
+            for opt in question["options"]:
+                if opt.lower() in user_message.lower():
+                    return opt
+        return None
+
+    async def _generate_proposal(self, conversation: Conversation) -> str:
+        """Genera la propuesta final basada en las respuestas"""
+        responses = conversation.metadata["responses"]
+        messages = [
+            {
+                "role": "system",
+                "content": f"""
+                Has recopilado las siguientes respuestas del cuestionario:
+                {self._format_responses(responses)}
+
+                Genera una propuesta de solución de agua siguiendo este formato:
+                <formato_propuesta>
+                {self.proposal_format_content}
+                </formato_propuesta>
+                """,
+            }
+        ]
+        return await self._call_llm_api(messages)
+
+    def _format_responses(self, responses: Dict[str, str]) -> str:
+        """Formatea las respuestas para incluirlas en el prompt"""
+        formatted = ""
+        for idx, answer in responses.items():
+            question = self.questions[int(idx)]
+            formatted += f"{question['text']}: {answer}\n"
+        return formatted
+
+    async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
+        """Llama a la API del LLM (compatible con Chat Completions)"""
+        try:
             async with httpx.AsyncClient() as client:
                 headers = {
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {self.api_key}",
                 }
-
                 payload = {
                     "model": self.model,
                     "messages": messages,
                     "temperature": 0.7,
                     "max_tokens": 3000,
                 }
-
                 response = await client.post(
                     self.api_url, json=payload, headers=headers, timeout=60.0
                 )
-
                 if response.status_code == 200:
                     data = response.json()
-                    content = data["choices"][0]["message"]["content"]
-                    return content
+                    return data["choices"][0]["message"]["content"]
                 else:
                     logger.error(
                         f"Error en API LLM: {response.status_code} - {response.text}"
                     )
-                    return "Lo siento, ha habido un problema con el servicio. Por favor, inténtalo de nuevo más tarde."
-
+                    return "Error en la API. Inténtalo de nuevo."
         except Exception as e:
             logger.error(f"Error en _call_llm_api: {str(e)}")
-            return "Lo siento, ha ocurrido un error al comunicarse con el servicio. Por favor, inténtalo de nuevo."
+            return "Error al comunicarse con el servicio."
 
     def _contains_proposal_markers(self, text: str) -> bool:
         """Detecta si el texto contiene marcadores de una propuesta completa"""
-        # Verificar si contiene las secciones principales de la Propuesta
         key_sections = [
             "Important Disclaimer",
             "Introduction to Hydrous Management Group",
@@ -163,11 +256,7 @@ class AIService:
             "Estimated CAPEX & OPEX",
             "Return on Investment",
         ]
-
-        # Contar cuatnas secciones estan presentes
         section_count = sum(1 for section in key_sections if section in text)
-
-        # Si tiene la mayorua de las secciones, consideramos que es una propuesta completa
         return section_count >= 6
 
 
