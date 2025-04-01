@@ -45,52 +45,63 @@ class AIService:
         self.model = settings.MODEL
         self.api_url = settings.API_URL
 
-     async def handle_conversation(self, conversation: Conversation, user_message: str = None) -> str:
+    async def handle_conversation(
+        self, conversation: Conversation, user_message: str = None
+    ) -> str:
         """Maneja una conversación y genera una respuesta simplificada"""
         try:
             # Preparar los mensajes para la API de forma mucho más simple
             messages = self._prepare_messages(conversation, user_message)
-            
+
             # Llamar a la API del LLM
             response = await self._call_llm_api(messages)
-            
+
             # Detectar si contiene una propuesta completa para PDF
             if "[PROPOSAL_COMPLETE:" in response:
                 conversation.metadata["has_proposal"] = True
                 # Añadir instrucciones para descargar PDF si es necesario
                 # ...
-            
+
             return response
         except Exception as e:
             logger.error(f"Error en handle_conversation: {str(e)}")
             return "Lo siento, ha ocurrido un error al procesar tu consulta. Por favor, inténtalo de nuevo."
 
-    def _prepare_messages(self, conversation: Conversation, user_message: str = None) -> List[Dict[str, str]]:
+    def _prepare_messages(
+        self, conversation: Conversation, user_message: str = None
+    ) -> List[Dict[str, str]]:
         """Prepara los mensajes para la API del LLM de forma simplificada"""
         # Mensaje inicial del sistema con el prompt maestro
         system_prompt = self.master_prompt
-        
+
         # Añadir contenido de los archivos al prompt del sistema
         if self.questionnaire_content:
-            system_prompt += "\n\n<questionnaire>\n" + self.questionnaire_content + "\n</questionnaire>"
-        
+            system_prompt += (
+                "\n\n<questionnaire>\n"
+                + self.questionnaire_content
+                + "\n</questionnaire>"
+            )
+
         if self.proposal_format_content:
-            system_prompt += "\n\n<proposal_format>\n" + self.proposal_format_content + "\n</proposal_format>"
-        
+            system_prompt += (
+                "\n\n<proposal_format>\n"
+                + self.proposal_format_content
+                + "\n</proposal_format>"
+            )
+
         messages = [{"role": "system", "content": system_prompt}]
-        
+
         # Añadir mensajes anteriores de la conversación
         for msg in conversation.messages:
             if msg.role != "system":  # No duplicar mensajes del sistema
                 messages.append({"role": msg.role, "content": msg.content})
-        
+
         # Si hay un nuevo mensaje del usuario, añadirlo
         if user_message:
             messages.append({"role": "user", "content": user_message})
-        
+
         return messages
 
-    
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
         try:
