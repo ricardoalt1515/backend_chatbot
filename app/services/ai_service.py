@@ -215,7 +215,7 @@ class AIService:
         return formatted
 
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
-        """Llama a la API del LLM (compatible con Chat Completions)"""
+        """Llama a la Responses API de OpenAI"""
         try:
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -224,21 +224,34 @@ class AIService:
                 }
                 payload = {
                     "model": self.model,
-                    "messages": messages,
+                    "input": messages[-1]["content"] if messages else "",
+                    "previous_response_id": (
+                        self.last_response_id
+                        if hasattr(self, "last_response_id")
+                        else None
+                    ),
                     "temperature": 0.7,
                     "max_tokens": 3000,
                 }
                 response = await client.post(
-                    self.api_url, json=payload, headers=headers, timeout=60.0
+                    "https://api.openai.com/v1/responses",
+                    json=payload,
+                    headers=headers,
+                    timeout=60.0,
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    return data["choices"][0]["message"]["content"]
+                    self.last_response_id = data[
+                        "id"
+                    ]  # Guardar el ID para la próxima llamada
+                    return data["output"][0]["content"][0][
+                        "text"
+                    ]  # Ajustar según la estructura real
                 else:
                     logger.error(
-                        f"Error en API LLM: {response.status_code} - {response.text}"
+                        f"Error en API: {response.status_code} - {response.text}"
                     )
-                    return "Error en la API. Inténtalo de nuevo."
+                    return "Error en la API."
         except Exception as e:
             logger.error(f"Error en _call_llm_api: {str(e)}")
             return "Error al comunicarse con el servicio."
