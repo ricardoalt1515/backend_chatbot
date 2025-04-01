@@ -21,9 +21,6 @@ class AIService:
         self.master_prompt = get_master_prompt()
 
         # Cargar archivos de cuestionario y formato de propuesta
-        questionnaire_path = os.path.join(
-            os.path.dirname(__file__), "../prompts/cuestionario.txt"
-        )
         proposal_format_path = os.path.join(
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"
         )
