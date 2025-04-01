@@ -15,29 +15,16 @@ router = APIRouter()
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation():
-    """Inicia una nueva conversación"""
+    """Inicia una nueva conversación usando la API Responses"""
     try:
         # Crear nueva conversación
         conversation = await storage_service.create_conversation()
 
+        # Obtener mensaje de bienvenida inicial
+        ai_response = await ai_service.handle_conversation(conversation)
+
         # Añadir mensaje de bienvenida
-        welcome_message = Message.assistant(
-            """
-# 👋 ¡Bienvenido a Hydrous AI!
-
-Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
-
-💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
-
-**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
-
-Por favor incluye:
-- Nombre de tu empresa o proyecto
-- Ubicación (ciudad, estado, país)
-
-🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
-"""
-        )
+        welcome_message = Message.assistant(ai_response)
         conversation.add_message(welcome_message)
 
         return ConversationResponse(
@@ -57,6 +44,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         # Obtener conversación
         conversation_id = data.conversation_id
         conversation = await storage_service.get_conversation(conversation_id)
+
         if not conversation:
             # Crear nueva conversación si no existe
             conversation = await storage_service.create_conversation()
@@ -77,10 +65,10 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         if _is_pdf_request(data.message) and conversation.metadata.get(
             "has_proposal", False
         ):
-            # Lógica de generación de PDF...
+            # Generar PDF...
             pass
 
-        # Generar respuesta usando el servicio simplificado de IA
+        # Generar respuesta usando la API Responses
         ai_response = await ai_service.handle_conversation(conversation, data.message)
 
         # Crear mensaje del asistente
@@ -89,21 +77,22 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             conversation_id, assistant_message
         )
 
-        # Limpieza en segundo plano
-        background_tasks.add_task(storage_service.cleanup_old_conversations)
+        # Verificar si hay propuesta
+        has_proposal = (
+            "has_proposal" in conversation.metadata
+            and conversation.metadata["has_proposal"]
+        )
 
         return {
             "id": assistant_message.id,
             "conversation_id": conversation_id,
             "message": ai_response,
             "created_at": assistant_message.created_at,
+            "has_proposal": has_proposal,
         }
     except Exception as e:
         logging.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
-
-
-# En app/routes/chat.py
 
 
 @router.get("/{conversation_id}/download-pdf")

@@ -25,7 +25,7 @@ class QuestionnaireState(BaseModel):
     # Si el cuestionario está completo
     is_complete: bool = False
 
-    # Ultimo resumen presentado (indice)
+    # Último resumen presentado (índice)
     last_summary_at: int = 0
 
     def update_answer(self, question_id: str, answer: Any) -> None:
@@ -44,6 +44,41 @@ class QuestionnaireState(BaseModel):
         elif question_id == "presupuesto":
             self.key_entities["budget"] = answer
         # Se pueden añadir más mapeos según sea necesario
+
+    def get_current_question_id(self) -> Optional[str]:
+        """Obtiene el ID de la pregunta actual basado en el contexto del cuestionario"""
+        # Este es un método simplificado; en la implementación real,
+        # consultarías la estructura del cuestionario para determinar
+        # qué pregunta corresponde al índice actual para el sector/subsector
+
+        basic_questions = [
+            "nombre_empresa",
+            "ubicacion",
+            "costo_agua",
+            "cantidad_agua_consumida",
+            "cantidad_agua_residual",
+            "personas",
+            "volumen_agua",
+            "analisis_agua",
+            "uso_agua",
+            "fuente_agua",
+            "objetivo_principal",
+            "objetivo_reuso",
+            "descarga_actual",
+            "restricciones",
+            "infraestructura",
+            "presupuesto",
+            "tiempo_proyecto",
+            "financiamiento",
+            "recibos_agua",
+            "cronograma",
+            "crecimiento_futuro",
+        ]
+
+        if self.current_question_index < len(basic_questions):
+            return basic_questions[self.current_question_index]
+
+        return None
 
     def get_context_summary(self) -> str:
         """Genera un resumen del contexto actual para incluir en el prompt"""
