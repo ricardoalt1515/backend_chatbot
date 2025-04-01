@@ -18,6 +18,7 @@ class AIService:
 
     def __init__(self):
         """Inicialización del servicio AI"""
+        selfMASTER_PROMPT = get_master_prompt()
         # Cargar el prompt maestro
         self.master_prompt = get_master_prompt()
 
@@ -48,6 +49,7 @@ class AIService:
         self.api_key = settings.API_KEY
         self.model = settings.MODEL
         self.api_url = settings.API_URL
+        self.last_response_id = None  # Para Responses API
 
     def _parse_questionnaire(self, content: str) -> List[Dict[str, Any]]:
         """Extrae preguntas y opciones del cuestionario"""
@@ -84,18 +86,15 @@ class AIService:
             if "current_question" not in conversation.metadata:
                 conversation.metadata["current_question"] = 0
                 conversation.metadata["responses"] = {}
+                return self._format_question(
+                    0
+                )  # Mostrar la primera pregunta directamente
 
             current_question_idx = conversation.metadata["current_question"]
 
             if current_question_idx >= len(self.questions):
                 # Fin del cuestionario, generar propuesta
                 return await self._generate_proposal(conversation)
-
-            # Preparar los mensajes para la API
-            messages = self._prepare_messages(conversation, user_message)
-
-            # Llamar a la API del LLM
-            response = await self._call_llm_api(messages)
 
             # Procesar la respuesta del usuario
             if user_message:
@@ -108,16 +107,16 @@ class AIService:
                     ] = selected_option
                     conversation.metadata["current_question"] += 1
                     if conversation.metadata["current_question"] < len(self.questions):
-                        next_question = self._format_question(
+                        return self._format_question(
                             conversation.metadata["current_question"]
                         )
-                        return next_question
                     else:
                         return await self._generate_proposal(conversation)
                 else:
                     return "Por favor, selecciona una opción válida usando el número o el texto de la opción."
 
-            return response
+            # Si no hay mensaje, mostrar la pregunta actual (esto no debería pasar después de la primera vez)
+            return self._format_question(current_question_idx)
 
         except Exception as e:
             logger.error(f"Error en handle_conversation: {str(e)}")
@@ -129,7 +128,6 @@ class AIService:
         """Prepara los mensajes para la API del LLM"""
         system_prompt = self.master_prompt
 
-        # Instrucciones específicas
         system_prompt += f"""
         \n\nTu tarea es seguir este cuestionario estrictamente, una pregunta a la vez, en el orden dado. Aquí está el cuestionario completo:
 
@@ -146,8 +144,6 @@ class AIService:
         <formato_propuesta>
         {self.proposal_format_content}
         </formato_propuesta>
-
-        Pregunta actual: {self._format_question(conversation.metadata["current_question"])}
         """
 
         messages = [{"role": "system", "content": system_prompt}]
@@ -165,7 +161,7 @@ class AIService:
     def _format_question(self, idx: int) -> str:
         """Formatea una pregunta con sus opciones numeradas"""
         if idx >= len(self.questions):
-            return ""
+            return "Cuestionario completado."
         question = self.questions[idx]
         options_text = "\n".join(
             f"{i+1}. {opt}" for i, opt in enumerate(question["options"])
@@ -176,12 +172,10 @@ class AIService:
         """Extrae la opción seleccionada del mensaje del usuario"""
         question = self.questions[question_idx]
         try:
-            # Si el usuario ingresó un número
             option_idx = int(user_message.strip()) - 1
             if 0 <= option_idx < len(question["options"]):
                 return question["options"][option_idx]
         except ValueError:
-            # Si el usuario ingresó el texto de la opción
             for opt in question["options"]:
                 if opt.lower() in user_message.lower():
                     return opt
@@ -190,20 +184,13 @@ class AIService:
     async def _generate_proposal(self, conversation: Conversation) -> str:
         """Genera la propuesta final basada en las respuestas"""
         responses = conversation.metadata["responses"]
-        messages = [
+        messages = self._prepare_messages(conversation)
+        messages.append(
             {
-                "role": "system",
-                "content": f"""
-                Has recopilado las siguientes respuestas del cuestionario:
-                {self._format_responses(responses)}
-
-                Genera una propuesta de solución de agua siguiendo este formato:
-                <formato_propuesta>
-                {self.proposal_format_content}
-                </formato_propuesta>
-                """,
+                "role": "user",
+                "content": f"Genera una propuesta con estas respuestas:\n{self._format_responses(responses)}",
             }
-        ]
+        )
         return await self._call_llm_api(messages)
 
     def _format_responses(self, responses: Dict[str, str]) -> str:
@@ -215,7 +202,7 @@ class AIService:
         return formatted
 
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
-        """Llama a la Responses API de OpenAI"""
+        """Llama a la API del LLM (Responses API compatible)"""
         try:
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -224,34 +211,32 @@ class AIService:
                 }
                 payload = {
                     "model": self.model,
-                    "input": messages[-1]["content"] if messages else "",
+                    "input": (
+                        messages[-1]["content"] if messages else ""
+                    ),  # Para Responses API
                     "previous_response_id": (
-                        self.last_response_id
-                        if hasattr(self, "last_response_id")
-                        else None
+                        self.last_response_id if self.last_response_id else None
                     ),
-                    "temperature": 0.7,
-                    "max_tokens": 3000,
                 }
                 response = await client.post(
-                    "https://api.openai.com/v1/responses",
-                    json=payload,
-                    headers=headers,
-                    timeout=60.0,
+                    self.api_url, json=payload, headers=headers, timeout=60.0
                 )
                 if response.status_code == 200:
                     data = response.json()
-                    self.last_response_id = data[
+                    self.last_response_id = data.get(
                         "id"
-                    ]  # Guardar el ID para la próxima llamada
-                    return data["output"][0]["content"][0][
-                        "text"
-                    ]  # Ajustar según la estructura real
+                    )  # Guardar ID para Responses API
+                    # Ajustar según la estructura de la Responses API
+                    return (
+                        data["output"][0]["content"][0]["text"]
+                        if "output" in data
+                        else data["choices"][0]["message"]["content"]
+                    )
                 else:
                     logger.error(
                         f"Error en API: {response.status_code} - {response.text}"
                     )
-                    return "Error en la API."
+                    return "Error en la API. Inténtalo de nuevo."
         except Exception as e:
             logger.error(f"Error en _call_llm_api: {str(e)}")
             return "Error al comunicarse con el servicio."
