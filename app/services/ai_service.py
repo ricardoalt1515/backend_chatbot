@@ -74,20 +74,31 @@ class AIService:
         # Mensaje inicial del sistema con el prompt maestro
         system_prompt = self.master_prompt
 
-        # Añadir contenido de los archivos al prompt del sistema
+        # Añadir contenido del cuestionario como un bloque específico con formato preservado
+
         if self.questionnaire_content:
             system_prompt += (
-                "\n\n<questionnaire>\n"
+                "\n\n<cuestionario>\n"
                 + self.questionnaire_content
-                + "\n</questionnaire>"
+                + "\n</cuestionario>"
             )
 
         if self.proposal_format_content:
             system_prompt += (
-                "\n\n<proposal_format>\n"
+                "\n\n<formato_propuesta>\n"
                 + self.proposal_format_content
-                + "\n</proposal_format>"
+                + "\n</formato_propuesta>"
             )
+
+        # Añadir instrucciones específicas para el manejo de opciones múltiples
+        system_prompt += """
+        \n\nIMPORTANTE: Cuando encuentres una lista de opciones marcada con asteriscos (*) o números, DEBES presentarla como opciones numeradas para que el usuario pueda elegir por número. Ejemplo:
+        1. Opción A
+        2. Opción B
+        3. Opción C
+
+        Al procesar la respuesta del usuario, acepta tanto el número como el texto de la opción.
+        """
 
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -105,6 +116,7 @@ class AIService:
     async def _call_llm_api(self, messages: List[Dict[str, str]]) -> str:
         """Llama a la API del LLM"""
         try:
+
             # Llamar a la API usando httpx
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -116,7 +128,7 @@ class AIService:
                     "model": self.model,
                     "messages": messages,
                     "temperature": 0.7,
-                    "max_tokens": 4000,
+                    "max_tokens": 3000,
                 }
 
                 response = await client.post(
