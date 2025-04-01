@@ -68,13 +68,6 @@ class AIService:
 
         # Añadir contenido del cuestionario como un bloque específico con formato preservado
 
-        if self.questionnaire_content:
-            system_prompt += (
-                "\n\n<cuestionario>\n"
-                + self.questionnaire_content
-                + "\n</cuestionario>"
-            )
-
         if self.proposal_format_content:
             system_prompt += (
                 "\n\n<formato_propuesta>\n"
