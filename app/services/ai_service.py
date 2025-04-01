@@ -19,7 +19,7 @@ class AIService:
     def __init__(self):
         """Inicialización del servicio AI"""
         # crear cliente OpenAI
-        self.client = openAI(api_key=settings.API_KEY)
+        self.client = OpenAI(api_key=settings.API_KEY)
 
         # Cargar el prompt maestro
         self.master_prompt = get_master_prompt()
