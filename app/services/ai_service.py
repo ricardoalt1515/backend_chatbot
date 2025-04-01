@@ -26,7 +26,6 @@ class AIService:
         )
 
         # Leer estos archivos si existen (asegúrate de tener versiones .txt de ellos)
-        self.questionnaire_content = ""
         self.proposal_format_content = ""
 
         if os.path.exists(questionnaire_path):
