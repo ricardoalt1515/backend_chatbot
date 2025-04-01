@@ -28,10 +28,6 @@ class AIService:
         # Leer estos archivos si existen (asegúrate de tener versiones .txt de ellos)
         self.proposal_format_content = ""
 
-        if os.path.exists(questionnaire_path):
-            with open(questionnaire_path, "r", encoding="utf-8") as f:
-                self.questionnaire_content = f.read()
-
         if os.path.exists(proposal_format_path):
             with open(proposal_format_path, "r", encoding="utf-8") as f:
                 self.proposal_format_content = f.read()
