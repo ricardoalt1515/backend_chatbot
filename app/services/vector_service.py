@@ -84,6 +84,41 @@ class VectorService:
             logger.error(f"Error al obtener estado del vector store: {e}")
             return {"id": vector_store_id, "status": "error", "message": str(e)}
 
+    async def test_vector_search(
+        self, vector_store_id: str, query: str = "cuestionario industrial"
+    ) -> Dict[str, Any]:
+        """Prueba la búsqueda en el vector store para verificar su funcionamiento"""
+        try:
+            # Realizar búsqueda directa
+            results = self.client.vector_stores.search(
+                vector_store_id=vector_store_id, query=query, max_results=5
+            )
+
+            search_info = {
+                "query": query,
+                "results_count": len(results.data),
+                "results": [],
+            }
+
+            # Registrar resultados
+            for result in results.data:
+                search_info["results"].append(
+                    {
+                        "score": result.score,
+                        "file_id": result.file_id,
+                        "text": (
+                            result.text[:100] + "..."
+                            if len(result.text) > 100
+                            else result.text
+                        ),
+                    }
+                )
+
+            return search_info
+        except Exception as e:
+            logger.error(f"Error en prueba de búsqueda: {e}")
+            return {"error": str(e)}
+
 
 # Instancia global
 vector_service = VectorService()

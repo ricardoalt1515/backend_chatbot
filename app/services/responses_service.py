@@ -96,29 +96,54 @@ Por favor incluye:
             raise
 
     async def process_message(self, response_id: str, message: str) -> Dict[str, Any]:
-        """Procesa un mensaje y obtiene respuesta"""
+        """Procesa un mensaje y obtiene respuesta con búsqueda mejorada"""
         try:
-            # Configurar herramientas si el vector store está disponible
+            # Configurar herramientas para búsqueda en archivos
             tools = []
             if self.vector_store_id:
                 tools.append(
                     {
                         "type": "file_search",
                         "vector_store_ids": [self.vector_store_id],
-                        "max_num_results": 5,
+                        "max_num_results": 10,  # Aumentado para obtener más contexto
+                        "filter": {"document_type": "pdf"},  # Filtrar solo PDFs
                     }
                 )
+                logger.info(
+                    f"Configurada búsqueda en vector store: {self.vector_store_id}"
+                )
 
-            # Crear respuesta usando previous_response_id
+            # Preparar mensaje de sistema para reforzar el uso del cuestionario
+            system_message = """
+    IMPORTANTE: Debes usar el cuestionario para guiar la conversación. 
+    Busca la sección correspondiente al sector y subsector del usuario.
+    Sigue EXACTAMENTE las preguntas del cuestionario en orden, una a la vez.
+    """
+
+            # Crear respuesta
             response = self.client.responses.create(
                 model=settings.OPENAI_MODEL,
                 previous_response_id=response_id,
-                input=message,
+                input=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": message},
+                ],
                 tools=tools,
-                temperature=0.7,
+                temperature=0.5,  # Reducido para mayor precisión
                 max_output_tokens=2048,
                 store=True,
             )
+
+            # Registrar si se usó la herramienta de búsqueda
+            if hasattr(response, "tool_calls") and response.tool_calls:
+                for tool_call in response.tool_calls:
+                    if tool_call.type == "file_search":
+                        logger.info(
+                            f"Búsqueda realizada: {tool_call.file_search_call.query}"
+                        )
+                        logger.info(
+                            f"Resultados obtenidos: {len(tool_call.file_search_call.search_results)}"
+                        )
 
             # Verificar si contiene una propuesta completa
             has_proposal = "[PROPOSAL_COMPLETE:" in response.output_text
