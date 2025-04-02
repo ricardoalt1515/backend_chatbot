@@ -34,27 +34,6 @@ class Settings(BaseSettings):
         "INSTRUCTIONS_FILE", "app/prompts/hydrous_instructions.txt"
     )
 
-    # Configuración de vectores y búsqueda
-    ENABLE_FILE_SEARCH: bool = os.getenv("ENABLE_FILE_SEARCH", "True").lower() in (
-        "true",
-        "1",
-        "t",
-    )
-    ENABLE_WEB_SEARCH: bool = os.getenv("ENABLE_WEB_SEARCH", "False").lower() in (
-        "true",
-        "1",
-        "t",
-    )
-    VECTOR_STORE_ID: Optional[str] = os.getenv("VECTOR_STORE_ID", None)
-
-    # Archivos de referencia
-    QUESTIONNAIRE_FILE: str = os.getenv(
-        "QUESTIONNAIRE_FILE", "app/data/cuestionario.pdf"
-    )
-    PROPOSAL_FORMAT_FILE: str = os.getenv(
-        "PROPOSAL_FORMAT_FILE", "app/data/format_proposal.docx"
-    )
-
     # Almacenamiento
     CONVERSATION_TIMEOUT: int = 60 * 60 * 24  # 24 horas
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
