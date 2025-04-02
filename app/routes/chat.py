@@ -1,5 +1,5 @@
 # app/routes/chat.py
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import FileResponse
 import logging
 import os
@@ -13,12 +13,19 @@ router = APIRouter()
 logger = logging.getLogger("hydrous")
 
 
+async def initialize_service():
+    """Middleware para asegurar que el servicio esté inicializado"""
+    if responses_service.vector_store_id is None:
+        await responses_service.initialize()
+    return responses_service
+
+
 @router.post("/start")
-async def start_conversation():
+async def start_conversation(service: ResponsesService = Depends(initialize_service)):
     """Inicia una nueva conversación"""
     try:
         # Iniciar conversación con el servicio
-        response = await responses_service.start_conversation()
+        response = await service.start_conversation()
 
         return response
     except Exception as e:
@@ -27,7 +34,11 @@ async def start_conversation():
 
 
 @router.post("/message")
-async def send_message(data: dict, background_tasks: BackgroundTasks = None):
+async def send_message(
+    data: dict,
+    background_tasks: BackgroundTasks = None,
+    service: ResponsesService = Depends(initialize_service),
+):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
         # Validar datos
@@ -35,7 +46,7 @@ async def send_message(data: dict, background_tasks: BackgroundTasks = None):
             raise HTTPException(status_code=400, detail="Datos incompletos")
 
         # Procesar mensaje
-        response = await responses_service.process_message(
+        response = await service.process_message(
             response_id=data["conversation_id"], message=data["message"]
         )
 

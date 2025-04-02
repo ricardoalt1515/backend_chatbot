@@ -2,30 +2,52 @@
 from openai import OpenAI
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+import os
+
 from app.config import settings
+from app.services.vector_service import vector_service
 
 logger = logging.getLogger("hydrous")
 
 
 class ResponsesService:
-    """Servicio simplificado para la API Responses de OpenAI"""
+    """Servicio para interactuar con la API Responses de OpenAI"""
 
     def __init__(self):
         """Inicializa el servicio con la API key"""
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self._load_instructions()
+        self.vector_store_id = None
 
     def _load_instructions(self):
         """Carga las instrucciones desde archivo"""
         try:
             instructions_file = settings.INSTRUCTIONS_FILE
-            with open(instructions_file, "r", encoding="utf-8") as f:
-                self.instructions = f.read()
-            logger.info("Instrucciones cargadas correctamente")
+            if os.path.exists(instructions_file):
+                with open(instructions_file, "r", encoding="utf-8") as f:
+                    self.instructions = f.read()
+                logger.info("Instrucciones cargadas correctamente")
+            else:
+                logger.warning(
+                    f"Archivo de instrucciones no encontrado: {instructions_file}"
+                )
+                self.instructions = (
+                    "Soy el asistente de soluciones de agua de Hydrous AI."
+                )
         except Exception as e:
             logger.error(f"Error al cargar instrucciones: {e}")
             self.instructions = "Soy el asistente de soluciones de agua de Hydrous AI."
+
+    async def initialize(self):
+        """Inicializa el servicio y los recursos necesarios"""
+        self.vector_store_id = await vector_service.initialize_vector_store()
+        if self.vector_store_id:
+            logger.info(
+                f"Servicio inicializado con vector store: {self.vector_store_id}"
+            )
+        else:
+            logger.warning("No se pudo inicializar el vector store")
 
     async def start_conversation(self) -> Dict[str, Any]:
         """Inicia una nueva conversación con un mensaje de bienvenida"""
@@ -42,11 +64,26 @@ Por favor incluye:
 - Nombre de tu empresa o proyecto
 - Ubicación (ciudad, estado, país)
 """
+            # Configurar herramientas si el vector store está disponible
+            tools = []
+            if self.vector_store_id:
+                tools.append(
+                    {
+                        "type": "file_search",
+                        "vector_store_ids": [self.vector_store_id],
+                        "max_num_results": 5,
+                    }
+                )
+
             # Crear respuesta inicial
             response = self.client.responses.create(
                 model=settings.OPENAI_MODEL,
                 instructions=self.instructions,
                 input=welcome_message,
+                tools=tools,
+                temperature=0.7,
+                max_output_tokens=2048,
+                store=True,
             )
 
             return {
@@ -61,11 +98,26 @@ Por favor incluye:
     async def process_message(self, response_id: str, message: str) -> Dict[str, Any]:
         """Procesa un mensaje y obtiene respuesta"""
         try:
+            # Configurar herramientas si el vector store está disponible
+            tools = []
+            if self.vector_store_id:
+                tools.append(
+                    {
+                        "type": "file_search",
+                        "vector_store_ids": [self.vector_store_id],
+                        "max_num_results": 5,
+                    }
+                )
+
             # Crear respuesta usando previous_response_id
             response = self.client.responses.create(
                 model=settings.OPENAI_MODEL,
                 previous_response_id=response_id,
                 input=message,
+                tools=tools,
+                temperature=0.7,
+                max_output_tokens=2048,
+                store=True,
             )
 
             # Verificar si contiene una propuesta completa
@@ -89,15 +141,29 @@ Por favor incluye:
             # Mensaje para enviar con el documento
             doc_message = message or f"He subido un documento: {document_path}"
 
-            # Analizar documento (no hay soporte directo para adjuntar archivos en API Responses)
-            # En su lugar, mencionamos el documento en el mensaje
+            # Analizar documento (usando file_search si está disponible)
             doc_context = f"[DOCUMENTO: {document_path}] {doc_message}"
+
+            # Configurar herramientas
+            tools = []
+            if self.vector_store_id:
+                tools.append(
+                    {
+                        "type": "file_search",
+                        "vector_store_ids": [self.vector_store_id],
+                        "max_num_results": 5,
+                    }
+                )
 
             # Crear respuesta
             response = self.client.responses.create(
                 model=settings.OPENAI_MODEL,
                 previous_response_id=response_id,
                 input=doc_context,
+                tools=tools,
+                temperature=0.7,
+                max_output_tokens=2048,
+                store=True,
             )
 
             return {

@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     # Configuración IA - OpenAI Responses API
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    INSTRUCTIONS_FILE: str = os.getenv(
+        "INSTRUCTIONS_FILE", "app/prompts/hydrous_instructions.txt"
+    )
+    QUESTIONNAIRE_FILE: str = os.getenv(
+        "QUESTIONNAIRE_FILE", "app/data/cuestionario.pdf"
+    )
+    PROPOSAL_FORMAT_FILE: str = os.getenv(
+        "PROPOSAL_FORMAT_FILE", "app/data/format_proposal.docx"
+    )
 
     # Rutas de archivos de instrucciones y recursos
     INSTRUCTIONS_FILE: str = os.getenv(
