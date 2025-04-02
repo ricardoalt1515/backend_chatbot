@@ -24,7 +24,7 @@ async def start_conversation():
     except Exception as e:
         logger.error(f"Error al iniciar conversación: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error al iniciar la conversación: {str(e)}"
+            status_code=500, detail=f"Error al iniciar conversación: {str(e)}"
         )
 
 
@@ -32,20 +32,13 @@ async def start_conversation():
 async def send_message(data: MessageCreate):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
-        # Validar que tenemos un response_id
         if not data.response_id:
-            raise HTTPException(
-                status_code=400,
-                detail="Se requiere response_id para continuar la conversación",
-            )
+            raise HTTPException(status_code=400, detail="Se requiere response_id")
 
         # Enviar mensaje y obtener respuesta
         response = await openai_service.send_message(
             response_id=data.response_id, message=data.message
         )
-
-        # Verificar si contiene propuesta completa
-        has_proposal = response.get("has_proposal", False)
 
         return MessageResponse(
             id=response["id"],
@@ -55,5 +48,5 @@ async def send_message(data: MessageCreate):
     except Exception as e:
         logger.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(
-            status_code=500, detail=f"Error al procesar el mensaje: {str(e)}"
+            status_code=500, detail=f"Error al procesar mensaje: {str(e)}"
         )
