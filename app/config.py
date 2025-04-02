@@ -1,6 +1,7 @@
+# app/config.py
 from pydantic_settings import BaseSettings
 import os
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,28 +25,35 @@ class Settings(BaseSettings):
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
-    # Configuración IA - Añadimos compatibilidad con los nombres antiguos y nuevos
+    # Configuración IA - OpenAI Responses API
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    API_KEY: str = os.getenv(
-        "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", "")
-    )  # Para compatibilidad
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
 
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
-    MODEL: str = os.getenv(
-        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o-mini"))
+    # Rutas de archivos de instrucciones y recursos
+    INSTRUCTIONS_FILE: str = os.getenv(
+        "INSTRUCTIONS_FILE", "app/prompts/hydrous_instructions.txt"
     )
 
-    # Determinar URL de API basado en lo que esté disponible
-    API_PROVIDER: str = os.getenv("AI_PROVIDER", "openai")  # "openai" o "groq"
+    # Configuración de vectores y búsqueda
+    ENABLE_FILE_SEARCH: bool = os.getenv("ENABLE_FILE_SEARCH", "True").lower() in (
+        "true",
+        "1",
+        "t",
+    )
+    ENABLE_WEB_SEARCH: bool = os.getenv("ENABLE_WEB_SEARCH", "False").lower() in (
+        "true",
+        "1",
+        "t",
+    )
+    VECTOR_STORE_ID: Optional[str] = os.getenv("VECTOR_STORE_ID", None)
 
-    @property
-    def API_URL(self):
-        if self.API_PROVIDER == "groq":
-            return "https://api.groq.com/openai/v1/chat/completions"
-        else:
-            return "https://api.openai.com/v1/chat/completions"
+    # Archivos de referencia
+    QUESTIONNAIRE_FILE: str = os.getenv(
+        "QUESTIONNAIRE_FILE", "app/data/cuestionario.pdf"
+    )
+    PROPOSAL_FORMAT_FILE: str = os.getenv(
+        "PROPOSAL_FORMAT_FILE", "app/data/format_proposal.docx"
+    )
 
     # Almacenamiento
     CONVERSATION_TIMEOUT: int = 60 * 60 * 24  # 24 horas

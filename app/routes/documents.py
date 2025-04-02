@@ -1,65 +1,75 @@
 # app/routes/documents.py
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 import logging
+import os
+import tempfile
 from typing import Optional
 
-from app.models.message import Message
-from app.services.document_service import document_service
-from app.services.storage_service import storage_service
-from app.services.ai_service import ai_service
+from app.services.openai_service import openai_service
+from app.config import settings
 
 router = APIRouter()
+logger = logging.getLogger("hydrous")
 
 
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    conversation_id: str = Form(...),
+    response_id: str = Form(...),
     message: Optional[str] = Form(None),
 ):
     """Sube un documento y lo procesa"""
     try:
-        # Verificar que la conversación existe
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        # Guardar el archivo temporalmente
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
 
-        # Procesar el documento
-        doc_info = await document_service.process_document(file, conversation_id)
+        # Directorio para archivos subidos
+        upload_path = os.path.join(settings.UPLOAD_DIR, file.filename)
 
-        # Crear mensaje del usuario con referencia al documento
-        user_message_content = message or f"[He subido un documento: {file.filename}]"
-        user_message = Message.user(user_message_content)
-        await storage_service.add_message_to_conversation(conversation_id, user_message)
+        # Crear directorio si no existe
+        os.makedirs(os.path.dirname(upload_path), exist_ok=True)
 
-        # Generar respuesta basada en el documento
-        doc_summary = document_service.format_document_info_for_prompt(doc_info)
-        system_message = Message.system(
-            f"El usuario ha subido un documento. Aquí está la información extraída:\n{doc_summary}\n"
-            "Por favor, reconoce el documento subido y continúa con el cuestionario."
-        )
-        await storage_service.add_message_to_conversation(
-            conversation_id, system_message
-        )
+        # Copiar a ubicación permanente
+        with open(upload_path, "wb") as dest_file:
+            with open(temp_path, "rb") as src_file:
+                dest_file.write(src_file.read())
 
-        # Obtener respuesta del LLM
-        ai_response = await ai_service.handle_conversation(
-            conversation, f"He subido un documento: {file.filename}. {message or ''}"
-        )
+        # Subir a OpenAI y vectorizar (si está habilitado)
+        file_id = None
+        if settings.ENABLE_FILE_SEARCH:
+            file_id = await openai_service.upload_and_index_file(
+                upload_path, file.filename
+            )
 
-        # Añadir respuesta del asistente
-        assistant_message = Message.assistant(ai_response)
-        await storage_service.add_message_to_conversation(
-            conversation_id, assistant_message
+        # Limpiar archivo temporal
+        os.unlink(temp_path)
+
+        # Mensaje para enviar con el archivo
+        user_message = message or f"He subido un documento: {file.filename}"
+
+        # Enviar mensaje con referencia al archivo
+        response = await openai_service.send_message(
+            response_id=response_id,
+            message=user_message,
+            files=[file_id] if file_id else None,
         )
 
         return {
-            "id": assistant_message.id,
-            "conversation_id": conversation_id,
-            "message": ai_response,
-            "document_id": doc_info["id"],
-            "created_at": assistant_message.created_at,
+            "id": response["id"],
+            "content": response["content"],
+            "created_at": response["created_at"],
+            "file_path": upload_path,
+            "file_id": file_id,
         }
     except Exception as e:
-        logging.error(f"Error al subir documento: {str(e)}")
+        logger.error(f"Error al subir documento: {str(e)}")
+        # Limpiar archivo temporal si existe
+        if "temp_path" in locals():
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
         raise HTTPException(status_code=500, detail="Error al procesar el documento")

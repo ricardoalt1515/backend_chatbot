@@ -3,50 +3,36 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 import logging
 import os
+import json
 
-from app.models.conversation import ConversationResponse
-from app.models.message import Message, MessageCreate
-from app.services.storage_service import storage_service
-from app.services.ai_service import ai_service
+from app.models.chat import (
+    MessageCreate,
+    MessageResponse,
+    ProposalRequest,
+    ProposalResponse,
+)
+from app.services.openai_service import openai_service
 from app.services.pdf_service import pdf_service
+from app.config import settings
 
 router = APIRouter()
+logger = logging.getLogger("hydrous")
 
 
-@router.post("/start", response_model=ConversationResponse)
+@router.post("/start", response_model=MessageResponse)
 async def start_conversation():
     """Inicia una nueva conversación"""
     try:
         # Crear nueva conversación
-        conversation = await storage_service.create_conversation()
+        response = await openai_service.start_conversation()
 
-        # Añadir mensaje de bienvenida
-        welcome_message = Message.assistant(
-            """
-# 👋 ¡Bienvenido a Hydrous AI!
-
-Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad.
-
-💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
-
-**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
-
-Por favor incluye:
-- Nombre de tu empresa o proyecto
-- Ubicación (ciudad, estado, país)
-
-🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
-"""
-        )
-        conversation.add_message(welcome_message)
-
-        return ConversationResponse(
-            id=conversation.id,
-            created_at=conversation.created_at,
-            messages=[welcome_message],
+        return MessageResponse(
+            id=response["id"],
+            content=response["content"],
+            created_at=response["created_at"],
         )
     except Exception as e:
-        logging.error(f"Error al iniciar conversación: {str(e)}")
+        logger.error(f"Error al iniciar conversación: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al iniciar la conversación")
 
 
@@ -54,63 +40,31 @@ Por favor incluye:
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """Procesa un mensaje del usuario y genera una respuesta"""
     try:
-        # Obtener conversación con logging adicional para debug
-        conversation_id = data.conversation_id
-        logging.info(f"Buscando conversación con ID: {conversation_id}")
-
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            logging.error(f"Conversación no encontrada: {conversation_id}")
-            # Intenta crear una nueva conversación en lugar de fallar
-            logging.info(f"Creando nueva conversación como fallback")
-            conversation = await storage_service.create_conversation()
-            logging.info(f"Nueva conversación creada con ID: {conversation.id}")
-
-            # Importante: Devuelve información sobre la nueva conversación
-            return {
-                "error": "Conversación original no encontrada",
-                "new_conversation_created": True,
-                "conversation_id": conversation.id,
-                "message": "Se creó una nueva conversación. Por favor, intenta de nuevo.",
-            }
-
-        # Añadir mensaje del usuario
-        user_message = Message.user(data.message)
-        await storage_service.add_message_to_conversation(
-            data.conversation_id, user_message
+        # Enviar mensaje y obtener respuesta
+        response = await openai_service.send_message(
+            response_id=data.response_id, message=data.message, files=data.files
         )
 
-        # Verificar si es una solicitud de PDF y si hay propuesta completa
-        if _is_pdf_request(data.message) and conversation.metadata.get(
-            "has_proposal", False
-        ):
-            # Generar PDF desde la propuesta
-            from app.services.proposal_service import proposal_service
+        # Verificar si contiene propuesta completa
+        has_proposal = response.get("has_proposal", False)
 
-            # Generar estructura de propuesta
-            proposal = proposal_service.generate_proposal(conversation)
-
-            # Generar HTML formateado
-            html_content = proposal_service.generate_proposal_html(proposal)
-
-            # Guardar HTML
-            html_path = os.path.join(
-                settings.UPLOAD_DIR, f"propuesta_{conversation.id}.html"
+        # Si hay propuesta, generar version estructurada en segundo plano
+        if has_proposal:
+            # Almacenar el response_id para la propuesta en algún lugar
+            # (Podría ser un archivo temporal, base de datos, etc.)
+            proposal_file = os.path.join(
+                settings.UPLOAD_DIR, f"proposal_{response['id']}.json"
             )
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(html_content)
+            with open(proposal_file, "w", encoding="utf-8") as f:
+                json.dump({"response_id": response["id"]}, f)
 
-            # Almacenar ruta en metadatos
-            conversation.metadata["proposal_html_path"] = html_path
-
-            # Generar mensaje con enlace a PDF
-            pdf_message = Message.assistant(
-                f"""
+            # Indicar al usuario que puede descargar la propuesta
+            download_message = """
 # 📄 Propuesta Lista para Descargar
 
-He preparado tu propuesta personalizada basada en la información proporcionada. Puedes descargarla como PDF usando el siguiente enlace:
+He preparado tu propuesta personalizada basada en la información proporcionada. Puedes descargarla usando el siguiente enlace:
 
-## [👉 DESCARGAR PROPUESTA EN PDF](/api/chat/{conversation.id}/download-pdf)
+## [👉 DESCARGAR PROPUESTA EN PDF](/api/chat/download-proposal?response_id={})
 
 Este documento incluye:
 - Análisis de tus necesidades específicas
@@ -119,92 +73,93 @@ Este documento incluye:
 - Pasos siguientes recomendados
 
 ¿Necesitas alguna aclaración sobre la propuesta o tienes alguna otra pregunta?
-"""
+""".format(
+                response["id"]
             )
 
-            # Guardar mensaje
-            await storage_service.add_message_to_conversation(
-                data.conversation_id, pdf_message
+            # Enviar mensaje de descarga
+            download_response = await openai_service.send_message(
+                response_id=response["id"], message=download_message
             )
 
-            # Generar PDF en segundo plano
-            background_tasks.add_task(pdf_service.generate_pdf, conversation)
+            # Generar propuesta estructurada en segundo plano
+            background_tasks.add_task(
+                openai_service.generate_structured_proposal, response["id"]
+            )
 
+            # Devolver el mensaje de descarga
             return {
-                "id": pdf_message.id,
-                "conversation_id": data.conversation_id,
-                "message": pdf_message.content,
-                "created_at": pdf_message.created_at,
+                "id": download_response["id"],
+                "content": download_response["content"],
+                "created_at": download_response["created_at"],
+                "has_proposal": True,
             }
 
-        # Generar respuesta usando el servicio de IA
-        ai_response = await ai_service.handle_conversation(conversation, data.message)
-
-        # Crear mensaje del asistente
-        assistant_message = Message.assistant(ai_response)
-        await storage_service.add_message_to_conversation(
-            data.conversation_id, assistant_message
-        )
-
-        # Limpieza en segundo plano
-        background_tasks.add_task(storage_service.cleanup_old_conversations)
-
         return {
-            "id": assistant_message.id,
-            "conversation_id": data.conversation_id,
-            "message": ai_response,
-            "created_at": assistant_message.created_at,
+            "id": response["id"],
+            "content": response["content"],
+            "created_at": response["created_at"],
         }
     except Exception as e:
-        logging.error(f"Error al procesar mensaje: {str(e)}")
+        logger.error(f"Error al procesar mensaje: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
 
 
-# En app/routes/chat.py
-
-
-@router.get("/{conversation_id}/download-pdf")
-async def download_pdf(conversation_id: str):
+@router.get("/download-proposal")
+async def download_proposal(response_id: str):
     """Descarga la propuesta en formato PDF"""
     try:
-        # Verificar que la conversación existe
-        conversation = await storage_service.get_conversation(conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        # Verificar si existe un archivo de propuesta estructurada
+        proposal_file = os.path.join(
+            settings.UPLOAD_DIR, f"proposal_{response_id}.json"
+        )
 
-        # Si ya tenemos un PDF generado, usamos esa ruta
-        if conversation.metadata.get("pdf_path") and os.path.exists(
-            conversation.metadata["pdf_path"]
-        ):
-            pdf_path = conversation.metadata["pdf_path"]
+        if not os.path.exists(proposal_file):
+            # Si no existe, intentar generar la propuesta estructurada
+            proposal_data = await openai_service.generate_structured_proposal(
+                response_id
+            )
+
+            # Guardar la propuesta estructurada
+            with open(proposal_file, "w", encoding="utf-8") as f:
+                json.dump(proposal_data, f)
         else:
-            # Generar PDF
-            pdf_path = await pdf_service.generate_pdf(conversation)
+            # Cargar la propuesta existente
+            with open(proposal_file, "r", encoding="utf-8") as f:
+                proposal_info = json.load(f)
+
+            # Si solo tenemos el ID de respuesta, generar la propuesta
+            if "proposal" not in proposal_info:
+                proposal_data = await openai_service.generate_structured_proposal(
+                    response_id
+                )
+
+                # Actualizar el archivo
+                with open(proposal_file, "w", encoding="utf-8") as f:
+                    json.dump(proposal_data, f)
+            else:
+                proposal_data = proposal_info
+
+        # Generar PDF a partir de la propuesta estructurada
+        pdf_path = await pdf_service.generate_proposal_pdf(
+            proposal_data["proposal"], response_id
+        )
 
         if not pdf_path:
             raise HTTPException(status_code=500, detail="Error al generar el PDF")
 
-        # Preparar nombre para el archivo
-        client_name = "Cliente"
-        if conversation.questionnaire_state.key_entities.get("company_name"):
-            client_name = conversation.questionnaire_state.key_entities["company_name"]
+        # Obtener nombre del cliente de la propuesta
+        client_name = (
+            proposal_data["proposal"].get("client_info", {}).get("name", "Cliente")
+        )
+        client_name = client_name.replace(" ", "_")
 
-        # Determinar si es PDF o HTML
-        is_pdf = pdf_path.endswith(".pdf")
-        filename = f"Propuesta_Hydrous_{client_name}.{'pdf' if is_pdf else 'html'}"
+        # Preparar nombre para el archivo
+        filename = f"Propuesta_Hydrous_{client_name}.pdf"
 
         return FileResponse(
-            path=pdf_path,
-            filename=filename,
-            media_type="application/pdf" if is_pdf else "text/html",
+            path=pdf_path, filename=filename, media_type="application/pdf"
         )
     except Exception as e:
-        logger.error(f"Error al descargar PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al generar el PDF")
-
-
-def _is_pdf_request(message: str) -> bool:
-    """Determina si el mensaje es una solicitud de PDF"""
-    message = message.lower()
-    pdf_keywords = ["pdf", "descargar", "documento", "propuesta", "bajar", "archivo"]
-    return any(keyword in message for keyword in pdf_keywords)
+        logger.error(f"Error al descargar propuesta: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error al generar la propuesta")
