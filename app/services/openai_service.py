@@ -125,16 +125,13 @@ Por favor incluye:
             # Configurar herramientas
             tools = self._configure_tools()
 
-            # Añadir file_ids si se proporcionan
-            file_ids = files if files else []
-
-            # Crear respuesta
+            # Crear respuesta (sin file_ids como parámetro directo)
             response = self.client.responses.create(
                 model=settings.OPENAI_MODEL,
                 previous_response_id=response_id,
                 input=message,
                 tools=tools,
-                file_ids=file_ids,
+                # Removemos el parámetro file_ids que causaba el error
             )
 
             # Verificar si contiene indicador de propuesta completa
