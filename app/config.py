@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
 import os
-from pathlib import Path
+from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,12 +11,6 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api"
     PROJECT_NAME: str = "hydrous-backend"
     DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "t")
-    ASSISTANT_ID: Optional[str] = None
-    INSTRUCTIONS_FILE: str = str(
-        BASE_DIR / "app" / "data" / "assistant_instructions.txt"
-    )
-    QUESTIONNAIRE_FILE: str = str(BASE_DIR / "app" / "data" / "questionnaire.pdf")
-    PROPOSAL_FORMAT_FILE: str = str(BASE_DIR / "app" / "data" / "format_proposal.docx")
 
     # URL del backend para enlaces absolutos
     BACKEND_URL: str = os.getenv(

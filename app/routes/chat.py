@@ -29,12 +29,11 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
 
 💡 *Las soluciones de reciclaje de agua pueden reducir el consumo de agua fresca hasta en un 70% en instalaciones industriales similares.*
 
-**PREGUNTA: ¿En qué sector opera tu empresa?**
+**PREGUNTA: ¿Cuál es el nombre de tu empresa o proyecto y dónde se ubica?**
 
-1. Industrial
-2. Comercial
-3. Municipal 
-4. Residencial
+Por favor incluye:
+- Nombre de tu empresa o proyecto
+- Ubicación (ciudad, estado, país)
 
 🌍 *Esta información es importante para evaluar la normativa local, la disponibilidad de agua, y posibles incentivos para reciclaje de agua en tu zona.*
 """
@@ -49,44 +48,6 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
     except Exception as e:
         logging.error(f"Error al iniciar conversación: {str(e)}")
         raise HTTPException(status_code=500, detail="Error al iniciar la conversación")
-
-
-@router.post("/message")
-async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
-    """Procesa un mensaje del usuario y genera una respuesta"""
-    try:
-        # Obtener conversación
-        conversation = await storage_service.get_conversation(data.conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-
-        # Añadir mensaje del usuario
-        user_message = Message.user(data.message)
-        await storage_service.add_message_to_conversation(
-            data.conversation_id, user_message
-        )
-
-        # Generar respuesta usando el servicio de IA
-        ai_response = await ai_service.handle_conversation(conversation, data.message)
-
-        # Crear mensaje del asistente
-        assistant_message = Message.assistant(ai_response)
-        await storage_service.add_message_to_conversation(
-            data.conversation_id, assistant_message
-        )
-
-        # Limpieza en segundo plano
-        background_tasks.add_task(storage_service.cleanup_old_conversations)
-
-        return {
-            "id": assistant_message.id,
-            "conversation_id": data.conversation_id,
-            "message": ai_response,
-            "created_at": assistant_message.created_at,
-        }
-    except Exception as e:
-        logging.error(f"Error al procesar mensaje: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al procesar el mensaje")
 
 
 @router.post("/message")
