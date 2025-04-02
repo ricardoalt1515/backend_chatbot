@@ -6,7 +6,8 @@ import os
 import json
 from datetime import datetime
 
-from app.services.responses_service import responses_service
+# Importar tanto la instancia como la clase
+from app.services.responses_service import responses_service, ResponsesService
 from app.config import settings
 
 router = APIRouter()

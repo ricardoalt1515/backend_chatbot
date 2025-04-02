@@ -178,3 +178,6 @@ Por favor incluye:
 
 # Instancia global
 responses_service = ResponsesService()
+
+# Asegurarse de que la clase sea exportada correctamente
+__all__ = ["ResponsesService", "responses_service"]
