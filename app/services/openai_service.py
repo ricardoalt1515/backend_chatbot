@@ -16,7 +16,11 @@ class OpenAIService:
         """Inicializa el servicio de OpenAI usando la API Responses"""
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self._load_instructions()
-        self._initialize_vector_store()
+
+    async def initliaze(self):
+        """Inicializa el servicio (debe llamarse despues de crear la Instancia)"""
+        await self._initialize_vector_store()
+        return self
 
     def _load_instructions(self):
         """Carga las instrucciones desde el archivo"""
@@ -298,3 +302,15 @@ Por favor incluye:
 
 # Instancia global
 openai_service = OpenAIService()
+
+# Variable para almacenar la instancia inicializada
+_openai_service_instance = None
+
+
+async def get_openai_service():
+    """Obtiene una instancia inicializada de OpenAIService"""
+    global _openai_service_instance
+    if _openai_service_instance is None:
+        service = OpenAIService()
+        _openai_service_instance = await service.initialize()
+    return _openai_service_instance

@@ -1,5 +1,5 @@
 # app/routes/chat.py
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import FileResponse
 import logging
 import os
@@ -14,13 +14,15 @@ from app.models.chat import (
 from app.services.openai_service import openai_service
 from app.services.pdf_service import pdf_service
 from app.config import settings
+from app.services.openai_service import get_openai_service
+
 
 router = APIRouter()
 logger = logging.getLogger("hydrous")
 
 
 @router.post("/start", response_model=MessageResponse)
-async def start_conversation():
+async def start_conversation(openai_service=Depends(get_openai_service)):
     """Inicia una nueva conversación"""
     try:
         # Crear nueva conversación
