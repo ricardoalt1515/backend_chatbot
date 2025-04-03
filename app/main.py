@@ -308,7 +308,7 @@ async def start_chat():
         response = client.responses.create(
             model="gpt-4o-mini",
             instructions=SYSTEM_INSTRUCTIONS,
-            input="Hola, me gustaría obtener una solución para el tratamiento de agua.",
+            input="Iniciar consulta sobre soluciones de agua",  # Mensaje neutro para iniciar
             tools=[{"type": "file_search", "vector_store_ids": [VECTOR_STORE_ID]}],
             store=True,
         )
