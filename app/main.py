@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
 
-from app.routes import chat, documents
+from app.api import chat, documents, pdf
 from app.services.responses_service import responses_service
 from app.config import settings
 
@@ -46,10 +46,9 @@ async def startup_event():
 
 
 # Incluir rutas
-app.include_router(chat.router, prefix=f"{settings.API_V1_STR}/chat", tags=["chat"])
-app.include_router(
-    documents.router, prefix=f"{settings.API_V1_STR}/documents", tags=["documents"]
-)
+app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(documents.router, prefix="/api", tags=["documents"])
+app.include_router(pdf.router, prefix="/api", tags=["pdf"])
 
 
 # Ruta especial para PDF (para mantener compatibilidad con el frontend)

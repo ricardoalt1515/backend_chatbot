@@ -1,16 +1,11 @@
 [project]
-name = "app"
+name = "test"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi==0.109.2",
-    "groq==0.4.1",
-    "httpx==0.26.0",
+    "dotenv>=0.9.9",
     "ipykernel>=6.29.5",
     "openai>=1.70.0",
-    "pydantic-settings>=2.8.1",
-    "python-multipart>=0.0.20",
-    "uvicorn>=0.34.0",
 ]

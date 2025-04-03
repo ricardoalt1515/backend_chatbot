@@ -28,20 +28,15 @@ class Settings(BaseSettings):
     # Configuración IA - OpenAI Responses API
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
-    INSTRUCTIONS_FILE: str = os.getenv(
-        "INSTRUCTIONS_FILE", "app/prompts/hydrous_instructions.txt"
-    )
-    QUESTIONNAIRE_FILE: str = os.getenv(
-        "QUESTIONNAIRE_FILE", "app/data/cuestionario.pdf"
-    )
-    PROPOSAL_FORMAT_FILE: str = os.getenv(
-        "PROPOSAL_FORMAT_FILE", "app/data/format_proposal.docx"
+
+    # ID del archivo de cuestionario
+    QUESTIONNAIRE_FILE_ID = os.getenv(
+        "QUESTIONNAIRE_FILE_ID", "file-FrniUtF5RLDgdsmnJ4t654"
     )
 
-    # Rutas de archivos de instrucciones y recursos
-    INSTRUCTIONS_FILE: str = os.getenv(
-        "INSTRUCTIONS_FILE", "app/prompts/hydrous_instructions.txt"
-    )
+    # Configuración de archivos
+    UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     # Almacenamiento
     CONVERSATION_TIMEOUT: int = 60 * 60 * 24  # 24 horas
