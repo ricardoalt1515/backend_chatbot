@@ -1,76 +1,133 @@
-# app/main.py
-from fastapi import FastAPI, Depends
+import os
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import logging
+from pydantic import BaseModel
+from typing import Optional, Dict
+from openai import OpenAI
+from dotenv import load_dotenv
 
-from app.api import chat, documents, pdf
-from app.services.responses_service import responses_service
-from app.config import settings
+# Cargar variables de entorno
+load_dotenv()
 
-# Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("hydrous")
-
-# Inicializar aplicación
-app = FastAPI(
-    title="Hydrous AI Chatbot API",
-    description="Backend para el chatbot de soluciones de agua Hydrous",
-    version="1.0.0",
-)
+# Configurar FastAPI
+app = FastAPI(title="Hydrous AI Backend")
 
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
 )
 
+# Configurar cliente de OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Inicializar servicios al arrancar
-@app.on_event("startup")
-async def startup_event():
-    """Evento de inicio de la aplicación"""
+# Instrucciones del sistema
+SYSTEM_INSTRUCTIONS = """
+Eres el diseñador de soluciones de agua de Hydrous AI, su asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. 
+Como herramienta de Hydrous, estás aquí para guiar al usuario paso a paso en la evaluación de las necesidades de agua de su sitio.
+
+Tu tarea es hacer preguntas detalladas siguiendo este patrón:
+
+1. Primero, pregunta en qué sector opera su empresa: Industrial, Comercial, Municipal o Residencial.
+2. Basado en su respuesta, pregunta sobre el subsector específico dentro de ese sector.
+3. Luego, haz preguntas sobre su ubicación, costos de agua, consumo, etc.
+4. Sólo haz UNA pregunta a la vez y espera la respuesta.
+5. Cuando hayas recopilado suficiente información, ofrece algunas recomendaciones preliminares.
+
+Mantén un tono profesional, cálido y conversacional.
+"""
+
+
+# Definir modelos de datos
+class MessageRequest(BaseModel):
+    conversation_id: str
+    message: str
+
+
+class ConversationResponse(BaseModel):
+    id: str
+    message: str
+
+
+# Endpoints
+@app.get("/")
+async def root():
+    return {"message": "Hydrous AI Backend is running"}
+
+
+@app.post("/api/chat/start", response_model=ConversationResponse)
+async def start_chat():
+    """Inicia una nueva conversación"""
     try:
-        logger.info("Inicializando servicios...")
-        await responses_service.initialize()
-        logger.info("Servicios inicializados correctamente")
+        response = client.responses.create(
+            model="gpt-4o",
+            instructions=SYSTEM_INSTRUCTIONS,
+            input="Estoy listo para ayudarte con tus necesidades de tratamiento de agua.",
+            store=True,
+        )
+
+        return {"id": response.id, "message": response.output_text}
     except Exception as e:
-        logger.error(f"Error al inicializar servicios: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# Incluir rutas
-app.include_router(chat.router, prefix="/api", tags=["chat"])
-app.include_router(documents.router, prefix="/api", tags=["documents"])
-app.include_router(pdf.router, prefix="/api", tags=["pdf"])
+@app.post("/api/chat/message", response_model=ConversationResponse)
+async def chat_message(request: MessageRequest):
+    """Envía un mensaje a una conversación existente"""
+    try:
+        response = client.responses.create(
+            model="gpt-4o",
+            input=request.message,
+            previous_response_id=request.conversation_id,
+            store=True,
+        )
+
+        return {"id": response.id, "message": response.output_text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# Ruta especial para PDF (para mantener compatibilidad con el frontend)
-@app.get(f"{settings.API_V1_STR}/pdf/{{conversation_id}}/download")
-async def download_pdf_redirect(conversation_id: str):
-    """Redirige a la ruta correcta para descargas de PDF"""
-    return await chat.download_pdf(conversation_id)
+@app.get("/api/chat/{conversation_id}")
+async def get_conversation(conversation_id: str):
+    """Verifica si existe una conversación"""
+    try:
+        # No hay forma directa de verificar una conversación en la API,
+        # así que simplemente devolvemos éxito si el ID tiene formato válido
+        if len(conversation_id) > 10:  # Comprobación básica
+            return {"status": "active", "id": conversation_id}
+        else:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
 
 
-@app.get(f"{settings.API_V1_STR}/health")
-async def health_check():
-    """Endpoint para verificar que la API está funcionando"""
-    status = {"status": "ok", "version": app.version, "vector_store": "not_initialized"}
+# Para manejo básico de archivos (stub, sin implementación real)
+@app.post("/api/documents/upload")
+async def upload_document_stub():
+    """Stub para subida de documentos"""
+    return {
+        "success": True,
+        "message": "He recibido tu archivo, pero actualmente no puedo procesarlo. Por favor, continúa con el cuestionario.",
+    }
 
-    if responses_service.vector_store_id:
-        status["vector_store"] = {
-            "id": responses_service.vector_store_id,
-            "status": "active",
-        }
 
-    return status
+# Stubs básicos para endpoints de PDF (sin implementación real)
+@app.get("/api/pdf/{conversation_id}/download")
+async def download_pdf_stub(conversation_id: str):
+    """Stub para descarga de PDF"""
+    raise HTTPException(status_code=501, detail="Generación de PDF no implementada")
+
+
+@app.get("/api/pdf/{conversation_id}/data-url")
+async def pdf_data_url_stub(conversation_id: str):
+    """Stub para data URL de PDF"""
+    raise HTTPException(status_code=501, detail="Generación de PDF no implementada")
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)
+    import uvicorn
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
