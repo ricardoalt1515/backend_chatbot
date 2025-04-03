@@ -186,7 +186,7 @@ async def start_chat():
         response = client.responses.create(
             model="gpt-4o-mini",
             instructions=SYSTEM_INSTRUCTIONS,
-            input=startup_message,
+            input="Inicia exactamente como se especifica en las instrucciones, con el saludo completo y la primera pregunta sobre sectores.",
             tools=[
                 {
                     "type": "file_search",
@@ -196,6 +196,8 @@ async def start_chat():
             ],
             store=True,
         )
+        # Verificamos si el modelo está siguiendo las instrucciones
+        print(f"Respuesta inicial generada: {response.output_text[:100]}...")
 
         return {"id": response.id, "message": response.output_text}
     except Exception as e:
@@ -229,6 +231,8 @@ async def chat_message(request: MessageRequest):
             ],
             store=True,
         )
+        # Verificamos si el modelo está siguiendo las instrucciones
+        print(f"Respuesta generada: {response.output_text[:100]}...")
 
         print(f"Respuesta generada con ID: {response.id}")
 
