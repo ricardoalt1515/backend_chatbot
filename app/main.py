@@ -1,4 +1,5 @@
 import os
+import traceback
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -60,15 +61,37 @@ class ConversationResponse(BaseModel):
     message: str
 
 
+class AnalyticsEvent(BaseModel):
+    event: str
+    timestamp: str
+    url: str
+    properties: Optional[Dict[str, Any]] = {}
+
+
 # Endpoints
 @app.get("/")
 async def root():
     return {"message": "Hydrous AI Backend is running"}
 
 
+@app.post("/api/analytics/event")
+async def track_analytics_event(event: AnalyticsEvent):
+    """Endpoint para recibir eventos de analytics"""
+    # Por ahora, solo registramos el evento
+    print(f"Analytics event received: {event.event}")
+    return {"status": "success"}
+
+
 @app.post("/api/chat/start", response_model=ConversationResponse)
 async def start_chat():
     """Inicia una nueva conversación"""
+    # Verificar configuración
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=500,
+            detail="OPENAI_API_KEY no configurado en variables de entorno",
+        )
+
     if not VECTOR_STORE_ID:
         raise HTTPException(
             status_code=500,
@@ -76,42 +99,83 @@ async def start_chat():
         )
 
     try:
-        response = client.responses.create(
-            model="gpt-4o",
-            instructions=SYSTEM_INSTRUCTIONS,
-            input="Hola, me gustaría obtener una solución para el tratamiento de agua.",
-            tools=[{"type": "file_search"}],
-            tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
-            store=True,
-        )
+        print(f"Iniciando conversación con Vector Store ID: {VECTOR_STORE_ID}")
+
+        # Si no estamos usando el Vector Store (para pruebas iniciales)
+        if VECTOR_STORE_ID == "disabled":
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                instructions=SYSTEM_INSTRUCTIONS,
+                input="Hola, me gustaría obtener una solución para el tratamiento de agua.",
+                store=True,
+            )
+        else:
+            # Usando Vector Store
+            response = client.responses.create(
+                model="gpt-4o-mini",
+                instructions=SYSTEM_INSTRUCTIONS,
+                input="Hola, me gustaría obtener una solución para el tratamiento de agua.",
+                tools=[{"type": "file_search"}],
+                tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
+                store=True,
+            )
+
+        print(f"Conversación iniciada con ID: {response.id}")
 
         return {"id": response.id, "message": response.output_text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Registrar el error completo
+        error_detail = traceback.format_exc()
+        print(f"Error al iniciar conversación: {str(e)}\n{error_detail}")
+
+        raise HTTPException(
+            status_code=500, detail=f"Error al comunicarse con OpenAI: {str(e)}"
+        )
 
 
 @app.post("/api/chat/message", response_model=ConversationResponse)
 async def chat_message(request: MessageRequest):
     """Envía un mensaje a una conversación existente"""
-    if not VECTOR_STORE_ID:
+    # Verificar configuración
+    if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(
             status_code=500,
-            detail="VECTOR_STORE_ID no configurado en variables de entorno",
+            detail="OPENAI_API_KEY no configurado en variables de entorno",
         )
 
     try:
-        response = client.responses.create(
-            model="gpt-4o",
-            input=request.message,
-            previous_response_id=request.conversation_id,
-            tools=[{"type": "file_search"}],
-            tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
-            store=True,
-        )
+        print(f"Enviando mensaje a conversación {request.conversation_id}")
+
+        # Si no estamos usando el Vector Store (para pruebas iniciales)
+        if not VECTOR_STORE_ID or VECTOR_STORE_ID == "disabled":
+            response = client.responses.create(
+                model="gpt-4o",
+                input=request.message,
+                previous_response_id=request.conversation_id,
+                store=True,
+            )
+        else:
+            # Usando Vector Store
+            response = client.responses.create(
+                model="gpt-4o",
+                input=request.message,
+                previous_response_id=request.conversation_id,
+                tools=[{"type": "file_search"}],
+                tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
+                store=True,
+            )
+
+        print(f"Respuesta generada con ID: {response.id}")
 
         return {"id": response.id, "message": response.output_text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Registrar el error completo
+        error_detail = traceback.format_exc()
+        print(f"Error al enviar mensaje: {str(e)}\n{error_detail}")
+
+        raise HTTPException(
+            status_code=500, detail=f"Error al comunicarse con OpenAI: {str(e)}"
+        )
 
 
 @app.get("/api/chat/{conversation_id}")
@@ -141,21 +205,41 @@ async def upload_document(
         file_content = await file.read()
         file_size = len(file_content)
 
+        print(f"Archivo recibido: {file.filename}, tamaño: {file_size} bytes")
+
         # En una implementación real, aquí procesaríamos el archivo
         # Por ahora, solo respondemos con un mensaje genérico
 
-        response = client.responses.create(
-            model="gpt-4o",
-            input=f"El usuario ha subido un archivo llamado {file.filename} de {file_size} bytes. Mensaje: {message}",
-            previous_response_id=conversation_id,
-            tools=[{"type": "file_search"}],
-            tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
-            store=True,
-        )
+        # Si no estamos usando el Vector Store (para pruebas iniciales)
+        if not VECTOR_STORE_ID or VECTOR_STORE_ID == "disabled":
+            response = client.responses.create(
+                model="gpt-4o",
+                input=f"El usuario ha subido un archivo llamado {file.filename} de {file_size} bytes. Mensaje: {message}",
+                previous_response_id=conversation_id,
+                store=True,
+            )
+        else:
+            # Usando Vector Store
+            response = client.responses.create(
+                model="gpt-4o",
+                input=f"El usuario ha subido un archivo llamado {file.filename} de {file_size} bytes. Mensaje: {message}",
+                previous_response_id=conversation_id,
+                tools=[{"type": "file_search"}],
+                tool_resources={"file_search": {"vector_store_ids": [VECTOR_STORE_ID]}},
+                store=True,
+            )
+
+        print(f"Respuesta a la subida del archivo generada con ID: {response.id}")
 
         return {"success": True, "id": response.id, "message": response.output_text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Registrar el error completo
+        error_detail = traceback.format_exc()
+        print(f"Error al subir documento: {str(e)}\n{error_detail}")
+
+        raise HTTPException(
+            status_code=500, detail=f"Error al procesar archivo: {str(e)}"
+        )
 
 
 # Stubs básicos para endpoints de PDF (sin implementación real)
@@ -182,5 +266,4 @@ async def pdf_data_url_stub(conversation_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
