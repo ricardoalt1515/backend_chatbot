@@ -30,9 +30,7 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
 
     # ID del archivo de cuestionario
-    QUESTIONNAIRE_FILE_ID = os.getenv(
-        "QUESTIONNAIRE_FILE_ID", "file-FrniUtF5RLDgdsmnJ4t654"
-    )
+    QUESTIONNAIRE_FILE_ID: ClassVar[str] = "file-FrniUtF5RLDgdsmnJ4t654"
 
     # Configuración de archivos
     UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")

@@ -2,7 +2,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Optional
 import os
 import uuid
-from app.config import UPLOAD_DIR
+from app.config import settings  # Actualizar import
 from app.core.openai_service import process_document
 
 router = APIRouter()
@@ -21,7 +21,7 @@ async def upload_document(
         # Generar nombre único para el archivo
         file_extension = os.path.splitext(file.filename)[1]
         unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)  # Usar settings
 
         # Guardar archivo
         with open(file_path, "wb") as buffer:

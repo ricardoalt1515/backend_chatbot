@@ -2,9 +2,9 @@ from openai import OpenAI
 from typing import Dict, Optional, List, Any
 import json
 import os
-from app.config import OPENAI_API_KEY, OPENAI_MODEL, QUESTIONNAIRE_FILE_ID
+from app.config import settings
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 # Instrucciones del sistema para el asistente
 SYSTEM_INSTRUCTIONS = f"""
@@ -12,7 +12,7 @@ Soy el diseñador de soluciones de agua de Hydrous AI, su asistente experto para
 
 Para desarrollar la mejor solución para sus instalaciones, haré sistemáticamente preguntas específicas para recopilar los datos necesarios y crear una propuesta personalizada. Mi objetivo es ayudarlo a optimizar la gestión del agua, reducir costos y explorar nuevas fuentes de ingresos con soluciones respaldadas por Hydrous.
 
-El cuestionario completo está en el archivo adjunto ({QUESTIONNAIRE_FILE_ID}). Seguiré este cuestionario paso a paso, presentando una pregunta a la vez. Cada pregunta irá acompañada de una breve explicación de por qué es importante para desarrollar la mejor solución para usted.
+El cuestionario completo está en el archivo adjunto ({settings.QUESTIONNAIRE_FILE_ID}). Seguiré este cuestionario paso a paso, presentando una pregunta a la vez. Cada pregunta irá acompañada de una breve explicación de por qué es importante para desarrollar la mejor solución para usted.
 
 Mi comportamiento DEBE ser el siguiente:
 1. Haz solo UNA pregunta a la vez, siguiendo estrictamente el orden indicado en el cuestionario.
@@ -34,10 +34,10 @@ def start_conversation() -> Dict[str, Any]:
     try:
         # Adjuntar archivo de cuestionario
         response = client.responses.create(
-            model=OPENAI_MODEL,
+            model=settings.OPENAI_MODEL,
             instructions=SYSTEM_INSTRUCTIONS,
             input="Hola, estoy interesado en soluciones de tratamiento de agua",
-            file_ids=[QUESTIONNAIRE_FILE_ID],
+            file_ids=[settings.QUESTIONNAIRE_FILE_ID],
             store=True,  # Almacenar la conversación en el servidor de OpenAI
         )
 
@@ -54,7 +54,7 @@ def send_message(conversation_id: str, message: str) -> Dict[str, Any]:
     """
     try:
         response = client.responses.create(
-            model=OPENAI_MODEL,
+            model=settings.OPENAI_MODEL,
             input=message,
             previous_response_id=conversation_id,
             store=True,
