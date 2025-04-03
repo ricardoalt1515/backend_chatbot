@@ -306,7 +306,7 @@ async def start_chat():
     try:
         print(f"Iniciando conversación con Vector Store ID: {VECTOR_STORE_ID}")
         response = client.responses.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             instructions=SYSTEM_INSTRUCTIONS,
             input="Hola, me gustaría obtener una solución para el tratamiento de agua.",
             tools=[{"type": "file_search", "vector_store_ids": [VECTOR_STORE_ID]}],
@@ -330,7 +330,7 @@ async def chat_message(request: MessageRequest):
 
     try:
         response = client.responses.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             input=request.message,
             previous_response_id=request.conversation_id,
             tools=[{"type": "file_search", "vector_store_ids": [VECTOR_STORE_ID]}],
@@ -374,7 +374,7 @@ async def upload_document(
         # Por ahora, solo respondemos con un mensaje genérico
 
         response = client.responses.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             input=f"El usuario ha subido un archivo llamado {file.filename} de {file_size} bytes. Mensaje: {message}",
             previous_response_id=conversation_id,
             tools=[{"type": "file_search", "vector_store_ids": [VECTOR_STORE_ID]}],
