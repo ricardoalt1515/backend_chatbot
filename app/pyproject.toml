@@ -8,8 +8,6 @@ dependencies = [
     "fastapi==0.109.2",
     "groq==0.4.1",
     "httpx==0.26.0",
-    "ipykernel>=6.29.5",
-    "openai>=1.70.0",
     "pydantic-settings>=2.8.1",
     "python-multipart>=0.0.20",
     "uvicorn>=0.34.0",

@@ -1,7 +1,6 @@
-# app/config.py
 from pydantic_settings import BaseSettings
 import os
-from typing import List, Optional
+from typing import List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -25,16 +24,28 @@ class Settings(BaseSettings):
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
-    # Configuración IA - OpenAI Responses API
+    # Configuración IA - Añadimos compatibilidad con los nombres antiguos y nuevos
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    API_KEY: str = os.getenv(
+        "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", "")
+    )  # Para compatibilidad
 
-    # ID del archivo de cuestionario
-    QUESTIONNAIRE_FILE_ID: ClassVar[str] = "file-FrniUtF5RLDgdsmnJ4t654"
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
+    MODEL: str = os.getenv(
+        "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o-mini"))
+    )
 
-    # Configuración de archivos
-    UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    # Determinar URL de API basado en lo que esté disponible
+    API_PROVIDER: str = os.getenv("AI_PROVIDER", "openai")  # "openai" o "groq"
+
+    @property
+    def API_URL(self):
+        if self.API_PROVIDER == "groq":
+            return "https://api.groq.com/openai/v1/chat/completions"
+        else:
+            return "https://api.openai.com/v1/chat/completions"
 
     # Almacenamiento
     CONVERSATION_TIMEOUT: int = 60 * 60 * 24  # 24 horas

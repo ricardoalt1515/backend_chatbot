@@ -1,307 +1,431 @@
-# app/services/pdf_service.py
+# app/services/pdf_service.py (actualizado)
 import os
 import logging
-from typing import Dict, Any, Optional
-import json
+from typing import Optional, Dict, Any
 from datetime import datetime
+import re
 
+from app.models.conversation import Conversation
 from app.config import settings
 
 logger = logging.getLogger("hydrous")
 
 
 class PDFService:
-    """Servicio para generar PDFs a partir de propuestas"""
+    """Servicio mejorado para generar PDFs de propuestas"""
 
-    async def generate_proposal_pdf(
-        self, proposal_data: Dict[str, Any], response_id: str
-    ) -> Optional[str]:
-        """
-        Genera un PDF a partir de datos de propuesta estructurada
+    def __init__(self):
+        """Inicialización del servicio"""
+        # Crear directorio para PDFs
+        self.pdf_dir = os.path.join(settings.UPLOAD_DIR, "pdf")
+        os.makedirs(self.pdf_dir, exist_ok=True)
 
-        Args:
-            proposal_data: Datos estructurados de la propuesta
-            response_id: ID de la respuesta asociada
+        # Crear directorio para recursos (imágenes, CSS, etc.)
+        self.resources_dir = os.path.join(settings.UPLOAD_DIR, "resources")
+        os.makedirs(self.resources_dir, exist_ok=True)
 
-        Returns:
-            str: Ruta al archivo PDF generado o None si falla
-        """
+        # Copiar logo si no existe
+        self._setup_resources()
+
+    def _setup_resources(self):
+        """Configura recursos necesarios para PDFs"""
+        # Aquí se podrían copiar logos, CSS, etc. desde una carpeta de assets
+        # Por ahora simulamos esto con un placeholder
+        logo_path = os.path.join(self.resources_dir, "hydrous_logo.png")
+        if not os.path.exists(logo_path):
+            # En un caso real, copiaríamos el logo desde una ubicación estática
+            # Por ahora solo registramos el evento
+            logger.info("Se necesita configurar el logo para los PDFs")
+
+    async def generate_pdf(self, conversation: Conversation) -> Optional[str]:
+        """Genera un PDF a partir de una propuesta en la conversación"""
         try:
-            # Extraer información básica para el nombre del archivo
-            client_info = proposal_data.get("client_info", {})
+            # Verificar si ya tenemos un HTML generado
+            html_path = conversation.metadata.get("proposal_html_path")
+            if not html_path or not os.path.exists(html_path):
+                # Si no hay HTML generado, usar el enfoque anterior
+                return await self._generate_pdf_legacy(conversation)
+
+            # Generar PDF a partir del HTML
+            client_info = self._extract_client_info(conversation)
             client_name = client_info.get("name", "Cliente").replace(" ", "_")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            # Generar HTML primero
-            html_content = self._generate_proposal_html(proposal_data)
-
-            # Guardar HTML
-            html_path = os.path.join(
-                settings.UPLOAD_DIR, f"proposal_{response_id}.html"
+            pdf_path = os.path.join(
+                self.pdf_dir, f"Propuesta_Hydrous_{client_name}_{timestamp}.pdf"
             )
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(html_content)
 
-            # Intentar generar PDF - Aquí necesitamos una implementación específica
-            # Podrías usar weasyprint, pdfkit, reportlab, etc.
-            # Por ahora, vamos a hacer un stub simple
-
-            # NOTA: Esta parte depende de la biblioteca específica que quieras usar
-            pdf_path = os.path.join(settings.UPLOAD_DIR, f"proposal_{response_id}.pdf")
-
+            # Intentar con WeasyPrint
             try:
-                # Intentar con WeasyPrint si está disponible
                 from weasyprint import HTML
 
-                HTML(string=html_content).write_pdf(pdf_path)
+                HTML(filename=html_path).write_pdf(pdf_path)
+                logger.info(f"PDF generado con WeasyPrint: {pdf_path}")
+
+                # Almacenar ruta del PDF en los metadatos
+                conversation.metadata["pdf_path"] = pdf_path
+                conversation.metadata["pdf_generated_at"] = datetime.now().isoformat()
+
+                return pdf_path
+            except Exception as e:
+                logger.error(f"Error al generar PDF con WeasyPrint: {str(e)}")
+
+                # Intentar con pdfkit u otras opciones...
+
+            return html_path  # Devolver HTML como alternativa si falla la generación del PDF
+
+        except Exception as e:
+            logger.error(f"Error en generate_pdf: {str(e)}")
+            return None
+
+    def _extract_client_info(self, conversation: Conversation) -> Dict[str, Any]:
+        """Extrae información del cliente de la conversación"""
+        client_info = {
+            "name": "Cliente",
+            "location": "No especificada",
+            "sector": "No especificado",
+            "contact": "",
+        }
+
+        # Intentar extraer desde el estado del cuestionario
+        if hasattr(conversation, "questionnaire_state"):
+            key_entities = getattr(conversation.questionnaire_state, "key_entities", {})
+            answers = getattr(conversation.questionnaire_state, "answers", {})
+
+            if key_entities.get("company_name"):
+                client_info["name"] = key_entities["company_name"]
+            if key_entities.get("location"):
+                client_info["location"] = key_entities["location"]
+            if getattr(conversation.questionnaire_state, "sector", None):
+                client_info["sector"] = conversation.questionnaire_state.sector
+
+        # Analizar los mensajes en busca de información si no la tenemos aún
+        if (
+            client_info["name"] == "Cliente"
+            or client_info["location"] == "No especificada"
+        ):
+            for msg in conversation.messages:
+                if msg.role == "user":
+                    # Buscar nombre de empresa
+                    if client_info["name"] == "Cliente":
+                        company_match = re.search(
+                            r"(?:empresa|compañía|proyecto)[\s:]+([a-zA-Z0-9\s]+)",
+                            msg.content,
+                            re.IGNORECASE,
+                        )
+                        if company_match:
+                            client_info["name"] = company_match.group(1).strip()
+
+                    # Buscar ubicación
+                    if client_info["location"] == "No especificada":
+                        location_match = re.search(
+                            r"(?:ubicación|ubicacion|localización|ciudad)[\s:]+([a-zA-Z0-9\s,]+)",
+                            msg.content,
+                            re.IGNORECASE,
+                        )
+                        if location_match:
+                            client_info["location"] = location_match.group(1).strip()
+
+        return client_info
+
+    def _extract_proposal_text(self, conversation: Conversation) -> Optional[str]:
+        """Extrae el texto de la propuesta de una conversación"""
+        # Buscar un mensaje del asistente que contenga la propuesta
+        for msg in reversed(conversation.messages):
+            if msg.role == "assistant" and "Propuesta" in msg.content:
+                # Verificar si la propuesta parece completa (tiene secciones clave)
+                if all(
+                    section in msg.content
+                    for section in ["Introducción", "Objetivo", "CAPEX", "ROI"]
+                ):
+                    return msg.content
+                # Si encontramos una propuesta parcial, seguir buscando una más completa
+
+        # Si no encontramos una propuesta completa, buscar una parcial
+        for msg in reversed(conversation.messages):
+            if msg.role == "assistant" and "Propuesta" in msg.content:
+                return msg.content
+
+        return None
+
+    def _markdown_to_html_enhanced(
+        self, markdown_text: str, client_info: Dict[str, Any], proposal_id: str
+    ) -> str:
+        """Convierte texto markdown a HTML con diseño profesional mejorado"""
+        try:
+            # Intentar usar markdown2 si está disponible
+            try:
+                import markdown2
+
+                html_body = markdown2.markdown(
+                    markdown_text, extras=["tables", "fenced-code-blocks"]
+                )
+            except ImportError:
+                # Conversión básica si markdown2 no está disponible
+                html_body = self._basic_markdown_to_html(markdown_text)
+
+            # Plantilla HTML completa con estilos profesionales
+            html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Propuesta Hydrous - {client_info["name"]}</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+                    
+                    body {{ 
+                        font-family: 'Roboto', Arial, sans-serif; 
+                        line-height: 1.6; 
+                        color: #333; 
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f9fafb;
+                    }}
+                    
+                    .container {{
+                        max-width: 800px;
+                        margin: 0 auto;
+                        padding: 20px 40px;
+                        background-color: white;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }}
+                    
+                    .header {{ 
+                        position: relative;
+                        background-color: #1a5276; 
+                        color: white; 
+                        padding: 30px 40px; 
+                        margin: 0 0 30px 0;
+                    }}
+                    
+                    .header .logo {{
+                        height: 60px;
+                        margin-bottom: 10px;
+                    }}
+                    
+                    .header h1 {{
+                        margin: 5px 0;
+                        font-size: 28px;
+                        font-weight: 500;
+                    }}
+                    
+                    .header p {{
+                        margin: 5px 0;
+                        font-size: 16px;
+                        opacity: 0.9;
+                    }}
+                    
+                    .proposal-id {{
+                        position: absolute;
+                        top: 20px;
+                        right: 40px;
+                        font-size: 14px;
+                        opacity: 0.9;
+                    }}
+                    
+                    .client-info {{
+                        margin-bottom: 30px;
+                        padding: 20px;
+                        background-color: #f1f8ff;
+                        border-left: 4px solid #1a5276;
+                    }}
+                    
+                    .client-info p {{
+                        margin: 5px 0;
+                    }}
+                    
+                    h1, h2, h3, h4 {{ 
+                        color: #1a5276;
+                        margin-top: 30px;
+                    }}
+                    
+                    h1 {{ font-size: 24px; }}
+                    h2 {{ font-size: 20px; }}
+                    h3 {{ font-size: 18px; }}
+                    
+                    table {{ 
+                        width: 100%;
+                        border-collapse: collapse; 
+                        margin: 20px 0;
+                    }}
+                    
+                    th, td {{ 
+                        padding: 12px 15px;
+                        border: 1px solid #ddd;
+                    }}
+                    
+                    th {{
+                        background-color: #1a5276;
+                        color: white;
+                        font-weight: 500;
+                    }}
+                    
+                    tr:nth-child(even) {{
+                        background-color: #f9f9f9;
+                    }}
+                    
+                    .highlight {{
+                        background-color: #ebf5ff;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin: 20px 0;
+                    }}
+                    
+                    .footer {{ 
+                        text-align: center;
+                        margin-top: 40px;
+                        padding-top: 20px;
+                        border-top: 1px solid #ddd;
+                        color: #777;
+                        font-size: 14px;
+                    }}
+                    
+                    .watermark {{
+                        position: fixed;
+                        bottom: 5cm;
+                        right: 5cm;
+                        opacity: 0.03;
+                        transform: rotate(-45deg);
+                        font-size: 120px;
+                        color: #1a5276;
+                        z-index: -1;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <div class="proposal-id">{proposal_id}</div>
+                        <!-- <img src="hydrous_logo.png" alt="Hydrous Logo" class="logo"> -->
+                        <h1>HYDROUS MANAGEMENT GROUP</h1>
+                        <p>Soluciones de Tratamiento de Agua</p>
+                    </div>
+                    
+                    <div class="client-info">
+                        <p><strong>Cliente:</strong> {client_info["name"]}</p>
+                        <p><strong>Ubicación:</strong> {client_info["location"]}</p>
+                        <p><strong>Sector:</strong> {client_info["sector"]}</p>
+                        <p><strong>Fecha:</strong> {datetime.now().strftime('%d/%m/%Y')}</p>
+                    </div>
+                    
+                    {html_body}
+                    
+                    <div class="footer">
+                        <p>© {datetime.now().year} Hydrous Management Group. Todos los derechos reservados.</p>
+                        <p>Esta propuesta es confidencial y está destinada únicamente para el uso del destinatario.</p>
+                        <p>Los costos y especificaciones finales pueden variar tras un estudio detallado.</p>
+                    </div>
+                </div>
+                
+                <div class="watermark">HYDROUS</div>
+            </body>
+            </html>
+            """
+
+            return html
+
+        except Exception as e:
+            logger.error(f"Error al convertir Markdown a HTML: {str(e)}")
+            return f"<pre>{markdown_text}</pre>"
+
+    def _basic_markdown_to_html(self, markdown_text: str) -> str:
+        """Conversión básica de Markdown a HTML sin dependencias externas"""
+        html = markdown_text
+
+        # Encabezados
+        html = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
+        html = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
+        html = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
+
+        # Negrita y cursiva
+        html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
+        html = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html)
+
+        # Listas
+        html = re.sub(r"^- (.*?)$", r"<li>\1</li>", html, flags=re.MULTILINE)
+        # Agrupar elementos li en ul
+        li_pattern = r"(<li>.*?</li>)+"
+        html = re.sub(li_pattern, r"<ul>\g<0></ul>", html)
+
+        # Tablas simples - esto es una aproximación básica
+        table_pattern = r"^\|(.*?)\|[\r\n]?\|[-:| ]+\|[\r\n]((?:\|.*?\|[\r\n]?)+)"
+
+        def replace_table(match):
+            header = match.group(1)
+            rows = match.group(2).strip().split("\n")
+
+            header_cells = [cell.strip() for cell in header.split("|") if cell.strip()]
+            header_html = (
+                "<tr>"
+                + "".join([f"<th>{cell}</th>" for cell in header_cells])
+                + "</tr>"
+            )
+
+            rows_html = ""
+            for row in rows:
+                cells = [cell.strip() for cell in row.split("|") if cell.strip()]
+                rows_html += (
+                    "<tr>" + "".join([f"<td>{cell}</td>" for cell in cells]) + "</tr>"
+                )
+
+            return f"<table>{header_html}{rows_html}</table>"
+
+        html = re.sub(
+            table_pattern, replace_table, html, flags=re.MULTILINE | re.DOTALL
+        )
+
+        # Párrafos
+        paragraphs = html.split("\n\n")
+        for i, paragraph in enumerate(paragraphs):
+            if not paragraph.startswith("<") and paragraph.strip():
+                paragraphs[i] = f"<p>{paragraph}</p>"
+
+        html = "\n\n".join(paragraphs)
+
+        return html
+
+    def _generate_pdf_from_html(
+        self, html_path: str, client_name: str, timestamp: str
+    ) -> Optional[str]:
+        """Genera un archivo PDF a partir del HTML usando la biblioteca disponible"""
+        pdf_path = os.path.join(
+            self.pdf_dir, f"Propuesta_Hydrous_{client_name}_{timestamp}.pdf"
+        )
+
+        try:
+            # Intentar con WeasyPrint
+            try:
+                from weasyprint import HTML
+
+                HTML(filename=html_path).write_pdf(pdf_path)
                 logger.info(f"PDF generado con WeasyPrint: {pdf_path}")
                 return pdf_path
             except ImportError:
-                try:
-                    # Intentar con pdfkit si está disponible
-                    import pdfkit
+                logger.warning(
+                    "WeasyPrint no está disponible, intentando con pdfkit..."
+                )
 
-                    pdfkit.from_string(html_content, pdf_path)
-                    logger.info(f"PDF generado con pdfkit: {pdf_path}")
-                    return pdf_path
-                except ImportError:
-                    # Si no hay generadores de PDF disponibles, devolver la ruta del HTML
-                    logger.warning(
-                        "No hay generadores de PDF disponibles, devolviendo HTML"
-                    )
-                    return html_path
+            # Intentar con pdfkit
+            try:
+                import pdfkit
 
-        except Exception as e:
-            logger.error(f"Error al generar PDF: {e}")
+                pdfkit.from_file(html_path, pdf_path)
+                logger.info(f"PDF generado con pdfkit: {pdf_path}")
+                return pdf_path
+            except ImportError:
+                logger.warning(
+                    "pdfkit no está disponible, intentando con otros métodos..."
+                )
+
+            # Aquí se podrían añadir más métodos alternativos
+
+            logger.warning("No se pudo generar PDF. Se usará HTML como alternativa.")
             return None
 
-    def _generate_proposal_html(self, proposal_data: Dict[str, Any]) -> str:
-        """
-        Genera HTML formateado a partir de datos de propuesta
-
-        Args:
-            proposal_data: Datos estructurados de la propuesta
-
-        Returns:
-            str: Contenido HTML
-        """
-        # Extraer datos de la propuesta
-        client_info = proposal_data.get("client_info", {})
-        project_background = proposal_data.get("project_background", "")
-        project_objective = proposal_data.get("project_objective", "")
-        key_parameters = proposal_data.get("key_parameters", {})
-        treatment_process = proposal_data.get("treatment_process", [])
-        financial_analysis = proposal_data.get("financial_analysis", {})
-        next_steps = proposal_data.get("next_steps", [])
-
-        # Construir el HTML
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Propuesta Hydrous - {client_info.get('name', 'Cliente')}</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
-                
-                body {{ 
-                    font-family: 'Roboto', Arial, sans-serif; 
-                    line-height: 1.6; 
-                    color: #333; 
-                    margin: 0;
-                    padding: 0;
-                    background-color: #f9fafb;
-                }}
-                
-                .container {{
-                    max-width: 800px;
-                    margin: 20px auto;
-                    padding: 20px;
-                    background-color: white;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                    border-radius: 8px;
-                }}
-                
-                h1 {{ color: #1a5276; font-size: 24px; margin-top: 20px; }}
-                h2 {{ color: #2874a6; font-size: 20px; margin-top: 15px; }}
-                
-                .header {{ 
-                    background-color: #2c3e50; 
-                    color: white; 
-                    padding: 20px; 
-                    text-align: center; 
-                    margin-bottom: 20px;
-                    border-radius: 8px 8px 0 0;
-                }}
-                
-                .logo-text {{
-                    font-size: 28px;
-                    font-weight: bold;
-                    color: white;
-                    margin-bottom: 5px;
-                }}
-                
-                table {{ 
-                    border-collapse: collapse; 
-                    width: 100%; 
-                    margin: 15px 0; 
-                }}
-                
-                th, td {{ 
-                    border: 1px solid #ddd; 
-                    padding: 8px; 
-                    text-align: left; 
-                }}
-                
-                th {{ background-color: #f2f2f2; }}
-                
-                .footer {{ 
-                    text-align: center; 
-                    margin-top: 30px; 
-                    font-size: 0.9em; 
-                    color: #777;
-                }}
-                
-                .disclaimer {{
-                    background-color: #f8f9fa;
-                    border-left: 4px solid #4682B4;
-                    padding: 15px;
-                    margin: 20px 0;
-                    font-size: 0.9em;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <div class="logo-text">HYDROUS</div>
-                    <div>Soluciones de Tratamiento de Agua</div>
-                </div>
-                
-                <div class="disclaimer">
-                    <strong>Aviso importante:</strong> Esta propuesta fue generada usando IA basada en la información 
-                    proporcionada y estándares de la industria. Todas las estimaciones y recomendaciones deben ser 
-                    validadas por Hydrous Management Group antes de su implementación.
-                </div>
-                
-                <h1>Propuesta de Tratamiento de Agua para {client_info.get('name', 'Cliente')}</h1>
-                
-                <h2>1. Información del Cliente</h2>
-                <table>
-                    <tr>
-                        <th>Cliente</th>
-                        <td>{client_info.get('name', 'N/A')}</td>
-                    </tr>
-                    <tr>
-                        <th>Ubicación</th>
-                        <td>{client_info.get('location', 'N/A')}</td>
-                    </tr>
-                    <tr>
-                        <th>Sector</th>
-                        <td>{client_info.get('sector', 'N/A')}</td>
-                    </tr>
-                    <tr>
-                        <th>Subsector</th>
-                        <td>{client_info.get('subsector', 'N/A')}</td>
-                    </tr>
-                </table>
-                
-                <h2>2. Antecedentes del Proyecto</h2>
-                <p>{project_background}</p>
-                
-                <h2>3. Objetivo del Proyecto</h2>
-                <p>{project_objective}</p>
-                
-                <h2>4. Parámetros Clave</h2>
-                <table>
-                    <tr>
-                        <th>Consumo de Agua</th>
-                        <td>{key_parameters.get('water_consumption', 'N/A')}</td>
-                    </tr>
-                    <tr>
-                        <th>Generación de Aguas Residuales</th>
-                        <td>{key_parameters.get('wastewater_generation', 'N/A')}</td>
-                    </tr>
-                </table>
-                
-                <h3>Contaminantes Clave</h3>
-                <ul>
-        """
-
-        # Añadir contaminantes
-        for contaminant in key_parameters.get("key_contaminants", []):
-            html += f"<li>{contaminant}</li>"
-
-        html += """
-                </ul>
-                
-                <h2>5. Proceso de Tratamiento Recomendado</h2>
-                <table>
-                    <tr>
-                        <th>Etapa</th>
-                        <th>Tecnología</th>
-                        <th>Propósito</th>
-                    </tr>
-        """
-
-        # Añadir etapas de tratamiento
-        for stage in treatment_process:
-            html += f"""
-                    <tr>
-                        <td>{stage.get('stage', 'N/A')}</td>
-                        <td>{stage.get('technology', 'N/A')}</td>
-                        <td>{stage.get('purpose', 'N/A')}</td>
-                    </tr>
-            """
-
-        html += """
-                </table>
-                
-                <h2>6. Análisis Financiero</h2>
-                <table>
-                    <tr>
-                        <th>CAPEX Estimado</th>
-                        <td>{}</td>
-                    </tr>
-                    <tr>
-                        <th>OPEX Estimado</th>
-                        <td>{}</td>
-                    </tr>
-                    <tr>
-                        <th>ROI Estimado</th>
-                        <td>{}</td>
-                    </tr>
-                </table>
-        """.format(
-            financial_analysis.get("estimated_capex", "N/A"),
-            financial_analysis.get("estimated_opex", "N/A"),
-            financial_analysis.get("roi_estimate", "N/A"),
-        )
-
-        html += """
-                <h2>7. Próximos Pasos</h2>
-                <ol>
-        """
-
-        # Añadir próximos pasos
-        for step in next_steps:
-            html += f"<li>{step}</li>"
-
-        html += """
-                </ol>
-                
-                <div class="footer">
-                    <p>Hydrous Management Group © {}</p>
-                    <p>Propuesta generada el {}</p>
-                    <p>Documento confidencial para uso exclusivo del cliente</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """.format(
-            datetime.now().year, datetime.now().strftime("%d/%m/%Y")
-        )
-
-        return html
+        except Exception as e:
+            logger.error(f"Error al generar PDF: {str(e)}")
+            return None
 
 
 # Instancia global
