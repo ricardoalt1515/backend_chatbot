@@ -5,12 +5,8 @@ import logging
 import os
 from typing import Any
 
-from app.models.conversation import (
-    ConversationResponse,
-    Conversation,
-    Message,
-    MessageCreate,
-)
+from app.models.conversation import ConversationResponse, Conversation
+from app.models.message import Message, MessageCreate
 from app.models.conversation_state import ConversationState
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service  # Usará nuevos métodos
