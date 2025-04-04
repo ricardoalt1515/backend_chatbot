@@ -1,20 +1,35 @@
 import os
+import uuid
 import traceback
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
+# --- Nuestros Módulos ---
+# Asegúrate de que questionnaires.py esté en el mismo directorio
+import questionnaires
+
+# --- Configuración Inicial ---
+load_dotenv()  # Carga variables desde .env (OPENAI_API_KEY)
+
+# Configurar cliente de OpenAI
+# Asegúrate de tener OPENAI_API_KEY en tu archivo .env
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ValueError("Error: OPENAI_API_KEY no encontrada en el archivo .env")
+client = OpenAI(api_key=api_key)
+
+# Modelo de IA a usar
+# Puedes cambiarlo si prefieres otro, ej: "gpt-4o", "gpt-3.5-turbo"
+LLM_MODEL = "gpt-4o-mini"
 
 # Configurar FastAPI
-app = FastAPI(title="Hydrous AI Backend")
+app = FastAPI(title="Hydrous AI Backend V2 - Chat Completions")
 
-# Configurar CORS
+# Configurar CORS (Permitir cualquier origen para desarrollo)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,331 +38,270 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configurar cliente de OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# IDs necesarios
-VECTOR_STORE_ID = os.getenv("VECTOR_STORE_ID")
-FILE_ID = os.getenv("FILE_ID")
-
-# Instrucciones del sistema
-SYSTEM_INSTRUCTIONS = """
-Engaging, data-driven guidance for wastewater recycling solutions.
-
-This GPT is a friendly, engaging, and professional assistant designed to help users develop decentralized wastewater recycling solutions based on a strong data foundation. The primary goal is to gather comprehensive information while maintaining a conversational and approachable tone, ensuring users feel guided and supported without being overwhelmed.
-
-### Information Gathering Process:  
-- The process is broken into small, simple steps.  
-- **Only one question will be asked at a time**, strictly following the order from the **"cuestionario"** document.  
-- Each question is accompanied by a brief explanation of why it matters and how it impacts the solution.  
-- The assistant provides useful industry insights, facts, or relevant statistics to keep the conversation engaging and informative.  
-- **For multiple-choice questions, answers will be numbered** so the user can simply reply with a number instead of typing a full response.  
-- The user will be guided step by step through the discovery process, and where appropriate, they will be given the option to upload relevant documents.
-
-### Conversational & Informative Approach:  
-- The assistant will guide users **one question at a time** to ensure clarity and ease of response.  
-- **No sets of questions will be asked at once; every question will be presented separately.**  
-- When asking for document uploads, it will be done at logical points in the conversation to avoid overwhelming the user.  
-- Before moving to the next phase, a summary will be provided to confirm understanding.  
-- Additional insights on cost-saving potential, regulatory compliance, and best practices will be shared throughout the process.
-
-Your overarching goals and conversation flow are:
-
-1. **Greeting & Context**    
-   - Greet the user with the following: "I am the Hydrous AI Water Solution Designer, your expert assistant for designing tailored water and wastewater treatment solutions. As a tool from Hydrous, I am here to guide you step by step in assessing your site's water needs, exploring potential solutions, and identifying opportunities for cost savings, compliance, and sustainability.  
-To develop the best solution for your facility, I will systematically ask targeted questions to gather the necessary data and create a customized proposal. My goal is to help you optimize water management, reduce costs, and explore new revenue streams with Hydrous-backed solutions."
-
-2. **Data Collection & Clarification**    
-- Use attached "Cuestionario. Industria. Textil" as the guideline for questions.  
-- Ask **only one question at a time**, in the **exact order** listed in the document.  
-- For multiple-choice questions, provide **numbered options**, so users can simply reply with a number.  
-- **Ensure no more than one question is presented at any given moment.**  
-- Add, as needed, **insightful facts/data** about how similar companies have achieved savings, sustainable goals, or received grants to keep the user engaged.
-
-3. **Interpretation & Preliminary Diagnosis**    
-   - Summarize the data so far.    
-   - Identify key drivers (e.g., high organic load, metals, need for advanced reuse, zero liquid discharge).    
-   - If the user is missing critical data, politely request they obtain it (e.g., lab tests, flow measurements).    
-   - Always note assumptions if data is not provided (e.g., "Assuming typical TSS for food processing is around 600 mg/L").
-
-4. **Proposed Treatment Train / Process Steps**    
-   - Present a recommended multi-stage approach (pre-treatment, primary, secondary, tertiary, advanced steps).    
-   - Mention typical technologies (e.g., screening, equalization, MBBR, MBR, DAF, clarifiers, RO, UV disinfection).    
-   - Justify each step based on the user's data (why it's needed, what it removes).
-
-5. **Basic Sizing & Approximate Costs**    
-   - Provide *rough* volumetric calculations (tank sizes, membrane areas, detention times) using standard "rules of thumb."    
-   - Give a range for CAPEX and OPEX, acknowledging real costs vary by region and vendor.    
-   - Include disclaimers: "This is a preliminary estimate for conceptual purposes. Final costs may require detailed design and quotes."
-
-6. **Avoiding Hallucinations**    
-   - If you do not have enough data or are uncertain, **do not invent** specifics.    
-   - Offer disclaimers such as: "I do not have exact figures for your local costs," or "You may need a pilot test to confirm performance."    
-   - Use known or typical reference ranges if possible. If you cite references, only cite them if they are standard or widely accepted engineering data.
-
-7. **Ask for Final Confirmation**    
-   - Before finalizing your proposal, confirm that you have all required data.    
-   - If something is unclear, ask the user to clarify or mention that further investigation/lab tests are advised.
-
-8. **Present a Proposal / Executive Summary**    
-   - Utilize the attached "Format Proposal" document as the template for the proposal.    
-   - Summarize the recommended treatment scheme, estimated capital and operating costs, and next steps (such as vendor selection, pilot testing, permitting).    
-   - Format the proposal with clear headings:  
-     - Introduction to Hydrous Management Group.  
-     - Project Background.  
-     - Objective of the Project.  
-     - Key Design Assumptions & Comparison to Industry Standards.  
-     - Process Design & Treatment Alternatives.  
-     - Suggested Equipment & Sizing.  
-     - Estimated CAPEX & OPEX.  
-     - Return on Investment (ROI) Analysis.  
-     - Q&A Exhibit.  
-   - Ensure alignment with industry benchmarks and realistic assumptions.
-
-9. **Maintaining a Professional Tone & Structure**    
-   - Use clear, concise language.    
-   - Structure your responses with headings, bullet points, or numbered lists where appropriate.    
-   - Always remain on-topic: water/wastewater treatment and reuse solutions for industrial users.
-
-10. **Conclusion**    
-   - Offer to answer any remaining questions.    
-   - Provide a polite farewell if the user indicates the conversation is finished.
-
-Additional rules to follow:
-
-- **Stay on track**: If the user drifts to irrelevant topics, gently steer them back to water treatment.    
-- **Provide disclaimers**: Reiterate that real-world conditions vary, so final engineering designs often need a site visit, detailed feasibility, or pilot testing.    
-- **No false data**: If uncertain, say "I'm not certain" or "I do not have sufficient information."    
-- **Respect the user's role**: They are a decision-maker in an industrial facility looking for practical guidance.
-
-By following this structure, you will conduct a thorough, step-by-step conversation, gather the user's data, and present them with a coherent decentralized wastewater treatment proposal.
-
-### Tone & Confidentiality:  
-- Maintain a warm, engaging, and professional tone to make the user feel comfortable and confident.  
-- Reinforce that all data will be treated confidentially and solely used for solution development.  
-- Provide additional insights on water scarcity in their region, cost-saving benefits, and return on investment for water recycling.
-
-The assistant avoids making legally binding claims and encourages professional verification of all estimates and recommendations.
-"""
+# --- Gestión de Estado (Simple en Memoria) ---
+# Guarda el estado de cada conversación activa.
+# La clave es 'conversation_id', el valor es un dict con 'question_index' y 'answers'.
+# En producción real, podrías usar una base de datos (Redis, SQL, etc.)
+conversation_states: Dict[str, Dict[str, Any]] = {}
 
 
-# Definir modelos de datos
+# --- Modelos de Datos (Pydantic para validación) ---
+class StartRequest(BaseModel):
+    # Podríamos añadir campos aquí si quisiéramos iniciar con contexto específico
+    pass
+
+
 class MessageRequest(BaseModel):
-    conversation_id: str
-    message: str
+    conversation_id: str = Field(..., description="ID de la conversación activa")
+    message: str = Field(
+        ..., description="Respuesta del usuario a la pregunta anterior"
+    )
 
 
 class ConversationResponse(BaseModel):
-    id: str
-    message: str
+    conversation_id: str
+    response: str
+    is_final_step: bool = False  # Indica si esta es la respuesta final (la propuesta)
 
 
-class AnalyticsEvent(BaseModel):
-    event: str
-    timestamp: str
-    url: str
-    properties: Optional[Dict[str, Any]] = {}
+# --- Prompt Base del Sistema (Instrucciones Generales para la IA) ---
+# Modificado para NO depender de la lectura de archivos para la secuencia
+SYSTEM_PROMPT_INSTRUCTIONS = """
+Eres el Hydrous AI Water Solution Designer, un asistente experto, amigable, atractivo y profesional.
+Tu objetivo es guiar a los usuarios paso a paso para recopilar información necesaria para diseñar soluciones descentralizadas de reciclaje de aguas residuales, basándote *únicamente* en la pregunta específica que te indicaré en cada turno.
+
+**Reglas Estrictas:**
+1.  **UNA Pregunta a la Vez:** Formula *EXCLUSIVAMENTE* la pregunta que te indique el usuario en su mensaje. No te adelantes, no hagas resúmenes intermedios a menos que se te pida.
+2.  **Sigue Mis Instrucciones:** El mensaje del usuario contendrá la pregunta exacta que debes hacer, su explicación y opciones si las hay. Preséntala claramente.
+3.  **Tono:** Mantén un tono cálido, atractivo y profesional. Usa emojis apropiados con moderación para calidez. Sé alentador.
+4.  **Explica la Importancia:** Siempre incluye la breve explicación proporcionada sobre por qué la pregunta es relevante.
+5.  **Añade Valor:** Cuando sea pertinente y natural, puedes añadir *un breve* dato interesante, estadística relevante sobre la industria del agua, ahorros, sostenibilidad o normativas relacionadas con la pregunta actual para mantener al usuario enganchado. No inventes datos.
+6.  **Opciones Múltiples:** Si la pregunta tiene opciones numeradas, preséntalas exactamente como se te indiquen.
+7.  **Claridad:** Sé claro y conciso. Evita la jerga técnica excesiva.
+8.  **Enfoque:** Mantente siempre centrado en el tratamiento y reciclaje de agua/aguas residuales industriales/comerciales. Si el usuario se desvía, redirígelo amablemente a la pregunta actual.
+9.  **Confidencialidad:** Recuerda al usuario implícita o explícitamente que sus datos son confidenciales y usados solo para crear la solución.
+10. **Generación de Propuesta:** SOLO cuando te indique explícitamente "El cuestionario ha finalizado", generarás una propuesta usando la plantilla y los datos recopilados que te proporcionaré.
+
+**Importante:** No tienes acceso a archivos externos para determinar la secuencia de preguntas. Depende completamente de la instrucción que recibirás en cada turno.
+"""
+
+# --- Endpoints de la API ---
 
 
-# Endpoints
 @app.get("/")
 async def root():
-    return {"message": "Hydrous AI Backend is running"}
+    """Endpoint raíz para verificar que el servicio está activo."""
+    return {"message": "Hydrous AI Backend V2 (Chat Completions) is running"}
 
 
-@app.post("/api/analytics/event")
-async def track_analytics_event(event: AnalyticsEvent):
-    """Endpoint para recibir eventos de analytics"""
-    # Por ahora, solo registramos el evento
-    print(f"Analytics event received: {event.event}")
-    return {"status": "success"}
-
-
-@app.post("/api/chat/start", response_model=ConversationResponse)
-async def start_chat():
-    """Inicia una nueva conversación con instrucciones específicas para el saludo inicial y primera pregunta"""
-    if not VECTOR_STORE_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="VECTOR_STORE_ID no configurado en variables de entorno",
-        )
-
+@app.post("/api/v2/chat/start", response_model=ConversationResponse)
+async def start_chat(request: StartRequest):
+    """Inicia una nueva conversación y devuelve la primera pregunta."""
     try:
-        print(f"Iniciando conversación con Vector Store ID: {VECTOR_STORE_ID}")
+        conversation_id = str(uuid.uuid4())
+        print(f"Iniciando nueva conversación: {conversation_id}")
 
-        # MODIFICACIÓN CLAVE: Instrucciones muy específicas sobre el comportamiento inicial
-        instructions = """
-        Sigue EXACTAMENTE estas instrucciones:
+        # Inicializar estado
+        conversation_states[conversation_id] = {
+            "question_index": 0,
+            "answers": {},
+            "history": [],  # Opcional: para mantener un breve historial si se necesita
+        }
 
-        1. Saluda al usuario con este mensaje exacto: "¡Hola! Soy el Hydrous AI Water Solution Designer, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad."
+        # Obtener la PRIMERA pregunta de nuestro archivo
+        first_question_data = questionnaires.DEFAULT_QUESTIONS[0]
 
-        2. Inmediatamente después, haz SOLO la primera pregunta del cuestionario: "¿En qué sector opera tu empresa?" y lista SOLO las siguientes opciones:
-        - Industrial
-        - Comercial
-        - Municipal
-        - Residencial
+        # Construir el prompt para la IA para que formule el saludo y la primera pregunta
+        initial_user_prompt = f"""
+        Inicia una nueva conversación. Preséntate con el saludo estándar:
+        '¡Hola! Soy el Hydrous AI Water Solution Designer...' (Usa el saludo completo definido en tus instrucciones base).
 
-        3. Añade una breve explicación de por qué esta información es importante.
+        Luego, inmediatamente después, formula *SOLAMENTE* la primera pregunta:
+        Pregunta: '{first_question_data['question_text']}'
+        Explicación: '{first_question_data['explanation']}'
+        Opciones (si existen): {first_question_data.get('options', 'N/A')}
 
-        4. NO muestres ninguna otra parte del cuestionario.
-        5. NO preguntes por subsectores o más detalles en este momento.
-        6. Respeta ESTRICTAMENTE el formato y estructura del mensaje como se ha indicado.
+        Asegúrate de presentar las opciones claramente si las hay. Puedes añadir un dato interesante sobre la importancia del sector.
         """
 
-        # Instrucción explícita para iniciar
-        initial_message = "Inicia la conversación exactamente como se ha indicado"
-
-        response = client.responses.create(
-            model="gpt-4o-mini",
-            instructions=instructions,
-            input=initial_message,
-            tools=[
-                {
-                    "type": "file_search",
-                    "vector_store_ids": [VECTOR_STORE_ID],
-                    "max_num_results": 2,  # Limitamos resultados para no sobrecargar
-                }
+        # Llamada a la API de OpenAI
+        chat_completion = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_INSTRUCTIONS},
+                {"role": "user", "content": initial_user_prompt},
             ],
-            store=True,
+            temperature=0.5,  # Un poco de creatividad para el saludo y el dato
         )
 
-        print(f"Respuesta inicial generada: {response.output_text[:100]}...")
+        chatbot_response = chat_completion.choices[0].message.content
 
-        return {"id": response.id, "message": response.output_text}
+        # (Opcional) Guardar el primer turno en el historial
+        conversation_states[conversation_id]["history"].append(
+            {"role": "assistant", "content": chatbot_response}
+        )
+
+        print(f"[{conversation_id}] Primera pregunta enviada.")
+        return ConversationResponse(
+            conversation_id=conversation_id,
+            response=chatbot_response,
+            is_final_step=False,
+        )
+
     except Exception as e:
-        print(f"Error al iniciar conversación: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error en /start: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500, detail=f"Error interno al iniciar chat: {e}"
+        )
 
 
-@app.post("/api/chat/message", response_model=ConversationResponse)
+@app.post("/api/v2/chat/message", response_model=ConversationResponse)
 async def chat_message(request: MessageRequest):
-    """Procesa cada mensaje del usuario siguiendo estrictamente el cuestionario"""
-    if not VECTOR_STORE_ID:
+    """Procesa la respuesta del usuario y devuelve la siguiente pregunta o la propuesta final."""
+    conversation_id = request.conversation_id
+    user_message = request.message
+
+    # --- 1. Recuperar Estado ---
+    if conversation_id not in conversation_states:
         raise HTTPException(
-            status_code=500,
-            detail="VECTOR_STORE_ID no configurado en variables de entorno",
+            status_code=404, detail="Conversación no encontrada o expirada."
         )
 
-    try:
-        print(f"Procesando mensaje: {request.message}")
+    current_state = conversation_states[conversation_id]
+    current_question_index = current_state["question_index"]
+    collected_answers = current_state["answers"]
+    # (Opcional) history = current_state["history"]
 
-        # MODIFICACIÓN CLAVE: Instrucciones específicas para cada paso del cuestionario
-        # Nota cómo ajustamos la instrucción para ser extremadamente específica
-        instructions = """
-        Sigue EXACTAMENTE estas instrucciones para responder al usuario:
+    # --- 2. Guardar Respuesta Anterior ---
+    # Necesitamos la clave de la pregunta que se *acaba* de responder
+    if current_question_index < len(questionnaires.DEFAULT_QUESTIONS):
+        previous_question_key = questionnaires.DEFAULT_QUESTIONS[
+            current_question_index
+        ]["key"]
+        collected_answers[previous_question_key] = user_message
+        print(
+            f"[{conversation_id}] Respuesta guardada para '{previous_question_key}': {user_message[:50]}..."
+        )
+    else:
+        print(
+            f"[{conversation_id}] Recibido mensaje después de la última pregunta (posiblemente comentario final)."
+        )
+        # Podríamos guardar este mensaje final si quisiéramos, ej. en una clave 'final_comment'
+        collected_answers["final_comment"] = user_message
 
-        1. Agradece brevemente la respuesta del usuario.
-        
-        2. Proporciona UN dato relevante o contexto breve relacionado con su respuesta (2-3 líneas máximo).
-        
-        3. LUEGO, busca en el cuestionario y presenta EXCLUSIVAMENTE la SIGUIENTE pregunta en secuencia lógica.
-           - Debe ser UNA SOLA pregunta
-           - Si hay opciones, muestra solo las relevantes para la respuesta anterior
-           - NO muestres todo el cuestionario
-           - NO adelantes información de pasos futuros
-        
-        4. Añade una breve explicación de por qué esta información es importante.
-        
-        5. Este formato debe seguirse ESTRICTAMENTE en cada interacción.
+    # (Opcional) Añadir mensaje del usuario al historial
+    # history.append({"role": "user", "content": user_message})
+
+    # --- 3. Determinar Próximo Paso ---
+    next_question_index = current_question_index + 1
+    is_final_step = next_question_index >= questionnaires.TOTAL_QUESTIONS
+
+    next_prompt_for_llm = ""
+    is_proposal_generation = False
+
+    if not is_final_step:
+        # --- 3a. Preparar Siguiente Pregunta ---
+        next_question_data = questionnaires.DEFAULT_QUESTIONS[next_question_index]
+        options_str = "N/A"
+        if "options" in next_question_data and next_question_data["options"]:
+            options_str = "\n".join(next_question_data["options"])
+
+        next_prompt_for_llm = f"""
+        El usuario acaba de responder a la pregunta sobre '{previous_question_key}' con: '{user_message}'.
+
+        Ahora, formula *SOLAMENTE* la siguiente pregunta (pregunta #{next_question_index + 1}):
+        Pregunta: '{next_question_data['question_text']}'
+        Explicación: '{next_question_data['explanation']}'
+        Opciones (si existen):
+        {options_str}
+
+        Asegúrate de agradecer brevemente la respuesta anterior y presenta claramente la nueva pregunta, su explicación y opciones si las hay.
+        Puedes añadir un dato interesante relevante a esta nueva pregunta.
+        """
+        print(
+            f"[{conversation_id}] Preparando pregunta #{next_question_index + 1}: {next_question_data['key']}"
+        )
+
+    else:
+        # --- 3b. Preparar Generación de Propuesta ---
+        is_proposal_generation = True
+        print(
+            f"[{conversation_id}] Cuestionario completado. Preparando para generar propuesta."
+        )
+
+        # Formatear respuestas para el prompt
+        formatted_answers = "\n".join(
+            [f"- {key}: {value}" for key, value in collected_answers.items()]
+        )
+
+        next_prompt_for_llm = f"""
+        El cuestionario ha finalizado. La última respuesta/comentario del usuario fue: '{user_message}'.
+
+        Aquí están todas las respuestas recopiladas:
+        {formatted_answers}
+
+        Por favor, genera la propuesta final completa usando la siguiente plantilla.
+        Rellena **todas** las secciones marcadas con {{...}} o indicadas con [IA: ...] basándote en las respuestas proporcionadas y tu conocimiento experto sobre tratamiento de aguas para el sector indicado.
+        Si faltan datos cruciales para una sección (ej. DQO, DBO), haz una estimación razonable basada en el sector '{collected_answers.get('subsector_industrial', collected_answers.get('sector', 'desconocido'))}' e indica claramente que es una estimación (ej. "DQO estimado: 800-1200 mg/L (típico para sector X, requiere confirmación)").
+        Sé profesional, detallado y sigue la estructura de la plantilla al pie de la letra.
+
+        Plantilla de Propuesta:
+        ---
+        {questionnaires.PROPOSAL_TEMPLATE}
+        ---
         """
 
-        # Formateamos la entrada para guiar al modelo
-        user_message = f"""
-        Respuesta del usuario: {request.message}
-        
-        IMPORTANTE: Procesa esta respuesta y sigue con la SIGUIENTE pregunta del cuestionario, manteniendo un flujo de UNA SOLA PREGUNTA A LA VEZ.
-        """
+    # --- 4. Llamar a la API de OpenAI ---
+    try:
+        # Preparamos los mensajes para la API. Incluimos el system prompt y el prompt específico.
+        # Podríamos incluir historial aquí si fuera necesario, pero empecemos simple.
+        messages_for_api = [
+            {"role": "system", "content": SYSTEM_PROMPT_INSTRUCTIONS},
+            {"role": "user", "content": next_prompt_for_llm},
+        ]
 
-        response = client.responses.create(
-            model="gpt-4o-mini",
-            instructions=instructions,
-            input=user_message,
-            previous_response_id=request.conversation_id,
-            tools=[
-                {
-                    "type": "file_search",
-                    "vector_store_ids": [VECTOR_STORE_ID],
-                    "max_num_results": 3,
-                }
-            ],
-            store=True,
-            temperature=0.2,  # Temperatura baja para comportamiento más determinista
+        chat_completion = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages_for_api,
+            temperature=(
+                0.6 if not is_proposal_generation else 0.4
+            ),  # Un poco más creativo para preguntas, más preciso para propuesta
+        )
+        chatbot_response = chat_completion.choices[0].message.content
+
+    except Exception as e:
+        print(f"Error llamando a OpenAI API: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al comunicarse con la IA: {e}"
         )
 
-        print(f"Respuesta generada: {response.id}")
-
-        return {"id": response.id, "message": response.output_text}
-    except Exception as e:
-        print(f"Error al procesar mensaje: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/chat/{conversation_id}")
-async def get_conversation(conversation_id: str):
-    """Verifica si existe una conversación"""
-    try:
-        # No hay forma directa de verificar una conversación en la API,
-        # así que simplemente devolvemos éxito si el ID tiene formato válido
-        if len(conversation_id) > 10:  # Comprobación básica
-            return {"status": "active", "id": conversation_id}
-        else:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    except Exception as e:
-        raise HTTPException(status_code=404, detail="Conversación no encontrada")
-
-
-# Endpoint básico para manejar subidas de archivos
-@app.post("/api/documents/upload")
-async def upload_document(
-    file: UploadFile = File(...),
-    conversation_id: str = Form(...),
-    message: Optional[str] = Form(""),
-):
-    """Endpoint básico para manejar subidas de archivos"""
-    try:
-        # Por ahora, simplemente confirmamos la recepción del archivo
-        file_content = await file.read()
-        file_size = len(file_content)
-
-        # En una implementación real, aquí procesaríamos el archivo
-        # Por ahora, solo respondemos con un mensaje genérico
-
-        response = client.responses.create(
-            model="gpt-4o-mini",
-            input=f"El usuario ha subido un archivo llamado {file.filename} de {file_size} bytes. Mensaje: {message}",
-            previous_response_id=conversation_id,
-            tools=[{"type": "file_search", "vector_store_ids": [VECTOR_STORE_ID]}],
-            store=True,
+    # --- 5. Actualizar Estado y Devolver Respuesta ---
+    if not is_proposal_generation:
+        current_state["question_index"] = next_question_index
+        print(
+            f"[{conversation_id}] Índice de pregunta actualizado a: {next_question_index}"
         )
+    else:
+        # Podríamos marcar la conversación como finalizada o eliminarla después de un tiempo
+        print(f"[{conversation_id}] Propuesta generada.")
+        # Opcionalmente, limpia el estado si ya no se necesita
+        # del conversation_states[conversation_id]
 
-        return {"success": True, "id": response.id, "message": response.output_text}
-    except Exception as e:
-        print(f"Error al procesar documento: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    # (Opcional) Añadir respuesta del bot al historial
+    # history.append({"role": "assistant", "content": chatbot_response})
 
-
-# Stubs básicos para endpoints de PDF (sin implementación real)
-@app.get("/api/pdf/{conversation_id}/download")
-async def download_pdf_stub(conversation_id: str):
-    """Stub para descarga de PDF"""
-    # Implementación básica que devuelve un mensaje
-    return JSONResponse(
-        content={"message": "La generación de PDF estará disponible próximamente."},
-        status_code=200,
+    return ConversationResponse(
+        conversation_id=conversation_id,
+        response=chatbot_response,
+        is_final_step=is_proposal_generation,  # True si se generó la propuesta
     )
 
 
-@app.get("/api/pdf/{conversation_id}/data-url")
-async def pdf_data_url_stub(conversation_id: str):
-    """Stub para data URL de PDF"""
-    # Implementación básica que devuelve un mensaje
-    return JSONResponse(
-        content={"message": "La generación de PDF estará disponible próximamente."},
-        status_code=200,
-    )
-
-
+# --- Punto de Entrada para Ejecución (si corres `python main.py`) ---
 if __name__ == "__main__":
     import uvicorn
 
+    print("Iniciando servidor FastAPI con Uvicorn...")
+    # Escucha en todas las interfaces (0.0.0.0) en el puerto 8000
+    # reload=True es útil para desarrollo, se reinicia si cambias el código
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
