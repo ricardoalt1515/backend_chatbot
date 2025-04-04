@@ -1,430 +1,162 @@
-# app/services/pdf_service.py (actualizado)
-import os
+# app/services/pdf_service.py
 import logging
-from typing import Optional, Dict, Any
-from datetime import datetime
-import re
+import os
+from xhtml2pdf import pisa  # type: ignore # pip install xhtml2pdf
+from jinja2 import (
+    Environment,
+    FileSystemLoader,
+    select_autoescape,
+)  # pip install Jinja2
 
-from app.models.conversation import Conversation
 from app.config import settings
+
+# Quitar dependencia de 'Conversation' si solo necesitamos texto
+# from app.models.conversation import Conversation
 
 logger = logging.getLogger("hydrous")
 
 
 class PDFService:
-    """Servicio mejorado para generar PDFs de propuestas"""
 
     def __init__(self):
-        """Inicialización del servicio"""
-        # Crear directorio para PDFs
-        self.pdf_dir = os.path.join(settings.UPLOAD_DIR, "pdf")
-        os.makedirs(self.pdf_dir, exist_ok=True)
-
-        # Crear directorio para recursos (imágenes, CSS, etc.)
-        self.resources_dir = os.path.join(settings.UPLOAD_DIR, "resources")
-        os.makedirs(self.resources_dir, exist_ok=True)
-
-        # Copiar logo si no existe
-        self._setup_resources()
-
-    def _setup_resources(self):
-        """Configura recursos necesarios para PDFs"""
-        # Aquí se podrían copiar logos, CSS, etc. desde una carpeta de assets
-        # Por ahora simulamos esto con un placeholder
-        logo_path = os.path.join(self.resources_dir, "hydrous_logo.png")
-        if not os.path.exists(logo_path):
-            # En un caso real, copiaríamos el logo desde una ubicación estática
-            # Por ahora solo registramos el evento
-            logger.info("Se necesita configurar el logo para los PDFs")
-
-    async def generate_pdf(self, conversation: Conversation) -> Optional[str]:
-        """Genera un PDF a partir de una propuesta en la conversación"""
-        try:
-            # Verificar si ya tenemos un HTML generado
-            html_path = conversation.metadata.get("proposal_html_path")
-            if not html_path or not os.path.exists(html_path):
-                # Si no hay HTML generado, usar el enfoque anterior
-                return await self._generate_pdf_legacy(conversation)
-
-            # Generar PDF a partir del HTML
-            client_info = self._extract_client_info(conversation)
-            client_name = client_info.get("name", "Cliente").replace(" ", "_")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            pdf_path = os.path.join(
-                self.pdf_dir, f"Propuesta_Hydrous_{client_name}_{timestamp}.pdf"
-            )
-
-            # Intentar con WeasyPrint
-            try:
-                from weasyprint import HTML
-
-                HTML(filename=html_path).write_pdf(pdf_path)
-                logger.info(f"PDF generado con WeasyPrint: {pdf_path}")
-
-                # Almacenar ruta del PDF en los metadatos
-                conversation.metadata["pdf_path"] = pdf_path
-                conversation.metadata["pdf_generated_at"] = datetime.now().isoformat()
-
-                return pdf_path
-            except Exception as e:
-                logger.error(f"Error al generar PDF con WeasyPrint: {str(e)}")
-
-                # Intentar con pdfkit u otras opciones...
-
-            return html_path  # Devolver HTML como alternativa si falla la generación del PDF
-
-        except Exception as e:
-            logger.error(f"Error en generate_pdf: {str(e)}")
-            return None
-
-    def _extract_client_info(self, conversation: Conversation) -> Dict[str, Any]:
-        """Extrae información del cliente de la conversación"""
-        client_info = {
-            "name": "Cliente",
-            "location": "No especificada",
-            "sector": "No especificado",
-            "contact": "",
-        }
-
-        # Intentar extraer desde el estado del cuestionario
-        if hasattr(conversation, "questionnaire_state"):
-            key_entities = getattr(conversation.questionnaire_state, "key_entities", {})
-            answers = getattr(conversation.questionnaire_state, "answers", {})
-
-            if key_entities.get("company_name"):
-                client_info["name"] = key_entities["company_name"]
-            if key_entities.get("location"):
-                client_info["location"] = key_entities["location"]
-            if getattr(conversation.questionnaire_state, "sector", None):
-                client_info["sector"] = conversation.questionnaire_state.sector
-
-        # Analizar los mensajes en busca de información si no la tenemos aún
-        if (
-            client_info["name"] == "Cliente"
-            or client_info["location"] == "No especificada"
-        ):
-            for msg in conversation.messages:
-                if msg.role == "user":
-                    # Buscar nombre de empresa
-                    if client_info["name"] == "Cliente":
-                        company_match = re.search(
-                            r"(?:empresa|compañía|proyecto)[\s:]+([a-zA-Z0-9\s]+)",
-                            msg.content,
-                            re.IGNORECASE,
-                        )
-                        if company_match:
-                            client_info["name"] = company_match.group(1).strip()
-
-                    # Buscar ubicación
-                    if client_info["location"] == "No especificada":
-                        location_match = re.search(
-                            r"(?:ubicación|ubicacion|localización|ciudad)[\s:]+([a-zA-Z0-9\s,]+)",
-                            msg.content,
-                            re.IGNORECASE,
-                        )
-                        if location_match:
-                            client_info["location"] = location_match.group(1).strip()
-
-        return client_info
-
-    def _extract_proposal_text(self, conversation: Conversation) -> Optional[str]:
-        """Extrae el texto de la propuesta de una conversación"""
-        # Buscar un mensaje del asistente que contenga la propuesta
-        for msg in reversed(conversation.messages):
-            if msg.role == "assistant" and "Propuesta" in msg.content:
-                # Verificar si la propuesta parece completa (tiene secciones clave)
-                if all(
-                    section in msg.content
-                    for section in ["Introducción", "Objetivo", "CAPEX", "ROI"]
-                ):
-                    return msg.content
-                # Si encontramos una propuesta parcial, seguir buscando una más completa
-
-        # Si no encontramos una propuesta completa, buscar una parcial
-        for msg in reversed(conversation.messages):
-            if msg.role == "assistant" and "Propuesta" in msg.content:
-                return msg.content
-
-        return None
-
-    def _markdown_to_html_enhanced(
-        self, markdown_text: str, client_info: Dict[str, Any], proposal_id: str
-    ) -> str:
-        """Convierte texto markdown a HTML con diseño profesional mejorado"""
-        try:
-            # Intentar usar markdown2 si está disponible
-            try:
-                import markdown2
-
-                html_body = markdown2.markdown(
-                    markdown_text, extras=["tables", "fenced-code-blocks"]
-                )
-            except ImportError:
-                # Conversión básica si markdown2 no está disponible
-                html_body = self._basic_markdown_to_html(markdown_text)
-
-            # Plantilla HTML completa con estilos profesionales
-            html = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>Propuesta Hydrous - {client_info["name"]}</title>
-                <style>
-                    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
-                    
-                    body {{ 
-                        font-family: 'Roboto', Arial, sans-serif; 
-                        line-height: 1.6; 
-                        color: #333; 
-                        margin: 0;
-                        padding: 0;
-                        background-color: #f9fafb;
-                    }}
-                    
-                    .container {{
-                        max-width: 800px;
-                        margin: 0 auto;
-                        padding: 20px 40px;
-                        background-color: white;
-                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                    }}
-                    
-                    .header {{ 
-                        position: relative;
-                        background-color: #1a5276; 
-                        color: white; 
-                        padding: 30px 40px; 
-                        margin: 0 0 30px 0;
-                    }}
-                    
-                    .header .logo {{
-                        height: 60px;
-                        margin-bottom: 10px;
-                    }}
-                    
-                    .header h1 {{
-                        margin: 5px 0;
-                        font-size: 28px;
-                        font-weight: 500;
-                    }}
-                    
-                    .header p {{
-                        margin: 5px 0;
-                        font-size: 16px;
-                        opacity: 0.9;
-                    }}
-                    
-                    .proposal-id {{
-                        position: absolute;
-                        top: 20px;
-                        right: 40px;
-                        font-size: 14px;
-                        opacity: 0.9;
-                    }}
-                    
-                    .client-info {{
-                        margin-bottom: 30px;
-                        padding: 20px;
-                        background-color: #f1f8ff;
-                        border-left: 4px solid #1a5276;
-                    }}
-                    
-                    .client-info p {{
-                        margin: 5px 0;
-                    }}
-                    
-                    h1, h2, h3, h4 {{ 
-                        color: #1a5276;
-                        margin-top: 30px;
-                    }}
-                    
-                    h1 {{ font-size: 24px; }}
-                    h2 {{ font-size: 20px; }}
-                    h3 {{ font-size: 18px; }}
-                    
-                    table {{ 
-                        width: 100%;
-                        border-collapse: collapse; 
-                        margin: 20px 0;
-                    }}
-                    
-                    th, td {{ 
-                        padding: 12px 15px;
-                        border: 1px solid #ddd;
-                    }}
-                    
-                    th {{
-                        background-color: #1a5276;
-                        color: white;
-                        font-weight: 500;
-                    }}
-                    
-                    tr:nth-child(even) {{
-                        background-color: #f9f9f9;
-                    }}
-                    
-                    .highlight {{
-                        background-color: #ebf5ff;
-                        padding: 15px;
-                        border-radius: 5px;
-                        margin: 20px 0;
-                    }}
-                    
-                    .footer {{ 
-                        text-align: center;
-                        margin-top: 40px;
-                        padding-top: 20px;
-                        border-top: 1px solid #ddd;
-                        color: #777;
-                        font-size: 14px;
-                    }}
-                    
-                    .watermark {{
-                        position: fixed;
-                        bottom: 5cm;
-                        right: 5cm;
-                        opacity: 0.03;
-                        transform: rotate(-45deg);
-                        font-size: 120px;
-                        color: #1a5276;
-                        z-index: -1;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <div class="proposal-id">{proposal_id}</div>
-                        <!-- <img src="hydrous_logo.png" alt="Hydrous Logo" class="logo"> -->
-                        <h1>HYDROUS MANAGEMENT GROUP</h1>
-                        <p>Soluciones de Tratamiento de Agua</p>
-                    </div>
-                    
-                    <div class="client-info">
-                        <p><strong>Cliente:</strong> {client_info["name"]}</p>
-                        <p><strong>Ubicación:</strong> {client_info["location"]}</p>
-                        <p><strong>Sector:</strong> {client_info["sector"]}</p>
-                        <p><strong>Fecha:</strong> {datetime.now().strftime('%d/%m/%Y')}</p>
-                    </div>
-                    
-                    {html_body}
-                    
-                    <div class="footer">
-                        <p>© {datetime.now().year} Hydrous Management Group. Todos los derechos reservados.</p>
-                        <p>Esta propuesta es confidencial y está destinada únicamente para el uso del destinatario.</p>
-                        <p>Los costos y especificaciones finales pueden variar tras un estudio detallado.</p>
-                    </div>
-                </div>
-                
-                <div class="watermark">HYDROUS</div>
-            </body>
-            </html>
-            """
-
-            return html
-
-        except Exception as e:
-            logger.error(f"Error al convertir Markdown a HTML: {str(e)}")
-            return f"<pre>{markdown_text}</pre>"
-
-    def _basic_markdown_to_html(self, markdown_text: str) -> str:
-        """Conversión básica de Markdown a HTML sin dependencias externas"""
-        html = markdown_text
-
-        # Encabezados
-        html = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
-        html = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
-        html = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
-
-        # Negrita y cursiva
-        html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
-        html = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html)
-
-        # Listas
-        html = re.sub(r"^- (.*?)$", r"<li>\1</li>", html, flags=re.MULTILINE)
-        # Agrupar elementos li en ul
-        li_pattern = r"(<li>.*?</li>)+"
-        html = re.sub(li_pattern, r"<ul>\g<0></ul>", html)
-
-        # Tablas simples - esto es una aproximación básica
-        table_pattern = r"^\|(.*?)\|[\r\n]?\|[-:| ]+\|[\r\n]((?:\|.*?\|[\r\n]?)+)"
-
-        def replace_table(match):
-            header = match.group(1)
-            rows = match.group(2).strip().split("\n")
-
-            header_cells = [cell.strip() for cell in header.split("|") if cell.strip()]
-            header_html = (
-                "<tr>"
-                + "".join([f"<th>{cell}</th>" for cell in header_cells])
-                + "</tr>"
-            )
-
-            rows_html = ""
-            for row in rows:
-                cells = [cell.strip() for cell in row.split("|") if cell.strip()]
-                rows_html += (
-                    "<tr>" + "".join([f"<td>{cell}</td>" for cell in cells]) + "</tr>"
-                )
-
-            return f"<table>{header_html}{rows_html}</table>"
-
-        html = re.sub(
-            table_pattern, replace_table, html, flags=re.MULTILINE | re.DOTALL
+        # Configurar Jinja2 para cargar plantillas HTML (opcional pero recomendado)
+        template_dir = os.path.join(os.path.dirname(__file__), "../templates")
+        if not os.path.exists(template_dir):
+            os.makedirs(template_dir)
+            # Crear un archivo base si no existe
+            base_html_path = os.path.join(template_dir, "proposal_base.html")
+            if not os.path.exists(base_html_path):
+                with open(base_html_path, "w", encoding="utf-8") as f:
+                    f.write(
+                        """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Propuesta Hydrous</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.4; padding: 20px; }
+        h1, h2, h3 { color: #0056b3; }
+        h1 { border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
+        pre { background-color: #f8f8f8; border: 1px solid #ddd; padding: 10px; white-space: pre-wrap; word-wrap: break-word; }
+        /* Añade más estilos según necesites */
+    </style>
+</head>
+<body>
+    <h1>Propuesta de Solución de Agua - Hydrous AI</h1>
+    <div>
+        {{ content | safe }} {# El contenido de la propuesta se inyectará aquí #}
+    </div>
+    <hr>
+    <p><em>Documento generado por Hydrous AI. Las estimaciones son preliminares.</em></p>
+</body>
+</html>
+                      """
+                    )
+        self.jinja_env = Environment(
+            loader=FileSystemLoader(template_dir),
+            autoescape=select_autoescape(["html", "xml"]),
         )
 
-        # Párrafos
-        paragraphs = html.split("\n\n")
-        for i, paragraph in enumerate(paragraphs):
-            if not paragraph.startswith("<") and paragraph.strip():
-                paragraphs[i] = f"<p>{paragraph}</p>"
+    def _html_to_pdf(self, html_content: str, output_path: str) -> bool:
+        """Convierte contenido HTML a un archivo PDF."""
+        try:
+            # Asegurarse que el directorio de salida existe
+            output_dir = os.path.dirname(output_path)
+            os.makedirs(output_dir, exist_ok=True)
 
-        html = "\n\n".join(paragraphs)
+            with open(output_path, "wb") as pdf_file:
+                pisa_status = pisa.CreatePDF(
+                    html_content, dest=pdf_file, encoding="utf-8"
+                )
 
-        return html
+            if pisa_status.err:
+                logger.error(
+                    f"Error durante la conversión HTML a PDF: {pisa_status.err}"
+                )
+                # Intentar eliminar archivo parcial si falló
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                return False
+            else:
+                logger.info(f"PDF generado correctamente en: {output_path}")
+                return True
+        except Exception as e:
+            logger.error(
+                f"Excepción durante la conversión HTML a PDF: {e}", exc_info=True
+            )
+            # Intentar eliminar archivo parcial si falló
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            return False
 
-    def _generate_pdf_from_html(
-        self, html_path: str, client_name: str, timestamp: str
+    def _format_proposal_text_to_html(self, proposal_text: str) -> str:
+        """Intenta convertir el texto markdown-like a HTML básico."""
+        # Reemplazos simples (puedes usar una librería Markdown si prefieres)
+        html_content = proposal_text.replace("\n\n", "<br><p>")  # Párrafos aproximados
+        html_content = html_content.replace("\n", "<br>")  # Saltos de línea
+
+        # Encabezados (simplificado)
+        import re
+
+        html_content = re.sub(
+            r"^# (.*?)$", r"<h1>\1</h1>", html_content, flags=re.MULTILINE
+        )
+        html_content = re.sub(
+            r"^## (.*?)$", r"<h2>\1</h2>", html_content, flags=re.MULTILINE
+        )
+        html_content = re.sub(
+            r"^### (.*?)$", r"<h3>\1</h3>", html_content, flags=re.MULTILINE
+        )
+
+        # Negritas
+        html_content = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html_content)
+        # Listas (muy básico)
+        html_content = re.sub(
+            r"^\* (.*?)$", r"<li>\1</li>", html_content, flags=re.MULTILINE
+        )
+        html_content = re.sub(
+            r"(<li>.*?</li>)+", r"<ul>\g<0></ul>", html_content, flags=re.DOTALL
+        )  # Envolver en <ul>
+
+        # Quitar marcador final del HTML visible
+        html_content = html_content.replace(
+            "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
+        )
+
+        # Envolver en plantilla Jinja
+        try:
+            template = self.jinja_env.get_template("proposal_base.html")
+            return template.render(content=html_content)
+        except Exception as e:
+            logger.error(f"Error al renderizar plantilla Jinja2: {e}")
+            # Fallback a HTML simple si falla la plantilla
+            return f"<html><head><title>Propuesta</title></head><body><pre>{proposal_text}</pre></body></html>"
+
+    async def generate_pdf_from_text(
+        self, conversation_id: str, proposal_text: str
     ) -> Optional[str]:
-        """Genera un archivo PDF a partir del HTML usando la biblioteca disponible"""
-        pdf_path = os.path.join(
-            self.pdf_dir, f"Propuesta_Hydrous_{client_name}_{timestamp}.pdf"
-        )
-
-        try:
-            # Intentar con WeasyPrint
-            try:
-                from weasyprint import HTML
-
-                HTML(filename=html_path).write_pdf(pdf_path)
-                logger.info(f"PDF generado con WeasyPrint: {pdf_path}")
-                return pdf_path
-            except ImportError:
-                logger.warning(
-                    "WeasyPrint no está disponible, intentando con pdfkit..."
-                )
-
-            # Intentar con pdfkit
-            try:
-                import pdfkit
-
-                pdfkit.from_file(html_path, pdf_path)
-                logger.info(f"PDF generado con pdfkit: {pdf_path}")
-                return pdf_path
-            except ImportError:
-                logger.warning(
-                    "pdfkit no está disponible, intentando con otros métodos..."
-                )
-
-            # Aquí se podrían añadir más métodos alternativos
-
-            logger.warning("No se pudo generar PDF. Se usará HTML como alternativa.")
+        """Genera un PDF a partir del texto de la propuesta ya generado."""
+        if not proposal_text:
+            logger.error(
+                f"Intento de generar PDF sin texto de propuesta para {conversation_id}"
+            )
             return None
 
-        except Exception as e:
-            logger.error(f"Error al generar PDF: {str(e)}")
+        # Convertir el texto (posiblemente markdown) a HTML
+        html_content = self._format_proposal_text_to_html(proposal_text)
+
+        # Definir ruta de salida
+        pdf_filename = f"propuesta_{conversation_id}.pdf"
+        output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+
+        # Convertir HTML a PDF
+        success = self._html_to_pdf(html_content, output_path)
+
+        if success:
+            return output_path
+        else:
+            logger.error(f"Falló la generación de PDF para {conversation_id}")
             return None
 
 

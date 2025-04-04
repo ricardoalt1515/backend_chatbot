@@ -1,100 +1,108 @@
 # app/services/storage_service.py
 import logging
+from datetime import datetime, timedelta
 from typing import Dict, Optional
-from datetime import datetime
-import time
 
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.models.conversation_state import ConversationState  # Importar
 from app.config import settings
 
 logger = logging.getLogger("hydrous")
 
+# --- ALMACENAMIENTO EN MEMORIA (SOLO PARA EJEMPLO) ---
+# ¡¡¡ REEMPLAZAR CON TU BASE DE DATOS EN PRODUCCIÓN !!!
+conversations_db: Dict[str, Conversation] = {}
+# ----------------------------------------------------
+
 
 class StorageService:
-    """Servicio para almacenar conversaciones"""
 
-    def __init__(self):
-        """Inicialización del servicio"""
-        # Almacenamiento en memoria para conversaciones
-        self.conversations: Dict[str, Conversation] = {}
-
-        # Registro de último acceso para expiración
-        self.last_access: Dict[str, float] = {}
-
-    async def create_conversation(self) -> Conversation:
-        """Crea una nueva conversación"""
-        # Crear conversación con metadatos vacíos
-        conversation = Conversation()
-
-        # Guardar en el almacenamiento
-        self.conversations[conversation.id] = conversation
-        self.last_access[conversation.id] = time.time()
-
-        return conversation
+    async def create_conversation(
+        self, initial_state: Optional[ConversationState] = None
+    ) -> Conversation:
+        """Crea y almacena una nueva conversación."""
+        if initial_state is None:
+            initial_state = (
+                ConversationState()
+            )  # Crear estado por defecto si no se pasa
+        new_conversation = Conversation(state=initial_state)  # Pasar estado al crear
+        conversations_db[new_conversation.id] = new_conversation
+        logger.info(f"Conversación creada en memoria con ID: {new_conversation.id}")
+        return new_conversation
 
     async def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
-        """Obtiene una conversación por su ID con mejor logging"""
-
-        try:
-            # Verificar si existe la conversación
-            if conversation_id not in self.conversations:
-                logging.warning(
-                    f"Conversación no encontrada en almacenamiento: {conversation_id}"
-                )
-                # Listamos las conversaciones existentes para debug
-                existing_ids = list(self.conversations.keys())
-                logging.info(f"Conversaciones existentes: {existing_ids[:5]}...")
-                return None
-
-            # Actualizar tiempo de acceso
-            self.last_access[conversation_id] = time.time()
-
-            return self.conversations[conversation_id]
-        except Exception as e:
-            logging.error(
-                f"Error al recuperar conversación {conversation_id}: {str(e)}"
-            )
+        """Obtiene una conversación por su ID."""
+        conversation = conversations_db.get(conversation_id)
+        if conversation:
+            logger.debug(f"Conversación {conversation_id} encontrada en memoria.")
+            # Asegurarse que el estado es un objeto ConversationState
+            if isinstance(
+                conversation.state, dict
+            ):  # Si se guardó como dict, convertirlo
+                conversation.state = ConversationState(**conversation.state)
+            return conversation
+        else:
+            logger.warning(f"Conversación {conversation_id} NO encontrada en memoria.")
             return None
 
     async def add_message_to_conversation(
         self, conversation_id: str, message: Message
-    ) -> Optional[Conversation]:
-        """Añade un mensaje a una conversación y guarda metadatos"""
+    ) -> bool:
+        """Añade un mensaje a una conversación existente."""
         conversation = await self.get_conversation(conversation_id)
-        if not conversation:
-            return None
+        if conversation:
+            conversation.add_message(message)
+            # No es necesario guardar explícitamente en memoria si modificamos el objeto
+            logger.debug(f"Mensaje añadido a conversación {conversation_id}")
+            return True
+        else:
+            logger.error(
+                f"Intento de añadir mensaje a conversación inexistente: {conversation_id}"
+            )
+            return False
 
-        # Añadir mensaje
-        conversation.add_message(message)
-
-        # Actualizar en el almacenamiento
-        self.conversations[conversation_id] = conversation
-        self.last_access[conversation_id] = time.time()
-
-        return conversation
+    async def save_conversation(self, conversation: Conversation) -> bool:
+        """
+        Guarda/Actualiza una conversación completa (incluyendo estado y metadatos).
+        En este ejemplo en memoria, la modificación directa del objeto es suficiente,
+        pero esta función es CRUCIAL para BDs reales.
+        """
+        if conversation.id in conversations_db:
+            # Asegurarse que el estado se guarda correctamente
+            if not isinstance(conversation.state, ConversationState):
+                logger.error(
+                    f"Intentando guardar estado inválido para {conversation.id}"
+                )
+                return False
+            conversations_db[conversation.id] = (
+                conversation  # Reemplazar con la versión actualizada
+            )
+            logger.info(
+                f"Conversación {conversation.id} actualizada/guardada en memoria."
+            )
+            return True
+        else:
+            logger.error(
+                f"Intento de guardar conversación inexistente: {conversation.id}"
+            )
+            return False
 
     async def cleanup_old_conversations(self):
-        """Elimina conversaciones antiguas basado en el tiempo de acceso"""
-        current_time = time.time()
-        timeout = settings.CONVERSATION_TIMEOUT
-
-        # Buscar conversaciones expiradas
-        expired_ids = [
+        """Elimina conversaciones más antiguas que el timeout (ejemplo en memoria)."""
+        now = datetime.utcnow()
+        timeout_delta = timedelta(seconds=settings.CONVERSATION_TIMEOUT)
+        ids_to_remove = [
             conv_id
-            for conv_id, last_time in self.last_access.items()
-            if current_time - last_time > timeout
+            for conv_id, conv in conversations_db.items()
+            if now - conv.created_at > timeout_delta
         ]
-
-        # Eliminar conversaciones expiradas
-        for conv_id in expired_ids:
-            if conv_id in self.conversations:
-                del self.conversations[conv_id]
-            if conv_id in self.last_access:
-                del self.last_access[conv_id]
-
-        if expired_ids:
-            logger.info(f"Eliminadas {len(expired_ids)} conversaciones expiradas")
+        for conv_id in ids_to_remove:
+            try:
+                del conversations_db[conv_id]
+                logger.info(f"Conversación antigua eliminada: {conv_id}")
+            except KeyError:
+                pass  # Ya no existía
 
 
 # Instancia global
