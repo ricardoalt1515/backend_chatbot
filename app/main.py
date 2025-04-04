@@ -165,7 +165,7 @@ async def track_analytics_event(event: AnalyticsEvent):
 
 @app.post("/api/chat/start", response_model=ConversationResponse)
 async def start_chat():
-    """Inicia una nueva conversación"""
+    """Inicia una nueva conversación con búsqueda forzada del inicio del cuestionario"""
     if not VECTOR_STORE_ID:
         raise HTTPException(
             status_code=500,
@@ -175,18 +175,51 @@ async def start_chat():
     try:
         print(f"Iniciando conversación con Vector Store ID: {VECTOR_STORE_ID}")
 
-        # Mensaje explícito para el asistente
+        # Primer paso: Forzar al modelo a buscar el inicio del cuestionario
+        intro_response = client.responses.create(
+            model="gpt-4o",
+            instructions="""
+            Tu tarea es buscar en el archivo 'CUESTIONARIO COMPLETO (2).pdf' usando file_search.
+            Busca específicamente el saludo inicial y la primera pregunta sobre sectores 
+            (Industrial, Comercial, Municipal, Residencial).
+            
+            IMPORTANTE: Este documento NO fue subido por un usuario actual. Es un cuestionario 
+            de referencia que debes consultar para iniciar una conversación estructurada.
+            """,
+            input="Busca el inicio del cuestionario sobre sectores",
+            tools=[
+                {
+                    "type": "file_search",
+                    "vector_store_ids": [VECTOR_STORE_ID],
+                    "max_num_results": 3,
+                }
+            ],
+            store=True,
+            temperature=0.2,
+        )
+
+        # Segundo paso: Iniciar la conversación real con la información encontrada
         startup_message = """
-        Por favor, inicia el cuestionario sobre soluciones de agua siguiendo EXACTAMENTE estas instrucciones:
-        1. Preséntate como "Hydrous AI Water Solution Designer"
-        2. Explica tu propósito
-        3. Haz la primera pregunta del cuestionario: "¿En qué sector opera tu empresa?"
+        Ahora inicia correctamente la conversación. Usa la siguiente estructura:
+        
+        1. Saluda al usuario como "Hydrous AI Water Solution Designer" y explica tu propósito
+        2. Haz la primera pregunta sobre sectores (Industrial, Comercial, Municipal, Residencial)
+        3. Explica brevemente por qué esta información es importante
+        
+        IMPORTANTE: A partir de ahora, para cada respuesta del usuario, deberás:
+        - Consultar el cuestionario para determinar la siguiente pregunta según su sector
+        - Hacer solo UNA pregunta a la vez
+        - Añadir contexto o datos relevantes
+        - Mantener un tono profesional pero conversacional
+        
+        Recuerda que el flujo cambia dependiendo del sector que elija el usuario.
         """
 
+        # Usar previous_response_id para mantener el contexto de la búsqueda inicial
         response = client.responses.create(
             model="gpt-4o-mini",
-            instructions=SYSTEM_INSTRUCTIONS,
-            input="Inicia exactamente como se especifica en las instrucciones, con el saludo completo y la primera pregunta sobre sectores.",
+            input=startup_message,
+            previous_response_id=intro_response.id,
             tools=[
                 {
                     "type": "file_search",
@@ -195,9 +228,8 @@ async def start_chat():
                 }
             ],
             store=True,
+            temperature=0.2,
         )
-        # Verificamos si el modelo está siguiendo las instrucciones
-        print(f"Respuesta inicial generada: {response.output_text[:100]}...")
 
         return {"id": response.id, "message": response.output_text}
     except Exception as e:
@@ -218,9 +250,21 @@ async def chat_message(request: MessageRequest):
         print(f"Procesando mensaje para conversación: {request.conversation_id}")
         print(f"Contenido del mensaje: {request.message}")
 
+        # Forzar al modelo a buscar la siguiente pregunta basándose en la respuesta del usuario
+        search_prompt = f"""
+        El usuario respondió: "{request.message}"
+        
+        Busca en el cuestionario cual debe ser la SIGUIENTE pregunta a realizar.
+        IMPORTANTE: 
+        1. Busca la pregunta adecuada según la respuesta del usuario
+        2. Solo debes encontrar UNA próxima pregunta, no varias
+        3. El cuestionario tiene distintos flujos según el sector (Industrial, Comercial, etc.)
+        4. Busca en la sección correspondiente según las respuestas previas
+        """
+
         response = client.responses.create(
             model="gpt-4o-mini",
-            input=request.message,
+            input=search_prompt,
             previous_response_id=request.conversation_id,
             tools=[
                 {
@@ -230,9 +274,8 @@ async def chat_message(request: MessageRequest):
                 }
             ],
             store=True,
+            temperature=0.2,
         )
-        # Verificamos si el modelo está siguiendo las instrucciones
-        print(f"Respuesta generada: {response.output_text[:100]}...")
 
         print(f"Respuesta generada con ID: {response.id}")
 
