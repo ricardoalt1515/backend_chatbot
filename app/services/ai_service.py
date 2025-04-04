@@ -20,6 +20,20 @@ class AIService:
         # Cargar el prompt maestro
         self.master_prompt = get_master_prompt()
 
+        # Cargar cuestionario desde archivo
+
+        questionnaire_path = os.path.join(
+            os.path.dirname(__file__), "cuestionario.json"
+        )
+        try:
+            with open(questionnaire_path, "r", encoding="utf-8") as f:
+                questionnaire_content = f.read()
+        except Exception as e:
+            print(f"Error al cargar cuestionario: {e}")
+            questionnaire_content = (
+                "Error al cargar el cuestionario. Por favor contacta al administrador."
+            )
+
         # Cargar archivos de cuestionario y formato de propuesta
         proposal_format_path = os.path.join(
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"

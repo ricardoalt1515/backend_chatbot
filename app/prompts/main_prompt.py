@@ -1531,4 +1531,4 @@ Subir / Adjuntar diagramas de proceso, layouts, fotografías de su sistemas y de
 * Otro especifique__________
  """
 
-    return base_prompt + questionnaire_content
+    return base_prompt
