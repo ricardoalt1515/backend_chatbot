@@ -14,10 +14,10 @@
     ],
     "question_text": "¿En qué sector opera tu empresa?",
     "options": [
-      "Industrial",
-      "Comercial",
-      "Municipal",
-      "Residencial"
+      "1. Industrial",
+      "2. Comercial",
+      "3. Municipal",
+      "4. Residencial"
     ],
     "required": true,
     "explanation": "Identificar el sector general nos da un punto de partida para entender el tipo de uso del agua y regulaciones aplicables."
@@ -27,19 +27,19 @@
     "type": "multiple_choice",
     "depends_on": {
       "id": "q1_sector",
-      "value": "Industrial"
+      "value": "1. Industrial"
     },
     "question_text": "¿Cuál es el giro específico de tu Empresa dentro del Sector Industrial?",
     "options": [
-      "Alimentos y Bebidas",
-      "Textil",
-      "Petroquímica",
-      "Farmacéutica",
-      "Minería",
-      "Petróleo y Gas",
-      "Metal/Automotriz",
-      "Cemento",
-      "Otro"
+      "1. Alimentos y Bebidas",
+      "2. Textil",
+      "3. Petroquímica",
+      "4. Farmacéutica",
+      "5. Minería",
+      "6. Petróleo y Gas",
+      "7. Metal/Automotriz",
+      "8. Cemento",
+      "9. Otro"
     ],
     "required": true,
     "explanation": "El giro específico nos permite afinar las características esperadas del agua residual y los procesos de tratamiento más comunes.",
@@ -50,15 +50,15 @@
     "type": "multiple_choice",
     "depends_on": {
       "id": "q1_sector",
-      "value": "Comercial"
+      "value": "2. Comercial"
     },
     "question_text": "¿Cuál es el giro específico de tu Empresa dentro del Sector Comercial?",
     "options": [
-      "Hotel",
-      "Edificio de oficinas",
-      "Centro comercial/Comercio minorista",
-      "Restaurante",
-      "Otro"
+      "1. Hotel",
+      "2. Edificio de oficinas",
+      "3. Centro comercial/Comercio minorista",
+      "4. Restaurante",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "Conocer el tipo de negocio comercial nos ayuda a estimar patrones de consumo y tipos de contaminantes.",
@@ -69,14 +69,14 @@
     "type": "multiple_choice",
     "depends_on": {
       "id": "q1_sector",
-      "value": "Municipal"
+      "value": "3. Municipal"
     },
     "question_text": "¿Cuál es el giro específico dentro del Sector Municipal?",
     "options": [
-      "Gobierno de la ciudad",
-      "Pueblo/Aldea",
-      "Autoridad de servicios de agua",
-      "Otro"
+      "1. Gobierno de la ciudad",
+      "2. Pueblo/Aldea",
+      "3. Autoridad de servicios de agua",
+      "4. Otro"
     ],
     "required": true,
     "explanation": "Entender la entidad municipal nos ayuda a enfocar la solución (agua potable, tratamiento de aguas residuales a gran escala, etc.).",
@@ -87,13 +87,13 @@
     "type": "multiple_choice",
     "depends_on": {
       "id": "q1_sector",
-      "value": "Residencial"
+      "value": "4. Residencial"
     },
     "question_text": "¿Cuál es el giro específico dentro del Sector Residencial?",
     "options": [
-      "Vivienda unifamiliar",
-      "Edificio multifamiliar",
-      "Otro"
+      "1. Vivienda unifamiliar",
+      "2. Edificio multifamiliar",
+      "3. Otro"
     ],
     "required": true,
     "explanation": "El tipo de vivienda influye en la escala y complejidad de la solución.",
@@ -181,14 +181,14 @@
     ],
     "question_text": "6. ¿Aproximadamente cuántas personas usan/visitan/habitan las instalaciones regularmente (diario o semanal)?",
     "options": [
-      "Menos de 20",
-      "20-49",
-      "50-199",
-      "200-499",
-      "500-999",
-      "1000-1999",
-      "2000-4999",
-      "5000 o más"
+      "1. Menos de 20",
+      "2. 20-49",
+      "3. 50-199",
+      "4. 200-499",
+      "5. 500-999",
+      "6. 1000-1999",
+      "7. 2000-4999",
+      "8. 5000 o más"
     ],
     "required": true,
     "explanation": "El número de personas ayuda a estimar cargas (especialmente sanitarias) y picos de uso."
@@ -227,7 +227,7 @@
     "id": "q13_params_alimentos",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Alimentos y Bebidas",
+      "subsector": "1. Alimentos y Bebidas",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Alimentos y Bebidas:",
@@ -273,7 +273,7 @@
     "id": "q13_params_textil",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Textil",
+      "subsector": "2. Textil",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Textil:",
@@ -319,7 +319,7 @@
     "id": "q13_params_petroquimica",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Petroquímica",
+      "subsector": "3. Petroquímica",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Petroquímica:",
@@ -360,7 +360,7 @@
     "id": "q13_params_farmaceutica",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Farmacéutica",
+      "subsector": "4. Farmacéutica",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Farmacéutica:",
@@ -406,7 +406,7 @@
     "id": "q13_params_mineria",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Minería",
+      "subsector": "5. Minería",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Minería:",
@@ -449,7 +449,7 @@
     "id": "q13_params_oilgas",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Petróleo y Gas",
+      "subsector": "6. Petróleo y Gas",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Petróleo y Gas:",
@@ -490,7 +490,7 @@
     "id": "q13_params_metalauto",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Metal/Automotriz",
+      "subsector": "7. Metal/Automotriz",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Metal/Automotriz:",
@@ -536,7 +536,7 @@
     "id": "q13_params_cemento",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Cemento",
+      "subsector": "8. Cemento",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas para Cemento:",
@@ -577,7 +577,7 @@
     "id": "q13_params_hotel",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Hotel",
+      "subsector": "1. Hotel",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas del agua residual de Hotel:",
@@ -625,7 +625,7 @@
     "id": "q13_params_oficinas",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Edificio de oficinas",
+      "subsector": "2. Edificio de oficinas",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas del agua residual de Edificio de Oficinas:",
@@ -673,7 +673,7 @@
     "id": "q13_params_centrocomercial",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Centro comercial/Comercio minorista",
+      "subsector": "3. Centro comercial/Comercio minorista",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas del agua residual de Centro Comercial:",
@@ -726,7 +726,7 @@
     "id": "q13_params_restaurante",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Restaurante",
+      "subsector": "4. Restaurante",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas del agua residual de Restaurante:",
@@ -779,7 +779,7 @@
     "id": "q13_params_gobciudad",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Gobierno de la ciudad",
+      "subsector": "1. Gobierno de la ciudad",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores TÍPICOS del agua residual municipal que gestionan:",
@@ -827,7 +827,7 @@
     "id": "q13_params_puebloaldea",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Pueblo/Aldea",
+      "subsector": "2. Pueblo/Aldea",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores TÍPICOS del agua residual de la localidad:",
@@ -865,7 +865,7 @@
     "id": "q13_params_autagua",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Autoridad de servicios de agua",
+      "subsector": "3. Autoridad de servicios de agua",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores TÍPICOS del agua residual que tratan:",
@@ -913,7 +913,7 @@
     "id": "q13_params_unifamiliar",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Vivienda unifamiliar",
+      "subsector": "1. Vivienda unifamiliar",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas del agua residual de la vivienda:",
@@ -951,7 +951,7 @@
     "id": "q13_params_multifamiliar",
     "type": "form_group",
     "depends_on": {
-      "subsector": "Edificio multifamiliar",
+      "subsector": "2. Edificio multifamiliar",
       "not_answered": "q12_request_analysis_upload"
     },
     "question_text": "Como no contamos con análisis, por favor indica los valores aproximados que conozcas del agua residual del edificio:",
@@ -989,7 +989,7 @@
     "id": "q14_uses_alimentos",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Alimentos y Bebidas"
+      "subsector": "1. Alimentos y Bebidas"
     },
     "depends_on_answered": [
       "q13_params_alimentos",
@@ -997,11 +997,11 @@
     ],
     "question_text": "9. ¿Cuáles son tus principales usos del agua en tu proceso?",
     "options": [
-      "Agua como materia Prima",
-      "Limpieza y Saneamiento",
-      "Procesos de enfriamiento",
-      "Generación de vapor (calderas)",
-      "Otro"
+      "1. Agua como materia Prima",
+      "2. Limpieza y Saneamiento",
+      "3. Procesos de enfriamiento",
+      "4. Generación de vapor (calderas)",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "Entender los usos nos ayuda a identificar oportunidades específicas de reciclaje y reúso."
@@ -1010,7 +1010,7 @@
     "id": "q14_uses_textil",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Textil"
+      "subsector": "2. Textil"
     },
     "depends_on_answered": [
       "q13_params_textil",
@@ -1018,12 +1018,12 @@
     ],
     "question_text": "11. ¿Cuáles son tus principales usos del agua en tu proceso textil?",
     "options": [
-      "Lavado de telas",
-      "Teñido e impresión",
-      "Enjuague y acabado",
-      "Agua de refrigeración",
-      "Agua para Calderas (generación de vapor)",
-      "Otro"
+      "1. Lavado de telas",
+      "2. Teñido e impresión",
+      "3. Enjuague y acabado",
+      "4. Agua de refrigeración",
+      "5. Agua para Calderas (generación de vapor)",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Los procesos de teñido y acabado son grandes consumidores y generan aguas residuales complejas."
@@ -1032,7 +1032,7 @@
     "id": "q14_uses_petroquimica",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Petroquímica"
+      "subsector": "3. Petroquímica"
     },
     "depends_on_answered": [
       "q13_params_petroquimica",
@@ -1040,11 +1040,11 @@
     ],
     "question_text": "10. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Agua de enfriamiento",
-      "Agua de procesos (Reacciones químicas)",
-      "Generación de vapor",
-      "Agua contraincendios",
-      "Otro"
+      "1. Agua de enfriamiento",
+      "2. Agua de procesos (Reacciones químicas)",
+      "3. Generación de vapor",
+      "4. Agua contraincendios",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "El enfriamiento y los procesos químicos son usos clave en petroquímica."
@@ -1053,7 +1053,7 @@
     "id": "q14_uses_farmaceutica",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Farmacéutica"
+      "subsector": "4. Farmacéutica"
     },
     "depends_on_answered": [
       "q13_params_farmaceutica",
@@ -1061,11 +1061,11 @@
     ],
     "question_text": "11. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Formulación y producción de medicamentos",
-      "Equipo de esterilización",
-      "Enfriamiento de agua",
-      "Agua para calderas (generación de vapor)",
-      "Otro"
+      "1. Formulación y producción de medicamentos",
+      "2. Equipo de esterilización",
+      "3. Enfriamiento de agua",
+      "4. Agua para calderas (generación de vapor)",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "La calidad del agua es crítica para formulación y esterilización."
@@ -1074,7 +1074,7 @@
     "id": "q14_uses_mineria",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Minería"
+      "subsector": "5. Minería"
     },
     "depends_on_answered": [
       "q13_params_mineria",
@@ -1082,11 +1082,11 @@
     ],
     "question_text": "11. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Procesamiento de minerales",
-      "Supresión de polvos",
-      "Refrigeración de equipos",
-      "Consumo en los trabajadores",
-      "Otro"
+      "1. Procesamiento de minerales",
+      "2. Supresión de polvos",
+      "3. Refrigeración de equipos",
+      "4. Consumo en los trabajadores",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "El procesamiento de minerales y la supresión de polvos son grandes consumidores."
@@ -1095,7 +1095,7 @@
     "id": "q14_uses_oilgas",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Petróleo y Gas"
+      "subsector": "6. Petróleo y Gas"
     },
     "depends_on_answered": [
       "q13_params_oilgas",
@@ -1103,11 +1103,11 @@
     ],
     "question_text": "10. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Recuperación mejorada de petróleo",
-      "Preparación del fluido de perforación",
-      "Procesos de refinería",
-      "Sistemas de enfriamiento",
-      "Otro"
+      "1. Recuperación mejorada de petróleo",
+      "2. Preparación del fluido de perforación",
+      "3. Procesos de refinería",
+      "4. Sistemas de enfriamiento",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "Usos intensivos en agua como la recuperación mejorada y fluidos de perforación."
@@ -1116,7 +1116,7 @@
     "id": "q14_uses_metalauto",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Metal/Automotriz"
+      "subsector": "7. Metal/Automotriz"
     },
     "depends_on_answered": [
       "q13_params_metalauto",
@@ -1124,10 +1124,10 @@
     ],
     "question_text": "12. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Lavado de piezas",
-      "Acabado de metales (galvanoplastia, pintura)",
-      "Sistemas de refrigeración",
-      "Otro"
+      "1. Lavado de piezas",
+      "2. Acabado de metales (galvanoplastia, pintura)",
+      "3. Sistemas de refrigeración",
+      "4. Otro"
     ],
     "required": true,
     "explanation": "Procesos de acabado y lavado son clave en este sector."
@@ -1136,7 +1136,7 @@
     "id": "q14_uses_cemento",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Cemento"
+      "subsector": "8. Cemento"
     },
     "depends_on_answered": [
       "q13_params_cemento",
@@ -1144,10 +1144,10 @@
     ],
     "question_text": "11. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Mezclado de concreto",
-      "Enfriamiento",
-      "Supresión de polvo",
-      "Otros (especifique)"
+      "1. Mezclado de concreto",
+      "2. Enfriamiento",
+      "3. Supresión de polvo",
+      "4. Otros (especifique)"
     ],
     "required": true,
     "explanation": "Mezclado, enfriamiento y control de polvo son los usos principales."
@@ -1156,7 +1156,7 @@
     "id": "q14_uses_hotel",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Hotel"
+      "subsector": "1. Hotel"
     },
     "depends_on_answered": [
       "q13_params_hotel",
@@ -1164,12 +1164,12 @@
     ],
     "question_text": "11. ¿Cuáles son sus usos del agua?",
     "options": [
-      "Suministro a habitaciones",
-      "Piscina y SPA",
-      "Lavandería",
-      "Cocina/Restaurante",
-      "Riego de jardines",
-      "Otro"
+      "1. Suministro a habitaciones",
+      "2. Piscina y SPA",
+      "3. Lavandería",
+      "4. Cocina/Restaurante",
+      "5. Riego de jardines",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Habitaciones, lavandería y piscina suelen ser los mayores consumidores."
@@ -1178,7 +1178,7 @@
     "id": "q14_uses_oficinas",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Edificio de oficinas"
+      "subsector": "2. Edificio de oficinas"
     },
     "depends_on_answered": [
       "q13_params_oficinas",
@@ -1186,11 +1186,11 @@
     ],
     "question_text": "11. ¿Cuáles serán sus usos de agua?",
     "options": [
-      "Consumo humano (sanitarios, bebederos)",
-      "Refrigeración (torres de enfriamiento)",
-      "Limpieza",
-      "Riego de jardines",
-      "Otro"
+      "1. Consumo humano (sanitarios, bebederos)",
+      "2. Refrigeración (torres de enfriamiento)",
+      "3. Limpieza",
+      "4. Riego de jardines",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "Sanitarios y refrigeración son los usos predominantes."
@@ -1199,7 +1199,7 @@
     "id": "q14_uses_centrocomercial",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Centro comercial/Comercio minorista"
+      "subsector": "3. Centro comercial/Comercio minorista"
     },
     "depends_on_answered": [
       "q13_params_centrocomercial",
@@ -1207,12 +1207,12 @@
     ],
     "question_text": "11. ¿Cuáles serán sus usos de agua?",
     "options": [
-      "Consumo humano (sanitarios, bebederos, fuentes)",
-      "Refrigeración",
-      "Área de Alimentos",
-      "Limpieza",
-      "Riego",
-      "Otro"
+      "1. Consumo humano (sanitarios, bebederos, fuentes)",
+      "2. Refrigeración",
+      "3. Área de Alimentos",
+      "4. Limpieza",
+      "5. Riego",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Mezcla de usos sanitarios, refrigeración y potencialmente área de alimentos."
@@ -1221,7 +1221,7 @@
     "id": "q14_uses_restaurante",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Restaurante"
+      "subsector": "4. Restaurante"
     },
     "depends_on_answered": [
       "q13_params_restaurante",
@@ -1229,12 +1229,12 @@
     ],
     "question_text": "11. ¿Cuáles serán sus usos de agua?",
     "options": [
-      "Cocina (preparación, cocción)",
-      "Lavalozas",
-      "Preparación de bebidas",
-      "Limpieza",
-      "Sanitarios",
-      "Otro"
+      "1. Cocina (preparación, cocción)",
+      "2. Lavalozas",
+      "3. Preparación de bebidas",
+      "4. Limpieza",
+      "5. Sanitarios",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Cocina y lavalozas son los principales consumidores."
@@ -1243,7 +1243,7 @@
     "id": "q14_uses_gobciudad",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Gobierno de la ciudad"
+      "subsector": "1. Gobierno de la ciudad"
     },
     "depends_on_answered": [
       "q13_params_gobciudad",
@@ -1251,10 +1251,10 @@
     ],
     "question_text": "11. ¿Cuáles son los usos principales del agua gestionada?",
     "options": [
-      "Suministro de agua potable a la población",
-      "Fuentes públicas y riego de parques",
-      "Servicios municipales (bomberos, limpieza)",
-      "Otro"
+      "1. Suministro de agua potable a la población",
+      "2. Fuentes públicas y riego de parques",
+      "3. Servicios municipales (bomberos, limpieza)",
+      "4. Otro"
     ],
     "required": true,
     "explanation": "Principalmente suministro potable y servicios públicos."
@@ -1263,7 +1263,7 @@
     "id": "q14_uses_puebloaldea",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Pueblo/Aldea"
+      "subsector": "2. Pueblo/Aldea"
     },
     "depends_on_answered": [
       "q13_params_puebloaldea",
@@ -1271,10 +1271,10 @@
     ],
     "question_text": "11. ¿Cuáles son los usos principales del agua?",
     "options": [
-      "Suministro de agua potable",
-      "Riego agrícola o de jardines",
-      "Uso doméstico general",
-      "Otro"
+      "1. Suministro de agua potable",
+      "2. Riego agrícola o de jardines",
+      "3. Uso doméstico general",
+      "4. Otro"
     ],
     "required": true,
     "explanation": "Potable y riego suelen ser los más importantes."
@@ -1283,7 +1283,7 @@
     "id": "q14_uses_autagua",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Autoridad de servicios de agua"
+      "subsector": "3. Autoridad de servicios de agua"
     },
     "depends_on_answered": [
       "q13_params_autagua",
@@ -1291,12 +1291,12 @@
     ],
     "question_text": "11. ¿Cuáles son los destinos principales del agua tratada o gestionada?",
     "options": [
-      "Suministro de agua potable",
-      "Descarga a cuerpo receptor",
-      "Reúso agrícola",
-      "Reúso industrial",
-      "Reúso municipal (riego)",
-      "Otro"
+      "1. Suministro de agua potable",
+      "2. Descarga a cuerpo receptor",
+      "3. Reúso agrícola",
+      "4. Reúso industrial",
+      "5. Reúso municipal (riego)",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Define los objetivos de calidad del tratamiento."
@@ -1305,7 +1305,7 @@
     "id": "q14_uses_unifamiliar",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Vivienda unifamiliar"
+      "subsector": "1. Vivienda unifamiliar"
     },
     "depends_on_answered": [
       "q13_params_unifamiliar",
@@ -1313,13 +1313,13 @@
     ],
     "question_text": "11. ¿Cuáles son los usos principales del agua en su hogar?",
     "options": [
-      "Bebidas y Cocina",
-      "Limpieza personal (ducha, lavabo)",
-      "Sanitarios",
-      "Lavado de ropa/trastes",
-      "Riego de jardín",
-      "Limpieza general",
-      "Otro"
+      "1. Bebidas y Cocina",
+      "2. Limpieza personal (ducha, lavabo)",
+      "3. Sanitarios",
+      "4. Lavado de ropa/trastes",
+      "5. Riego de jardín",
+      "6. Limpieza general",
+      "7. Otro"
     ],
     "required": true,
     "explanation": "Ayuda a estimar volúmenes y tipos de aguas grises/negras."
@@ -1328,7 +1328,7 @@
     "id": "q14_uses_multifamiliar",
     "type": "multiple_select",
     "depends_on": {
-      "subsector": "Edificio multifamiliar"
+      "subsector": "2. Edificio multifamiliar"
     },
     "depends_on_answered": [
       "q13_params_multifamiliar",
@@ -1336,12 +1336,12 @@
     ],
     "question_text": "13. ¿Cuáles son los usos principales del agua en el edificio?",
     "options": [
-      "Agua para consumo humano (Bebidas, cocina, sanitarios)",
-      "Refrigeración (aire acondicionado central)",
-      "Lavandería común (si aplica)",
-      "Riego de áreas comunes",
-      "Limpieza",
-      "Otro"
+      "1. Agua para consumo humano (Bebidas, cocina, sanitarios)",
+      "2. Refrigeración (aire acondicionado central)",
+      "3. Lavandería común (si aplica)",
+      "4. Riego de áreas comunes",
+      "5. Limpieza",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Similar a vivienda unifamiliar pero con posibles usos comunes adicionales."
@@ -1365,12 +1365,12 @@
     ],
     "question_text": "10. ¿Cuál es tu fuente principal de agua?",
     "options": [
-      "Agua municipal",
-      "Agua de pozo",
-      "Cosecha de agua Pluvial",
-      "Fuente natural (río, lago)",
-      "Sistema de agua purificada (para ciertos procesos)",
-      "Otro"
+      "1. Agua municipal",
+      "2. Agua de pozo",
+      "3. Cosecha de agua Pluvial",
+      "4. Fuente natural (río, lago)",
+      "5. Sistema de agua purificada (para ciertos procesos)",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "La fuente del agua afecta la calidad inicial y la necesidad (o no) de pretratamiento."
@@ -1380,7 +1380,7 @@
     "type": "text",
     "depends_on": {
       "id": "q15_water_source",
-      "value": "Otro"
+      "value": "6. Otro"
     },
     "question_text": "Por favor, especifica la fuente 'Otra':",
     "required": true,
@@ -1426,12 +1426,12 @@
     ],
     "question_text": "13. ¿Cuál es el objetivo PRINCIPAL que estás buscando con este proyecto?",
     "options": [
-      "Cumplimiento normativo",
-      "Reducción de la huella ambiental",
-      "Ahorro de costos / ROI",
-      "Mayor disponibilidad de agua",
-      "Mejorar calidad del agua para proceso/consumo",
-      "Otro"
+      "1. Cumplimiento normativo",
+      "2. Reducción de la huella ambiental",
+      "3. Ahorro de costos / ROI",
+      "4. Mayor disponibilidad de agua",
+      "5. Mejorar calidad del agua para proceso/consumo",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Priorizar el objetivo principal guía el diseño hacia la solución más efectiva para sus metas."
@@ -1441,7 +1441,7 @@
     "type": "text",
     "depends_on": {
       "id": "q19_main_objective",
-      "value": "Otro"
+      "value": "6. Otro"
     },
     "question_text": "Por favor, especifica el objetivo principal 'Otro':",
     "required": true,
@@ -1456,12 +1456,12 @@
     ],
     "question_text": "14. ¿Cuáles son tus objetivos específicos para el agua tratada (reúso o descarga)?",
     "options": [
-      "Uso en riego de áreas verdes",
-      "Reúso en sanitarios",
-      "Reúso en procesos industriales",
-      "Cumplimiento normativo para descarga a alcantarillado",
-      "Cumplimiento normativo para descarga a cuerpo de agua",
-      "Otro"
+      "1. Uso en riego de áreas verdes",
+      "2. Reúso en sanitarios",
+      "3. Reúso en procesos industriales",
+      "4. Cumplimiento normativo para descarga a alcantarillado",
+      "5. Cumplimiento normativo para descarga a cuerpo de agua",
+      "6. Otro"
     ],
     "required": true,
     "explanation": "Saber el destino final del agua tratada define el nivel de tratamiento requerido."
@@ -1471,7 +1471,7 @@
     "type": "text",
     "depends_on_option": {
       "id": "q20_reuse_discharge_objectives",
-      "option_value": "Otro"
+      "option_value": "6. Otro"
     },
     "question_text": "Por favor, especifica el objetivo de reúso/descarga 'Otro':",
     "required": true,
@@ -1486,11 +1486,11 @@
     ],
     "question_text": "15. ¿Actualmente a dónde se descargan las aguas residuales SIN tratar (o pre-tratadas)?",
     "options": [
-      "Alcantarillado municipal",
-      "Cuerpo de agua natural (Río, Lago, Subsuelo)",
-      "Fosa séptica / Sistema local",
-      "No se descargan (se evaporan, infiltran, etc.)",
-      "Otro"
+      "1. Alcantarillado municipal",
+      "2. Cuerpo de agua natural (Río, Lago, Subsuelo)",
+      "3. Fosa séptica / Sistema local",
+      "4. No se descargan (se evaporan, infiltran, etc.)",
+      "5. Otro"
     ],
     "required": true,
     "explanation": "El punto de descarga actual y sus regulaciones asociadas son un factor clave."
@@ -1500,7 +1500,7 @@
     "type": "text",
     "depends_on": {
       "id": "q21_current_discharge",
-      "value": "Otro"
+      "value": "5. Otro"
     },
     "question_text": "Por favor, especifica el lugar de descarga actual 'Otro':",
     "required": true,
@@ -1523,15 +1523,15 @@
     ],
     "question_text": "16. ¿Tienes alguna de estas restricciones o consideraciones importantes para el proyecto?",
     "options": [
-      "Limitaciones de espacio físico o logística",
-      "Restricciones normativas específicas (límites de descarga muy estrictos)",
-      "Calidad del agua de entrada muy variable o compleja (dureza, metales, etc.)",
-      "Preferencia o rechazo por ciertas tecnologías (ej: no químicos, sí biológico)",
-      "Presupuesto de inversión (CAPEX) limitado (especificar rango si es posible)",
-      "Preocupación por costos operativos (OPEX) (energía, químicos, personal)",
-      "Dificultad para manejo/disposición de residuos (lodos, salmueras)",
-      "Disponibilidad limitada de energía eléctrica en sitio",
-      "Otros (especifique)"
+      "1. Limitaciones de espacio físico o logística",
+      "2. Restricciones normativas específicas (límites de descarga muy estrictos)",
+      "3. Calidad del agua de entrada muy variable o compleja (dureza, metales, etc.)",
+      "4. Preferencia o rechazo por ciertas tecnologías (ej: no químicos, sí biológico)",
+      "5. Presupuesto de inversión (CAPEX) limitado (especificar rango si es posible)",
+      "6. Preocupación por costos operativos (OPEX) (energía, químicos, personal)",
+      "7. Dificultad para manejo/disposición de residuos (lodos, salmueras)",
+      "8. Disponibilidad limitada de energía eléctrica en sitio",
+      "9. Otros (especifique)"
     ],
     "required": false,
     "explanation": "Identificar restricciones desde el inicio nos permite proponer soluciones viables y realistas."
@@ -1541,7 +1541,7 @@
     "type": "text",
     "depends_on_option": {
       "id": "q23_restrictions",
-      "option_value": "Presupuesto de inversión (CAPEX) limitado (especificar rango si es posible)"
+      "option_value": "5. Presupuesto de inversión (CAPEX) limitado (especificar rango si es posible)"
     },
     "question_text": "Por favor, especifica el rango de presupuesto CAPEX aproximado:",
     "required": false,
@@ -1552,7 +1552,7 @@
     "type": "text",
     "depends_on_option": {
       "id": "q23_restrictions",
-      "option_value": "Otros (especifique)"
+      "option_value": "9. Otros (especifique)"
     },
     "question_text": "Por favor, especifica las restricciones 'Otras':",
     "required": true,
@@ -1566,8 +1566,8 @@
     ],
     "question_text": "17. ¿Cuentas actualmente con algún sistema de tratamiento de agua (residual o potable) en el sitio?",
     "options": [
-      "Si",
-      "No"
+      "1. Si",
+      "2. No"
     ],
     "required": true,
     "explanation": "Saber si existe infraestructura previa nos permite evaluar posibles integraciones o mejoras."
@@ -1577,7 +1577,7 @@
     "type": "textarea",
     "depends_on": {
       "id": "q24_existing_infra",
-      "value": "Si"
+      "value": "1. Si"
     },
     "question_text": "17a. Por favor, describe brevemente los procesos existentes (ej: trampa de grasas, fosa séptica, filtro simple, etc.).",
     "required": true,
@@ -1588,7 +1588,7 @@
     "type": "request_upload",
     "depends_on": {
       "id": "q24_existing_infra",
-      "value": "Si"
+      "value": "1. Si"
     },
     "question_text": "17b. Si tienes diagramas, layouts, fotos o descripciones de la tecnología existente, adjúntalos por favor.",
     "required": false,
@@ -1624,12 +1624,12 @@
     ],
     "question_text": "19. ¿En qué plazo de tiempo tienes contemplado iniciar o completar este proyecto?",
     "options": [
-      "Urgente / Inmediato (0-3 meses)",
-      "Corto Plazo (3-6 meses)",
-      "Mediano Plazo (6-12 meses)",
-      "Largo Plazo (1-2 años)",
-      "Aún sin definir",
-      "Otro"
+      "1. Urgente / Inmediato (0-3 meses)",
+      "2. Corto Plazo (3-6 meses)",
+      "3. Mediano Plazo (6-12 meses)",
+      "4. Largo Plazo (1-2 años)",
+      "5. Aún sin definir",
+      "6. Otro"
     ],
     "required": false,
     "explanation": "El plazo deseado influye en la planificación y selección de tecnologías."
@@ -1639,7 +1639,7 @@
     "type": "text",
     "depends_on": {
       "id": "q29_project_timeline",
-      "value": "Otro"
+      "value": "6. Otro"
     },
     "question_text": "Por favor, especifica el plazo 'Otro':",
     "required": true,
@@ -1654,10 +1654,10 @@
     ],
     "question_text": "20. ¿Cuentas con financiamiento propio asegurado para este proyecto?",
     "options": [
-      "Si, totalmente",
-      "Si, parcialmente",
-      "No, estamos buscando financiamiento",
-      "Aún no evaluado"
+      "1. Si, totalmente",
+      "2. Si, parcialmente",
+      "3. No, estamos buscando financiamiento",
+      "4. Aún no evaluado"
     ],
     "required": false,
     "explanation": "Saber la situación del financiamiento nos permite sugerir enfoques o socios adecuados."
@@ -1681,9 +1681,9 @@
     ],
     "question_text": "22. ¿Tienes ya un cronograma estimado para las fases de implementación (diseño, construcción, puesta en marcha)?",
     "options": [
-      "Si, detallado",
-      "Si, general",
-      "No, aún no"
+      "1. Si, detallado",
+      "2. Si, general",
+      "3. No, aún no"
     ],
     "required": false,
     "explanation": "Un cronograma existente nos ayuda a entender las fases planeadas."
@@ -1696,13 +1696,13 @@
     ],
     "question_text": "23. ¿Hay planes de expansión o crecimiento significativo en el sitio a futuro?",
     "options": [
-      "Si, en Inmediato (0-6 meses)",
-      "Si, en Corto plazo (6-12 meses)",
-      "Si, en Mediano plazo (1-3 años)",
-      "Si, en Largo plazo (>3 años)",
-      "No hay planes de crecimiento",
-      "No estoy seguro",
-      "Otro"
+      "1. Si, en Inmediato (0-6 meses)",
+      "2. Si, en Corto plazo (6-12 meses)",
+      "3. Si, en Mediano plazo (1-3 años)",
+      "4. Si, en Largo plazo (>3 años)",
+      "5. No hay planes de crecimiento",
+      "6. No estoy seguro",
+      "7. Otro"
     ],
     "required": false,
     "explanation": "Planificar para el futuro crecimiento asegura que la solución diseñada hoy sea escalable y no quede obsoleta pronto."
@@ -1712,7 +1712,7 @@
     "type": "text",
     "depends_on": {
       "id": "q33_future_growth_timeline",
-      "value": "Otro"
+      "value": "7. Otro"
     },
     "question_text": "Por favor, especifica los planes de crecimiento 'Otro':",
     "required": true,
