@@ -165,7 +165,7 @@ async def track_analytics_event(event: AnalyticsEvent):
 
 @app.post("/api/chat/start", response_model=ConversationResponse)
 async def start_chat():
-    """Inicia una nueva conversación con instrucciones explícitas para buscar el cuestionario"""
+    """Inicia una nueva conversación con instrucciones específicas para el saludo inicial y primera pregunta"""
     if not VECTOR_STORE_ID:
         raise HTTPException(
             status_code=500,
@@ -175,22 +175,27 @@ async def start_chat():
     try:
         print(f"Iniciando conversación con Vector Store ID: {VECTOR_STORE_ID}")
 
-        # Paso 1: Instrucción específica para buscar el inicio del cuestionario
+        # MODIFICACIÓN CLAVE: Instrucciones muy específicas sobre el comportamiento inicial
         instructions = """
-        Eres un asistente experto en soluciones de agua. Tu tarea es seguir un cuestionario específico 
-        haciendo una pregunta a la vez y llevando al usuario a través de este proceso.
+        Sigue EXACTAMENTE estas instrucciones:
 
-        IMPORTANTE: DEBES usar la herramienta file_search para buscar explícitamente el cuestionario 
-        "CUESTIONARIO COMPLETO (2).pdf" para encontrar la estructura y las preguntas. Busca primero 
-        la parte inicial del cuestionario donde se explica el propósito y la pregunta sobre el sector.
+        1. Saluda al usuario con este mensaje exacto: "¡Hola! Soy el Hydrous AI Water Solution Designer, tu asistente experto para diseñar soluciones personalizadas de tratamiento de agua y aguas residuales. Como herramienta de Hydrous, estoy aquí para guiarte paso a paso en la evaluación de las necesidades de agua de tu sitio, la exploración de posibles soluciones y la identificación de oportunidades de ahorro de costos, cumplimiento y sostenibilidad."
+
+        2. Inmediatamente después, haz SOLO la primera pregunta del cuestionario: "¿En qué sector opera tu empresa?" y lista SOLO las siguientes opciones:
+        - Industrial
+        - Comercial
+        - Municipal
+        - Residencial
+
+        3. Añade una breve explicación de por qué esta información es importante.
+
+        4. NO muestres ninguna otra parte del cuestionario.
+        5. NO preguntes por subsectores o más detalles en este momento.
+        6. Respeta ESTRICTAMENTE el formato y estructura del mensaje como se ha indicado.
         """
 
-        # Paso 2: Instrucción explícita para iniciar el flujo
-        initial_message = """
-        BUSCA EN EL ARCHIVO: Busca la introducción y primera pregunta del "CUESTIONARIO COMPLETO (2).pdf".
-        Después saluda al usuario como "Hydrous AI Water Solution Designer", explica tu propósito y
-        haz la primera pregunta sobre en qué sector opera la empresa del usuario.
-        """
+        # Instrucción explícita para iniciar
+        initial_message = "Inicia la conversación exactamente como se ha indicado"
 
         response = client.responses.create(
             model="gpt-4o-mini",
@@ -200,7 +205,7 @@ async def start_chat():
                 {
                     "type": "file_search",
                     "vector_store_ids": [VECTOR_STORE_ID],
-                    "max_num_results": 5,
+                    "max_num_results": 2,  # Limitamos resultados para no sobrecargar
                 }
             ],
             store=True,
@@ -216,7 +221,7 @@ async def start_chat():
 
 @app.post("/api/chat/message", response_model=ConversationResponse)
 async def chat_message(request: MessageRequest):
-    """Envía un mensaje a una conversación existente con instrucciones para continuar el cuestionario"""
+    """Procesa cada mensaje del usuario siguiendo estrictamente el cuestionario"""
     if not VECTOR_STORE_ID:
         raise HTTPException(
             status_code=500,
@@ -224,43 +229,56 @@ async def chat_message(request: MessageRequest):
         )
 
     try:
-        print(f"Procesando mensaje para conversación: {request.conversation_id}")
-        print(f"Contenido del mensaje: {request.message}")
+        print(f"Procesando mensaje: {request.message}")
 
-        # Formato de mensaje que incluye la instrucción de búsqueda
-        # Esto asegura que el modelo busque la siguiente pregunta del cuestionario
-        augmented_input = f"""
-        RESPUESTA DEL USUARIO: {request.message}
+        # MODIFICACIÓN CLAVE: Instrucciones específicas para cada paso del cuestionario
+        # Nota cómo ajustamos la instrucción para ser extremadamente específica
+        instructions = """
+        Sigue EXACTAMENTE estas instrucciones para responder al usuario:
 
-        INSTRUCCIÓN: Analiza esta respuesta del usuario. Luego, BUSCA EN EL ARCHIVO "CUESTIONARIO COMPLETO (2).pdf" 
-        para encontrar la siguiente pregunta que corresponde, basándote en las respuestas anteriores. 
+        1. Agradece brevemente la respuesta del usuario.
         
-        Sigue este formato exacto:
-        1. Agradece la respuesta
-        2. Proporciona un dato o contexto relevante sobre esta respuesta
-        3. Presenta la siguiente pregunta del cuestionario con sus opciones
-        4. No hagas múltiples preguntas juntas, solo UNA a la vez
+        2. Proporciona UN dato relevante o contexto breve relacionado con su respuesta (2-3 líneas máximo).
+        
+        3. LUEGO, busca en el cuestionario y presenta EXCLUSIVAMENTE la SIGUIENTE pregunta en secuencia lógica.
+           - Debe ser UNA SOLA pregunta
+           - Si hay opciones, muestra solo las relevantes para la respuesta anterior
+           - NO muestres todo el cuestionario
+           - NO adelantes información de pasos futuros
+        
+        4. Añade una breve explicación de por qué esta información es importante.
+        
+        5. Este formato debe seguirse ESTRICTAMENTE en cada interacción.
+        """
+
+        # Formateamos la entrada para guiar al modelo
+        user_message = f"""
+        Respuesta del usuario: {request.message}
+        
+        IMPORTANTE: Procesa esta respuesta y sigue con la SIGUIENTE pregunta del cuestionario, manteniendo un flujo de UNA SOLA PREGUNTA A LA VEZ.
         """
 
         response = client.responses.create(
             model="gpt-4o-mini",
-            input=augmented_input,
+            instructions=instructions,
+            input=user_message,
             previous_response_id=request.conversation_id,
             tools=[
                 {
                     "type": "file_search",
                     "vector_store_ids": [VECTOR_STORE_ID],
-                    "max_num_results": 5,
+                    "max_num_results": 3,
                 }
             ],
             store=True,
+            temperature=0.2,  # Temperatura baja para comportamiento más determinista
         )
 
-        print(f"Respuesta generada con ID: {response.id}")
+        print(f"Respuesta generada: {response.id}")
 
         return {"id": response.id, "message": response.output_text}
     except Exception as e:
-        print(f"Error al enviar mensaje: {e}")
+        print(f"Error al procesar mensaje: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
