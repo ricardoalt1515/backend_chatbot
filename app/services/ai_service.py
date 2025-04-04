@@ -76,11 +76,41 @@ class AIService:
     def _prepare_messages(
         self, conversation: Conversation, user_message: str = None
     ) -> List[Dict[str, str]]:
-        """Prepara los mensajes para la API del LLM de forma simplificada"""
-        # Mensaje inicial del sistema con el prompt maestro
-        system_prompt = self.master_prompt
+        """Prepara los mensajes para la API del LLM con instrucciones claras"""
+        # Instrucciones específicas para seguir el estilo de conversación deseado
+        conversation_style = """
+        INSTRUCCIONES CRÍTICAS PARA SEGUIR EL FORMATO DE CONVERSACIÓN:
+        
+        1. SOLO realiza UNA pregunta a la vez, nunca múltiples preguntas.
+        2. Después de cada respuesta del usuario, SIEMPRE proporciona un dato interesante o estadística educativa relacionada con su respuesta, marcado con emoji 💡.
+        3. Presenta todas las opciones múltiples de forma numerada (1., 2., 3., etc.) para que el usuario responda con el número.
+        4. Confirma la elección del usuario antes de continuar con la siguiente pregunta.
+        5. Usa emojis estratégicamente para hacer la conversación más atractiva (📊 💧 💰 ♻️ 🔍).
+        6. Formatea la pregunta actual con "PREGUNTA:" en negrita.
+        7. Cada 3-4 preguntas, proporciona un breve resumen de la información obtenida.
+        8. Mantén un tono profesional pero cálido y conversacional.
+        9. No avances a la siguiente pregunta hasta haber obtenido respuesta a la actual.
+        10. Sigue ESTRICTAMENTE el orden de preguntas del cuestionario proporcionado.
+        
+        EJEMPLO DE FORMATO:
+        "¡Gracias por tu respuesta, [nombre]!
+        
+        💡 *Dato interesante: Las empresas del sector [sector] que implementan soluciones de reciclaje de agua pueden reducir su consumo hasta en un 40-60%.*
+        
+        **PREGUNTA:** ¿Cuál es tu siguiente prioridad?
+        
+        1. Opción A
+        2. Opción B
+        3. Opción C"
+        """
 
-        # Añadir contenido del cuestionario como un bloque específico con formato preservado
+        # Mensaje inicial del sistema con el prompt maestro y el estilo de conversación
+        system_prompt = self.master_prompt + conversation_style
+
+        # Añadir cuestionario completo como parte del prompt
+        system_prompt += (
+            "\n\n<cuestionario>\n" + self.cuestionario_content + "\n</cuestionario>"
+        )
 
         if self.proposal_format_content:
             system_prompt += (
@@ -89,17 +119,20 @@ class AIService:
                 + "\n</formato_propuesta>"
             )
 
-        # Añadir instrucciones específicas para el manejo de opciones múltiples
-        system_prompt += """
-        \n\nIMPORTANTE: Cuando encuentres una lista de opciones marcada con asteriscos (*) o números, DEBES presentarla como opciones numeradas para que el usuario pueda elegir por número. Ejemplo:
-        1. Opción A
-        2. Opción B
-        3. Opción C
-
-        Al procesar la respuesta del usuario, acepta tanto el número como el texto de la opción.
-        """
-
         messages = [{"role": "system", "content": system_prompt}]
+
+        # Si es la primera interacción, añadir un mensaje especial
+        if len(conversation.messages) == 0 or (
+            len(conversation.messages) == 1
+            and conversation.messages[0].role == "assistant"
+        ):
+            # Añadir un mensaje especial de inicio para guiar el flujo inicial
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "Inicia la conversación presentando el formato Hydrous y haciendo la primera pregunta sobre el sector en que opera la empresa.",
+                }
+            )
 
         # Añadir mensajes anteriores de la conversación
         for msg in conversation.messages:
@@ -109,6 +142,14 @@ class AIService:
         # Si hay un nuevo mensaje del usuario, añadirlo
         if user_message:
             messages.append({"role": "user", "content": user_message})
+
+            # Añadir instrucción de refuerzo después de cada mensaje del usuario
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "Recuerda: 1) Responder con UN SOLO dato interesante relacionado, 2) Hacer UNA SOLA pregunta a la vez, 3) Presentar opciones NUMERADAS cuando corresponda, 4) Seguir el orden exacto del cuestionario.",
+                }
+            )
 
         return messages
 
