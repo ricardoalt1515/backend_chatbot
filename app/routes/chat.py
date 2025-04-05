@@ -1,19 +1,24 @@
 # app/routes/chat.py
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from fastapi.responses import FileResponse, Response  # Añadir Response
+from fastapi.responses import FileResponse, Response
 import logging
 import os
 from typing import Any
 
+# Modelos
 from app.models.conversation import ConversationResponse, Conversation
-from app.models.message import Message, MessageCreate
-from app.models.conversation_state import ConversationState
+from app.models.message import (
+    Message,
+    MessageCreate,
+)  # Asegurarse que MessageCreate está aquí
+
+# Servicios
 from app.services.storage_service import storage_service
-from app.services.ai_service import ai_service  # Usará nuevos métodos
-from app.services.pdf_service import pdf_service  # Necesitará ajustes
+from app.services.ai_service_hybrid import ai_service_hybrid  # Cambiado a Híbrido
+from app.services.pdf_service import pdf_service
 from app.services.questionnaire_service import (
     questionnaire_service,
-)  # Servicio principal de flujo
+)  # Aún se usa para saludo/IDs
 from app.config import settings
 
 router = APIRouter()
@@ -22,256 +27,89 @@ logger = logging.getLogger("hydrous")
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation():
-    """Inicia una nueva conversación y hace la primera pregunta."""
+    """Inicia una nueva conversación y devuelve el saludo inicial."""
     try:
-        # 1. Crear conversación con estado inicial
-        initial_state = ConversationState()
-        conversation = await storage_service.create_conversation(
-            initial_state=initial_state
-        )
-        logger.info(f"Nueva conversación iniciada con ID: {conversation.id}")
+        # 1. Crear conversación (storage_service maneja metadata inicial)
+        conversation = await storage_service.create_conversation()
+        logger.info(f"Nueva conversación HÍBRIDA iniciada con ID: {conversation.id}")
 
-        # 2. Obtener la primera pregunta
-        first_question_id = questionnaire_service.get_initial_question_id()
-        if not first_question_id:
-            logger.error(
-                "Configuración inválida: No se pudo obtener la primera pregunta."
-            )
-            raise HTTPException(
-                status_code=500, detail="Error interno del servidor [QS01]"
-            )
+        # 2. Obtener saludo inicial del QuestionnaireService
+        initial_greeting = questionnaire_service.get_initial_greeting()
 
-        question_details = questionnaire_service.get_question(first_question_id)
-        if not question_details:
-            logger.error(
-                f"Configuración inválida: Detalles no encontrados para la primera pregunta ID: {first_question_id}"
-            )
-            raise HTTPException(
-                status_code=500, detail="Error interno del servidor [QS02]"
-            )
+        # 3. Opcional: Añadir un mensaje inicial de sistema o asistente si quieres
+        #    PERO el flujo real empieza con el primer mensaje del usuario.
+        #    Podríamos devolver el saludo como parte de la respuesta para que el frontend lo muestre.
+        # initial_message = Message.assistant(initial_greeting)
+        # await storage_service.add_message_to_conversation(conversation.id, initial_message)
+        # await storage_service.save_conversation(conversation) # Guardar si añadimos mensaje
 
-        # 3. Actualizar estado con la primera pregunta
-        conversation.state.current_question_id = first_question_id
-        # No es necesario guardar aquí si `create_conversation` ya lo hizo.
-        # Si `create` no guarda, descomentar: await storage_service.save_conversation(conversation)
-
-        # 4. Formatear mensaje de bienvenida + primera pregunta
-        welcome_text = questionnaire_service.get_initial_greeting()
-        formatted_question = questionnaire_service.format_question_for_display(
-            question_details
-        )
-        initial_message_content = f"{welcome_text}\n\n{formatted_question}"
-        initial_message = Message.assistant(initial_message_content)
-
-        # 5. Añadir mensaje a la conversación y GUARDAR (importante si no se hizo antes)
-        await storage_service.add_message_to_conversation(
-            conversation.id, initial_message
-        )
-        await storage_service.save_conversation(
-            conversation
-        )  # Asegurar que el estado inicializado se guarde
-
-        # 6. Devolver respuesta
+        # 4. Devolver ID y metadata inicial (frontend mostrará UI vacía o saludo)
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
-            messages=[initial_message],  # Devolver solo el mensaje de bienvenida/inicio
-            state=conversation.state,
+            messages=[],  # Sin mensajes aún, el saludo es implícito o lo maneja el frontend
             metadata=conversation.metadata,
         )
     except Exception as e:
-        logger.error(f"Error crítico al iniciar conversación: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error crítico al iniciar conversación híbrida: {str(e)}", exc_info=True
+        )
         raise HTTPException(
             status_code=500, detail="No se pudo iniciar la conversación."
         )
 
 
-@router.post("/message")  # Cambiado: quitamos response_model=Message
+@router.post("/message")  # Quitar response_model
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
-    """Procesa un mensaje del usuario, avanza en el cuestionario y genera una respuesta."""
+    """Recibe mensaje del usuario, obtiene la siguiente respuesta del AI Service Híbrido."""
     conversation_id = data.conversation_id
     user_input = data.message
 
     try:
-        # 1. Cargar Conversación y Estado
+        # 1. Cargar Conversación
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
             logger.error(f"Conversación no encontrada: {conversation_id}")
-            raise HTTPException(
-                status_code=404,
-                detail="Conversación no encontrada. Por favor, inicia una nueva.",
-            )
-        if not conversation.state or not isinstance(
-            conversation.state, ConversationState
-        ):
-            logger.error(
-                f"Estado inválido o faltante para conversación: {conversation_id}"
-            )
-            # Podríamos intentar reiniciar, pero es mejor lanzar error claro.
-            raise HTTPException(
-                status_code=500,
-                detail="Error interno: Estado de la conversación corrupto [CS01]",
-            )
-
-        # 2. Añadir mensaje del usuario (solo si no es petición de PDF después de completar)
-        # Si la propuesta ya está lista Y es petición de PDF, no añadimos la petición como mensaje
-        is_pdf_req = _is_pdf_request(user_input)
-        proposal_ready = conversation.metadata.get("has_proposal", False)
-
-        if not (is_pdf_req and proposal_ready):
-            user_message_obj = Message.user(user_input)
-            await storage_service.add_message_to_conversation(
-                conversation.id, user_message_obj
-            )
-        else:
-            logger.info(
-                f"Petición de PDF detectada para {conversation_id} con propuesta lista. No se añade mensaje 'PDF'."
-            )
-
-        # 3. Manejar Solicitud de PDF (si aplica Y la propuesta está lista)
-        if is_pdf_req and proposal_ready:
-            logger.info(
-                f"Procesando solicitud de PDF para conversación {conversation_id}"
-            )
-
-            # Generar mensaje indicando cómo descargar (no genera el PDF aquí)
-            pdf_info_message_content = f"""
-📄 Tu propuesta personalizada está lista.
-
-Puedes descargarla usando el siguiente enlace:
-[DESCARGAR PROPUESTA EN PDF]({settings.API_V1_STR}/chat/{conversation.id}/download-pdf)
-
-Si tienes algún problema con la descarga o alguna pregunta sobre la propuesta, házmelo saber.
-"""
-            pdf_info_message = Message.assistant(pdf_info_message_content)
-            await storage_service.add_message_to_conversation(
-                conversation.id, pdf_info_message
-            )
-            # No es necesario guardar la conversación aquí, solo se añadió un mensaje informativo
-
-            # Cambiado: Devolver formato compatible con frontend
+            # Devolver un diccionario de error compatible con frontend
             return {
-                "id": pdf_info_message.id,
-                "message": pdf_info_message_content,
+                "id": "error-conv-not-found",
+                "message": "Error: Conversación no encontrada. Por favor, reinicia.",
                 "conversation_id": conversation_id,
-                "created_at": pdf_info_message.created_at,
+                "created_at": datetime.utcnow(),
+            }
+        # Verificar metadata básica
+        if not isinstance(conversation.metadata, dict):
+            logger.error(f"Metadata inválida para conversación: {conversation_id}")
+            return {
+                "id": "error-metadata",
+                "message": "Error interno: Estado de conversación corrupto [MD01].",
+                "conversation_id": conversation_id,
+                "created_at": datetime.utcnow(),
             }
 
-        # --- Lógica Principal del Cuestionario (si no fue petición de PDF) ---
+        # 2. Añadir mensaje del usuario a la conversación
+        user_message_obj = Message.user(user_input)
+        conversation.add_message(user_message_obj)  # Añadir al historial
+        # Nota: La actualización de metadata (datos recolectados, sector, etc.)
+        # la hará AHORA el ai_service_hybrid ANTES de determinar la siguiente instrucción.
 
-        # 4. Procesar Respuesta Anterior (si había una pregunta pendiente)
-        last_question_id = conversation.state.current_question_id
-        educational_insight = ""
-        if last_question_id and not conversation.state.is_complete:
-            processed_answer = questionnaire_service.process_answer(
-                last_question_id, user_input
-            )
-            conversation.state.update_collected_data(last_question_id, processed_answer)
-            logger.info(
-                f"Respuesta a {last_question_id} procesada: '{processed_answer}' para conv {conversation_id}"
-            )
-
-            # Generar insight educativo sobre la respuesta dada
-            try:
-                insight = await ai_service.generate_educational_insight(
-                    conversation, user_input
-                )
-                if insight:
-                    educational_insight = insight + "\n\n---\n\n"  # Añadir separador
-            except Exception as e:
-                logger.warning(
-                    f"No se pudo generar insight educativo para {conversation_id}: {e}"
-                )
-
-        # 5. Determinar Siguiente Pregunta o Finalización
-        next_question_id = questionnaire_service.get_next_question_id(
-            conversation.state
+        # 3. Llamar al AI Service Híbrido para obtener la siguiente respuesta
+        logger.info(
+            f"Llamando a ai_service_hybrid.get_next_response para {conversation_id}"
         )
+        ai_response_content = await ai_service_hybrid.get_next_response(conversation)
 
-        if next_question_id:
-            # 5.a. Hay más preguntas
-            conversation.state.current_question_id = next_question_id
-            next_question_details = questionnaire_service.get_question(next_question_id)
-            if not next_question_details:
-                logger.error(
-                    f"Configuración inválida: No se encontraron detalles para la siguiente pregunta ID: {next_question_id}"
-                )
-                raise HTTPException(
-                    status_code=500, detail="Error interno del servidor [QS03]"
-                )
+        # 4. Crear y añadir mensaje del asistente
+        assistant_message = Message.assistant(ai_response_content)
+        conversation.add_message(assistant_message)
 
-            # Formatear siguiente pregunta
-            next_question_text = questionnaire_service.format_question_for_display(
-                next_question_details
-            )
-            response_content = f"{educational_insight}{next_question_text}"
-            assistant_message = Message.assistant(response_content)
-            logger.debug(
-                f"Siguiente pregunta para {conversation_id}: {next_question_id}"
-            )
-
-        else:
-            # 5.b. Cuestionario Completo -> Generar Propuesta (si no se ha generado ya)
-            if not proposal_ready:
-                logger.info(
-                    f"Cuestionario completado para {conversation_id}. Generando texto de propuesta."
-                )
-                conversation.metadata["has_proposal"] = True
-                conversation.state.current_question_id = (
-                    None  # Ya no hay pregunta activa
-                )
-                conversation.state.is_complete = True  # Marcar como completo
-
-                try:
-                    # Generar el texto y guardarlo en metadatos
-                    proposal_text = await ai_service.generate_proposal_text(
-                        conversation
-                    )
-                    conversation.metadata["proposal_text"] = proposal_text
-                    # Extraer nombre cliente del estado si existe, para el nombre del archivo PDF
-                    client_name = conversation.state.key_entities.get(
-                        "company_name", "Cliente"
-                    )
-                    conversation.metadata["client_name"] = client_name
-
-                    logger.info(
-                        f"Texto de propuesta generado y guardado en metadata para {conversation_id}"
-                    )
-
-                    response_content = f"{educational_insight}✅ ¡Excelente! Hemos recopilado toda la información necesaria.\n\nHe generado una propuesta preliminar basada en tus respuestas.\n\n**Escribe 'descargar propuesta' o 'PDF' para obtener el documento.**"
-                    assistant_message = Message.assistant(response_content)
-
-                except Exception as e:
-                    logger.error(
-                        f"Error crítico generando texto de propuesta para {conversation_id}: {e}",
-                        exc_info=True,
-                    )
-                    conversation.metadata["has_proposal"] = False  # Marcar que falló
-                    conversation.metadata["proposal_error"] = str(e)
-                    assistant_message = Message.assistant(
-                        f"{educational_insight}Lo siento, tuve un problema al generar el resumen final de la propuesta. Por favor, contacta a soporte o intenta responder la última pregunta de nuevo."
-                    )
-
-            else:
-                # El cuestionario ya estaba completo y la propuesta lista (usuario envió otro mensaje?)
-                logger.info(
-                    f"Conversación {conversation_id} ya completada. Recordando cómo descargar PDF."
-                )
-                assistant_message = Message.assistant(
-                    f"{educational_insight}Ya hemos completado la recopilación de datos. Puedes escribir 'descargar propuesta' o 'PDF' para obtener tu documento."
-                )
-
-        # 6. Guardar Estado y Mensaje del Asistente
-        # Guardar siempre la conversación al final para persistir cambios en estado y metadata
+        # 5. Guardar conversación completa (con nuevos mensajes y metadata actualizada por AI Service)
         await storage_service.save_conversation(conversation)
-        await storage_service.add_message_to_conversation(
-            conversation.id, assistant_message
-        )
 
-        # 7. Limpieza en segundo plano
+        # 6. Limpieza en segundo plano
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
-        # 8. Devolver respuesta (Cambiado: formato compatible con frontend)
+        # 7. Devolver respuesta en formato esperado por frontend
         return {
             "id": assistant_message.id,
             "message": assistant_message.content,
@@ -279,76 +117,105 @@ Si tienes algún problema con la descarga o alguna pregunta sobre la propuesta, 
             "created_at": assistant_message.created_at,
         }
 
+    # --- Manejo de Errores ---
     except HTTPException as http_exc:
-        logger.warning(
-            f"HTTPException en send_message para {conversation_id}: {http_exc.status_code} - {http_exc.detail}"
-        )
-        raise http_exc  # Re-lanzar para que FastAPI la maneje
+        # Re-lanzar para que FastAPI maneje
+        raise http_exc
     except Exception as e:
         logger.error(
-            f"Error fatal no controlado en send_message para {conversation_id}: {str(e)}",
+            f"Error fatal no controlado en send_message (híbrido) para {conversation_id}: {str(e)}",
             exc_info=True,
         )
-        # Devolver un error genérico como mensaje del asistente
-        error_msg = Message.assistant(
-            "Lo siento, ha ocurrido un error inesperado. Por favor, intenta de nuevo en unos momentos."
-        )
-        # Intentar guardar el mensaje de error en la conversación si existe
-        try:
-            if "conversation" in locals() and conversation:
-                await storage_service.add_message_to_conversation(
-                    conversation.id, error_msg
-                )
-                # Podríamos guardar un flag de error en metadata también
-                conversation.metadata["last_error"] = str(e)
-                await storage_service.save_conversation(conversation)
-        except Exception as save_err:
-            logger.error(
-                f"Error adicional al intentar guardar mensaje de error para {conversation_id}: {save_err}"
-            )
-
-        # Cambiado: Devolver formato compatible con frontend
-        return {
-            "id": error_msg.id,
-            "message": error_msg.content,
+        # Devolver un error genérico compatible con frontend
+        error_response = {
+            "id": "error-fatal",
+            "message": "Lo siento, ha ocurrido un error inesperado al procesar tu mensaje.",
             "conversation_id": (
                 conversation_id if "conversation_id" in locals() else "unknown"
             ),
-            "created_at": error_msg.created_at,
+            "created_at": datetime.utcnow(),
         }
+        # Intentar guardar el error en metadata si la conversación se cargó
+        try:
+            if "conversation" in locals() and conversation:
+                conversation.metadata["last_error"] = f"Fatal: {str(e)}"
+                await storage_service.save_conversation(conversation)
+        except Exception as save_err:
+            logger.error(
+                f"Error adicional al guardar error fatal en metadata: {save_err}"
+            )
+
+        return error_response  # Devolver el diccionario de error
+
+
+# --- Endpoints /download-pdf y _is_pdf_request ---
+# La lógica de descarga de PDF puede permanecer similar,
+# PERO el endpoint /message YA NO maneja la generación del mensaje de descarga.
+# El LLM ahora genera la propuesta y el mensaje de "Escribe PDF...".
+# El usuario escribe "PDF", eso llega a /message, y el flujo normal debería detectar
+# que has_proposal es True y is_pdf_request es True, devolviendo el enlace.
+
+
+# Modificar _is_pdf_request para ser más preciso
+def _is_pdf_request(message: str) -> bool:
+    if not message:
+        return False
+    message = message.lower().strip()
+    # Palabras clave específicas
+    pdf_keywords = [
+        "pdf",
+        "descargar propuesta",
+        "descargar pdf",
+        "generar pdf",
+        "obtener documento",
+        "propuesta final",
+    ]
+    # Podría ser una coincidencia exacta o contener una de las frases clave
+    return message in pdf_keywords or any(
+        keyword in message for keyword in pdf_keywords
+    )
 
 
 @router.get("/{conversation_id}/download-pdf")
 async def download_pdf(conversation_id: str):
     """Genera (si es necesario) y devuelve la propuesta en formato PDF."""
+    # --- Esta lógica debería funcionar casi igual ---
+    # Verifica que has_proposal sea True y que proposal_text exista en metadata
     try:
-        # 1. Cargar conversación
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada.")
+
+        # Verificar si la propuesta está lista en metadata
         if not conversation.metadata.get("has_proposal", False):
+            logger.warning(
+                f"Intento de descarga PDF para {conversation_id} sin propuesta generada."
+            )
             raise HTTPException(
                 status_code=400,
                 detail="La propuesta para esta conversación aún no está lista.",
             )
 
-        # 2. Verificar si el PDF ya existe
+        # Obtener texto de la propuesta de metadata
+        proposal_text = conversation.metadata.get("proposal_text")
+        if not proposal_text:
+            logger.error(
+                f"Propuesta marcada como lista pero sin texto en metadata para {conversation_id}."
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Error interno: Falta contenido de la propuesta [PDFH01]",
+            )
+
+        # Verificar si el PDF ya existe en caché (ruta en metadata)
         pdf_path = conversation.metadata.get("pdf_path")
         if pdf_path and os.path.exists(pdf_path):
             logger.info(f"PDF encontrado en caché para {conversation_id}: {pdf_path}")
         else:
-            # 3. Generar PDF si no existe
-            logger.info(f"Generando PDF bajo demanda para {conversation_id}...")
-            proposal_text = conversation.metadata.get("proposal_text")
-            if not proposal_text:
-                logger.error(
-                    f"No se encontró texto de propuesta en metadata para generar PDF. ID: {conversation_id}"
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail="Error interno: Falta contenido de la propuesta [PDF01]",
-                )
-
+            # Generar PDF si no existe
+            logger.info(
+                f"Generando PDF bajo demanda (híbrido) para {conversation_id}..."
+            )
             try:
                 # Llamar a pdf_service para generar desde el texto
                 pdf_path = await pdf_service.generate_pdf_from_text(
@@ -373,10 +240,10 @@ async def download_pdf(conversation_id: str):
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="No se pudo generar el archivo PDF de la propuesta [PDF02]",
+                    detail="No se pudo generar el archivo PDF de la propuesta [PDFH02]",
                 )
 
-        # 4. Preparar y devolver el archivo
+        # Preparar y devolver el archivo
         client_name = conversation.metadata.get("client_name", "Cliente")
         filename = f"Propuesta_Hydrous_{client_name}_{conversation_id[:8]}.pdf"
 
@@ -387,6 +254,7 @@ async def download_pdf(conversation_id: str):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    # ... (Manejo de excepciones de download_pdf igual que antes) ...
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -396,29 +264,5 @@ async def download_pdf(conversation_id: str):
         )
         raise HTTPException(
             status_code=500,
-            detail="Error interno al procesar la descarga del archivo [PDF03]",
+            detail="Error interno al procesar la descarga del archivo [PDFH03]",
         )
-
-
-def _is_pdf_request(message: str) -> bool:
-    """Determina si el mensaje es una solicitud de PDF de forma más robusta."""
-    if not message:
-        return False
-    message = message.lower().strip()
-    # Palabras clave fuertes que indican intención de descarga
-    strong_keywords = [
-        "pdf",
-        "descargar",
-        "propuesta",
-        "documento",
-        "bajar",
-        "archivo final",
-    ]
-    # Evitar falsos positivos comunes
-    negative_keywords = ["no quiero", "todavía no", "pregunta", "duda"]
-
-    has_strong_keyword = any(keyword in message for keyword in strong_keywords)
-    has_negative_keyword = any(keyword in message for keyword in negative_keywords)
-
-    # Requiere una palabra clave fuerte y ninguna negativa
-    return has_strong_keyword and not has_negative_keyword

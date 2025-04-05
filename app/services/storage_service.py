@@ -1,109 +1,103 @@
 # app/services/storage_service.py
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, Optional
-
-from app.models.conversation import Conversation
-from app.models.message import Message
-from app.models.conversation_state import ConversationState  # Importar
-from app.config import settings
-
-logger = logging.getLogger("hydrous")
-
-# --- ALMACENAMIENTO EN MEMORIA (SOLO PARA EJEMPLO) ---
-# ¡¡¡ REEMPLAZAR CON TU BASE DE DATOS EN PRODUCCIÓN !!!
+# ... (importaciones y logger) ...
+# --- USAR METADATA ---
 conversations_db: Dict[str, Conversation] = {}
-# ----------------------------------------------------
+# --------------------
 
 
 class StorageService:
 
-    async def create_conversation(
-        self, initial_state: Optional[ConversationState] = None
-    ) -> Conversation:
-        """Crea y almacena una nueva conversación."""
-        if initial_state is None:
-            initial_state = (
-                ConversationState()
-            )  # Crear estado por defecto si no se pasa
-        new_conversation = Conversation(state=initial_state)  # Pasar estado al crear
+    async def create_conversation(self) -> Conversation:  # Quitar initial_state
+        """Crea y almacena una nueva conversación con metadata inicial."""
+        # Crear metadata inicial directamente aquí
+        initial_metadata = {
+            "current_question_id": None,
+            "collected_data": {},
+            "selected_sector": None,
+            "selected_subsector": None,
+            "questionnaire_path": [],
+            "is_complete": False,
+            "has_proposal": False,
+            "proposal_text": None,
+            "pdf_path": None,
+            "client_name": "Cliente",
+            "last_error": None,
+        }
+        # Asegurarse que Conversation usa el default_factory para metadata si no se pasa
+        new_conversation = Conversation(metadata=initial_metadata)
         conversations_db[new_conversation.id] = new_conversation
-        logger.info(f"Conversación creada en memoria con ID: {new_conversation.id}")
+        logger.info(
+            f"DBG_SS: Conversación {new_conversation.id} CREADA. Metadata inicial: {initial_metadata}"
+        )
         return new_conversation
 
     async def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
-        """Obtiene una conversación por su ID."""
+        """Obtiene una conversación por su ID (EN MEMORIA)."""
         conversation = conversations_db.get(conversation_id)
         if conversation:
-            logger.debug(f"Conversación {conversation_id} encontrada en memoria.")
-            # Asegurarse que el estado es un objeto ConversationState
-            if isinstance(
-                conversation.state, dict
-            ):  # Si se guardó como dict, convertirlo
-                conversation.state = ConversationState(**conversation.state)
+            # Asegurarse que metadata existe y tiene claves esperadas (opcionalmente merge con defaults)
+            if not isinstance(conversation.metadata, dict):
+                logger.warning(
+                    f"Metadata inválida para {conversation_id}, reiniciando a default."
+                )
+                conversation.metadata = {  # Reset a default
+                    "current_question_id": None,
+                    "collected_data": {},
+                    "selected_sector": None,  # ... etc
+                }
+            logger.info(
+                f"DBG_SS: Conversación {conversation_id} RECUPERADA. Metadata actual: {conversation.metadata}"
+            )
             return conversation
         else:
-            logger.warning(f"Conversación {conversation_id} NO encontrada en memoria.")
+            logger.warning(f"DBG_SS: Conversación {conversation_id} NO encontrada.")
             return None
 
     async def add_message_to_conversation(
         self, conversation_id: str, message: Message
     ) -> bool:
-        """Añade un mensaje a una conversación existente."""
-        conversation = await self.get_conversation(conversation_id)
+        """Añade un mensaje (EN MEMORIA)."""
+        conversation = await self.get_conversation(
+            conversation_id
+        )  # Log ya está en get
         if conversation:
-            conversation.add_message(message)
-            # No es necesario guardar explícitamente en memoria si modificamos el objeto
-            logger.debug(f"Mensaje añadido a conversación {conversation_id}")
+            conversation.messages.append(message)
+            logger.debug(
+                f"DBG_SS: Mensaje '{message.role}' añadido a {conversation_id}."
+            )
+            # Limitar historial si se implementó en Conversation.add_message
             return True
         else:
             logger.error(
-                f"Intento de añadir mensaje a conversación inexistente: {conversation_id}"
+                f"DBG_SS: Error al añadir mensaje, conversación {conversation_id} no encontrada."
             )
             return False
 
     async def save_conversation(self, conversation: Conversation) -> bool:
-        """
-        Guarda/Actualiza una conversación completa (incluyendo estado y metadatos).
-        En este ejemplo en memoria, la modificación directa del objeto es suficiente,
-        pero esta función es CRUCIAL para BDs reales.
-        """
-        if conversation.id in conversations_db:
-            # Asegurarse que el estado se guarda correctamente
-            if not isinstance(conversation.state, ConversationState):
-                logger.error(
-                    f"Intentando guardar estado inválido para {conversation.id}"
-                )
-                return False
-            conversations_db[conversation.id] = (
-                conversation  # Reemplazar con la versión actualizada
-            )
-            logger.info(
-                f"Conversación {conversation.id} actualizada/guardada en memoria."
-            )
-            return True
-        else:
+        """Guarda/Actualiza la conversación completa (EN MEMORIA)."""
+        if not isinstance(conversation, Conversation):
             logger.error(
-                f"Intento de guardar conversación inexistente: {conversation.id}"
+                f"DBG_SS: Intento de guardar objeto inválido: {type(conversation)}"
+            )
+            return False
+        if not isinstance(
+            conversation.metadata, dict
+        ):  # Verificar que metadata sea dict
+            logger.error(
+                f"DBG_SS: Intento de guardar metadata inválida para {conversation.id}: {type(conversation.metadata)}"
             )
             return False
 
-    async def cleanup_old_conversations(self):
-        """Elimina conversaciones más antiguas que el timeout (ejemplo en memoria)."""
-        now = datetime.utcnow()
-        timeout_delta = timedelta(seconds=settings.CONVERSATION_TIMEOUT)
-        ids_to_remove = [
-            conv_id
-            for conv_id, conv in conversations_db.items()
-            if now - conv.created_at > timeout_delta
-        ]
-        for conv_id in ids_to_remove:
-            try:
-                del conversations_db[conv_id]
-                logger.info(f"Conversación antigua eliminada: {conv_id}")
-            except KeyError:
-                pass  # Ya no existía
+        logger.info(
+            f"DBG_SS: GUARDANDO conversación {conversation.id}. Metadata a guardar: {conversation.metadata}"
+        )
+
+        # En memoria, simplemente reemplazamos
+        conversations_db[conversation.id] = conversation
+        logger.info(f"DBG_SS: Conversación {conversation.id} actualizada en memoria.")
+        return True
+
+    # ... (cleanup sin cambios) ...
 
 
-# Instancia global
 storage_service = StorageService()
