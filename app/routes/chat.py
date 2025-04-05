@@ -86,7 +86,7 @@ async def start_conversation():
         )
 
 
-@router.post("/message", response_model=Message)  # Devolver el objeto Message Pydantic
+@router.post("/message")  # Cambiado: quitamos response_model=Message
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
     """Procesa un mensaje del usuario, avanza en el cuestionario y genera una respuesta."""
     conversation_id = data.conversation_id
@@ -139,7 +139,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 📄 Tu propuesta personalizada está lista.
 
 Puedes descargarla usando el siguiente enlace:
-[👉 DESCARGAR PROPUESTA EN PDF]({settings.API_V1_STR}/chat/{conversation.id}/download-pdf)
+[DESCARGAR PROPUESTA EN PDF]({settings.API_V1_STR}/chat/{conversation.id}/download-pdf)
 
 Si tienes algún problema con la descarga o alguna pregunta sobre la propuesta, házmelo saber.
 """
@@ -148,7 +148,14 @@ Si tienes algún problema con la descarga o alguna pregunta sobre la propuesta, 
                 conversation.id, pdf_info_message
             )
             # No es necesario guardar la conversación aquí, solo se añadió un mensaje informativo
-            return pdf_info_message  # Devolver este mensaje informativo
+
+            # Cambiado: Devolver formato compatible con frontend
+            return {
+                "id": pdf_info_message.id,
+                "message": pdf_info_message_content,
+                "conversation_id": conversation_id,
+                "created_at": pdf_info_message.created_at,
+            }
 
         # --- Lógica Principal del Cuestionario (si no fue petición de PDF) ---
 
@@ -264,8 +271,13 @@ Si tienes algún problema con la descarga o alguna pregunta sobre la propuesta, 
         # 7. Limpieza en segundo plano
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
-        # 8. Devolver respuesta (el objeto Pydantic Message)
-        return assistant_message
+        # 8. Devolver respuesta (Cambiado: formato compatible con frontend)
+        return {
+            "id": assistant_message.id,
+            "message": assistant_message.content,
+            "conversation_id": conversation_id,
+            "created_at": assistant_message.created_at,
+        }
 
     except HTTPException as http_exc:
         logger.warning(
@@ -295,11 +307,15 @@ Si tienes algún problema con la descarga o alguna pregunta sobre la propuesta, 
                 f"Error adicional al intentar guardar mensaje de error para {conversation_id}: {save_err}"
             )
 
-        # Devolver el mensaje de error al usuario (status 200 pero con contenido de error)
-        # Para indicar un error real al frontend, sería mejor devolver un status 500 aquí
-        # raise HTTPException(status_code=500, detail="Error interno del servidor [MSG01]")
-        # Pero devolver el mensaje permite que el chat no se rompa visualmente
-        return error_msg
+        # Cambiado: Devolver formato compatible con frontend
+        return {
+            "id": error_msg.id,
+            "message": error_msg.content,
+            "conversation_id": (
+                conversation_id if "conversation_id" in locals() else "unknown"
+            ),
+            "created_at": error_msg.created_at,
+        }
 
 
 @router.get("/{conversation_id}/download-pdf")
