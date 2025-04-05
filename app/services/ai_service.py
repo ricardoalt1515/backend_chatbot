@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 
 from app.config import settings
 from app.models.conversation import Conversation
-from app.prompts.main_prompt_hybrid import get_master_prompt_hybrid  # NUEVO PROMPT
+from app.prompts.main_prompt import get_master_prompt  # NUEVO PROMPT
 
 # Importar el servicio de cuestionario simplificado
 from app.services.questionnaire_service import questionnaire_service
@@ -19,7 +19,7 @@ class AIServiceHybrid:
 
     def __init__(self):
         self.master_prompt_template = (
-            get_master_prompt_hybrid()
+            get_master_prompt()
         )  # Cargar prompt para enfoque híbrido
 
         # Cargar formato de propuesta (sin cambios)
