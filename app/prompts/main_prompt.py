@@ -1,7 +1,7 @@
 # app/prompts/main_prompt_hybrid.py
 
 
-def get_master_prompt_hybrid():
+def get_master_prompt():
     """
     Genera el prompt maestro para el enfoque HÍBRIDO.
     Contiene reglas generales, tono, formato, PERO enfatiza seguir instrucciones específicas.
