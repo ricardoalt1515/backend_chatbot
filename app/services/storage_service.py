@@ -1,16 +1,34 @@
 # app/services/storage_service.py
-# ... (importaciones y logger) ...
-# --- USAR METADATA ---
+import logging
+from datetime import datetime, timedelta
+
+# --- AÑADIR ESTAS IMPORTACIONES ---
+from typing import (
+    Dict,
+    Optional,
+    Any,
+)  # Asegúrate de importar Optional y Any también si los usas
+
+# -----------------------------------
+
+from app.models.conversation import Conversation
+from app.models.message import Message
+
+# Quitar import de ConversationState si ya no se usa
+# from app.models.conversation_state import ConversationState
+from app.config import settings
+
+logger = logging.getLogger("hydrous")
+
+# Usar la importación correcta para la anotación de tipo
 conversations_db: Dict[str, Conversation] = {}
-# --------------------
 
 
 class StorageService:
 
-    async def create_conversation(self) -> Conversation:  # Quitar initial_state
+    async def create_conversation(self) -> Conversation:
         """Crea y almacena una nueva conversación con metadata inicial."""
-        # Crear metadata inicial directamente aquí
-        initial_metadata = {
+        initial_metadata: Dict[str, Any] = {  # Usar Dict aquí también
             "current_question_id": None,
             "collected_data": {},
             "selected_sector": None,
@@ -23,7 +41,6 @@ class StorageService:
             "client_name": "Cliente",
             "last_error": None,
         }
-        # Asegurarse que Conversation usa el default_factory para metadata si no se pasa
         new_conversation = Conversation(metadata=initial_metadata)
         conversations_db[new_conversation.id] = new_conversation
         logger.info(
@@ -35,15 +52,23 @@ class StorageService:
         """Obtiene una conversación por su ID (EN MEMORIA)."""
         conversation = conversations_db.get(conversation_id)
         if conversation:
-            # Asegurarse que metadata existe y tiene claves esperadas (opcionalmente merge con defaults)
             if not isinstance(conversation.metadata, dict):
                 logger.warning(
                     f"Metadata inválida para {conversation_id}, reiniciando a default."
                 )
-                conversation.metadata = {  # Reset a default
+                # Recrear metadata inicial si está corrupta
+                conversation.metadata = {
                     "current_question_id": None,
                     "collected_data": {},
-                    "selected_sector": None,  # ... etc
+                    "selected_sector": None,
+                    "selected_subsector": None,
+                    "questionnaire_path": [],
+                    "is_complete": False,
+                    "has_proposal": False,
+                    "proposal_text": None,
+                    "pdf_path": None,
+                    "client_name": "Cliente",
+                    "last_error": None,
                 }
             logger.info(
                 f"DBG_SS: Conversación {conversation_id} RECUPERADA. Metadata actual: {conversation.metadata}"
@@ -57,15 +82,18 @@ class StorageService:
         self, conversation_id: str, message: Message
     ) -> bool:
         """Añade un mensaje (EN MEMORIA)."""
-        conversation = await self.get_conversation(
-            conversation_id
-        )  # Log ya está en get
+        conversation = await self.get_conversation(conversation_id)
         if conversation:
+            # Asegurarse que messages es una lista
+            if not isinstance(conversation.messages, list):
+                logger.warning(
+                    f"Lista de mensajes inválida para {conversation_id}, reiniciando."
+                )
+                conversation.messages = []
             conversation.messages.append(message)
             logger.debug(
                 f"DBG_SS: Mensaje '{message.role}' añadido a {conversation_id}."
             )
-            # Limitar historial si se implementó en Conversation.add_message
             return True
         else:
             logger.error(
@@ -80,24 +108,49 @@ class StorageService:
                 f"DBG_SS: Intento de guardar objeto inválido: {type(conversation)}"
             )
             return False
-        if not isinstance(
-            conversation.metadata, dict
-        ):  # Verificar que metadata sea dict
+        # Verificar metadata y messages antes de guardar
+        if not isinstance(conversation.metadata, dict):
             logger.error(
                 f"DBG_SS: Intento de guardar metadata inválida para {conversation.id}: {type(conversation.metadata)}"
             )
             return False
+        if not isinstance(conversation.messages, list):
+            logger.error(
+                f"DBG_SS: Intento de guardar lista de mensajes inválida para {conversation.id}: {type(conversation.messages)}"
+            )
+            return False
 
         logger.info(
-            f"DBG_SS: GUARDANDO conversación {conversation.id}. Metadata a guardar: {conversation.metadata}"
+            f"DBG_SS: GUARDANDO conversación {conversation.id}. Metadata: {conversation.metadata}"
         )
-
-        # En memoria, simplemente reemplazamos
         conversations_db[conversation.id] = conversation
         logger.info(f"DBG_SS: Conversación {conversation.id} actualizada en memoria.")
         return True
 
-    # ... (cleanup sin cambios) ...
+    async def cleanup_old_conversations(self):
+        """Elimina conversaciones más antiguas que el timeout (ejemplo en memoria)."""
+        now = datetime.utcnow()
+        timeout_delta = timedelta(seconds=settings.CONVERSATION_TIMEOUT)
+        ids_to_remove = [
+            conv_id
+            for conv_id, conv in conversations_db.items()
+            if isinstance(conv, Conversation)
+            and (now - conv.created_at > timeout_delta)
+        ]
+        removed_count = 0
+        for conv_id in ids_to_remove:
+            try:
+                if conv_id in conversations_db:
+                    del conversations_db[conv_id]
+                    logger.info(f"Conversación antigua eliminada: {conv_id}")
+                    removed_count += 1
+            except KeyError:
+                pass
+        if removed_count > 0:
+            logger.info(
+                f"Limpieza completada. {removed_count} conversaciones antiguas eliminadas."
+            )
 
 
+# Instancia global
 storage_service = StorageService()
