@@ -24,6 +24,7 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
             "text": "¿Cuál es el nombre de tu empresa o proyecto?",
             "type": "open",
             "explanation": "Esto nos ayuda a identificar y personalizar tu proyecto desde el inicio.",
+            # Asegúrate de que haya una coma si hay más elementos después
         },
         {
             "id": "INIT_1",
@@ -34,9 +35,10 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
         },
         {
             "id": "INIT_2",
-            "text": "Dentro del sector '{sector}', ¿cuál es el giro específico?",
+            "text": "Dentro del sector '{sector}', ¿cuál es el giro específico?",  # Texto con placeholder
             "type": "conditional_multiple_choice",
-            "conditions": {
+            "depends_on_key": "selected_sector",  # Clave DEL ESTADO que contiene el valor a buscar
+            "conditions": {  # Diccionario con las opciones por cada valor posible
                 "Industrial": [
                     "Alimentos y Bebidas",
                     "Textil",
@@ -46,7 +48,7 @@ Soy el diseñador de soluciones de agua de Hydrous AI, tu asistente experto para
                     "Petróleo y Gas",
                     "Metal/Automotriz",
                     "Cemento",
-                    "Otro",
+                    "Otro",  # Importante tener 'Otro' como opción
                 ],
                 "Comercial": [
                     "Hotel",
