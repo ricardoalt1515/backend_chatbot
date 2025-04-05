@@ -99,7 +99,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         logger.info(
             f"Llamando a ai_service_hybrid.get_next_response para {conversation_id}"
         )
-        ai_response_content = await ai_service_hybrid.get_next_response(conversation)
+        ai_response_content = await ai_service.get_next_response(conversation)
 
         # 4. Crear y añadir mensaje del asistente
         assistant_message = Message.assistant(ai_response_content)

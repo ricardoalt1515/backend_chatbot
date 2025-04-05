@@ -74,8 +74,8 @@ Tu rol es ejecutar las instrucciones paso a paso que te da el sistema para const
     return master_prompt.replace(
         "{proposal_format_content_placeholder}",
         (
-            ai_service_hybrid.proposal_format_content
-            if "ai_service_hybrid" in globals()
+            ai_service.proposal_format_content
+            if "ai_service" in globals()
             else "[[Contenido del formato de propuesta no cargado aún]]"
         ),
     )
