@@ -4,7 +4,8 @@ from fastapi.responses import FileResponse, Response
 import logging
 import os
 from typing import Any
-import datetime
+from datetime import datetime
+
 
 # Modelos
 from app.models.conversation import ConversationResponse, Conversation
