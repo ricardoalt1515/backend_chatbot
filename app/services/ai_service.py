@@ -15,7 +15,7 @@ from app.services.questionnaire_service import questionnaire_service
 logger = logging.getLogger("hydrous")
 
 
-class AIServiceHybrid:
+class AIService:
 
     def __init__(self):
         self.master_prompt_template = (
@@ -426,4 +426,4 @@ class AIServiceHybrid:
 
 
 # Instancia global para el enfoque híbrido
-ai_service_hybrid = AIServiceHybrid()
+ai_service = AIService()
