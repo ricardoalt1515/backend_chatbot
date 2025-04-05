@@ -14,7 +14,7 @@ from app.models.message import (
 
 # Servicios
 from app.services.storage_service import storage_service
-from app.services.ai_service import ai_service_hybrid  # Cambiado a Híbrido
+from app.services.ai_service import ai_service  # Cambiado a Híbrido
 from app.services.pdf_service import pdf_service
 from app.services.questionnaire_service import (
     questionnaire_service,
