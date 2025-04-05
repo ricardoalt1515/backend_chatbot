@@ -71,75 +71,126 @@ class QuestionnaireService:
         """
         Obtiene los detalles de una pregunta por su ID, resolviendo
         opciones condicionales y texto dinámico si se proporciona el estado.
-        Devuelve una COPIA del diccionario de la pregunta para evitar efectos secundarios.
+        Devuelve una COPIA del diccionario de la pregunta.
         """
         question_base = self.all_questions_base.get(question_id)
         if not question_base:
             logger.error(f"No se encontró la pregunta base con ID: {question_id}")
             return None
 
-        # Crear una copia profunda para trabajar sobre ella y no modificar la base
         question_details = copy.deepcopy(question_base)
-
         q_type = question_details.get("type")
-        q_text_template = question_details.get("text", "")  # Guardar plantilla original
+        q_text_template = question_details.get("text", "")
 
         # --- Resolución dinámica si se proporciona el estado ---
         if state:
-            # 1. Resolver texto dinámico (placeholders como {sector})
+            # 1. Construir contexto de formato explícitamente
+            format_context = {}
+            if state.selected_sector:
+                format_context["sector"] = state.selected_sector
+            if state.selected_subsector:
+                format_context["subsector"] = state.selected_subsector
+            # Añadir otras claves del estado o key_entities si son necesarias en otros textos
+            format_context.update(state.key_entities)  # Añadir nombre empresa, etc.
+
+            logger.debug(
+                f"DBG_GQ: Contexto para formatear texto de {question_id}: {format_context}"
+            )
+
+            # Formatear texto usando el contexto construido
             try:
-                # Crear contexto para formateo: incluir attrs de state y key_entities
-                format_context = state.dict(
-                    exclude_none=True
-                )  # Excluir None para evitar errores si falta algo
-                format_context.update(state.key_entities)
-                # Usar format_map para manejar claves faltantes sin error
+                # Usar format directamente si estamos seguros de las claves,
+                # o seguir con format_map si queremos más tolerancia a errores
+                # Intentemos con format para ver si da un error más claro si falta la clave
+                # question_details["text"] = q_text_template.format(**format_context)
+                # O, volviendo a format_map que es más seguro:
                 question_details["text"] = q_text_template.format_map(format_context)
             except KeyError as e:
+                # Este log ya existe por el warning que vimos antes, pero lo mantenemos
                 logger.warning(
-                    f"Clave faltante '{e}' al formatear texto para pregunta {question_id}. Texto original: '{q_text_template}'"
+                    f"Clave faltante '{e}' al formatear texto para pregunta {question_id} usando contexto {format_context}. Texto original: '{q_text_template}'"
                 )
-                # Mantener el texto original con placeholder si falla el formateo
-                question_details["text"] = q_text_template
+                question_details["text"] = q_text_template  # Mantener original si falla
 
             # 2. Resolver opciones condicionales
             if q_type == "conditional_multiple_choice":
                 depends_on_key = question_details.get("depends_on_key")
                 conditions = question_details.get("conditions", {})
+                options_found = False
+
+                logger.info(
+                    f"DBG_GQ: Resolviendo opciones para {question_id}. Depende de state.{depends_on_key}. Condiciones disponibles: {list(conditions.keys())}"
+                )
 
                 if depends_on_key and conditions:
-                    # Obtener el valor de la clave de dependencia del estado
-                    dependency_value = getattr(state, depends_on_key, None)
-
-                    if dependency_value and dependency_value in conditions:
-                        # Encontramos las opciones! Las asignamos a la clave 'options'
-                        question_details["options"] = conditions[dependency_value]
-                        logger.debug(
-                            f"Opciones resueltas para {question_id} basadas en {depends_on_key}='{dependency_value}': {question_details['options']}"
-                        )
+                    # --- Acceder al valor de forma más robusta ---
+                    dependency_value = None
+                    if hasattr(state, depends_on_key):
+                        dependency_value = getattr(state, depends_on_key)
                     else:
-                        # No se encontró valor o no hay opciones para ese valor
-                        logger.warning(
-                            f"No se pudieron resolver opciones condicionales para {question_id}. Clave: '{depends_on_key}', Valor en estado: '{dependency_value}'. Opciones disponibles en 'conditions': {list(conditions.keys())}"
+                        logger.error(
+                            f"DBG_GQ: El estado no tiene el atributo '{depends_on_key}' necesario para resolver opciones de {question_id}"
                         )
-                        question_details["options"] = (
-                            []
-                        )  # Dejar vacío para que format_question muestre error
+
+                    logger.info(
+                        f"DBG_GQ: Valor obtenido de state.{depends_on_key} = '{dependency_value}' (tipo: {type(dependency_value)})"
+                    )
+                    # ---------------------------------------------
+
+                    if dependency_value is not None:
+                        # Asegurarse que el valor es un string para la búsqueda en claves
+                        dependency_value_str = str(dependency_value)
+
+                        # Buscar clave exacta (sensible a mayúsculas)
+                        if dependency_value_str in conditions:
+                            question_details["options"] = conditions[
+                                dependency_value_str
+                            ]
+                            options_found = True
+                            logger.info(
+                                f"DBG_GQ: ¡Éxito! Opciones encontradas para clave '{dependency_value_str}': {question_details['options']}"
+                            )
+                        else:
+                            # Intentar búsqueda insensible a mayúsculas/minúsculas
+                            matched_key = None
+                            for k in conditions.keys():
+                                if k.lower() == dependency_value_str.lower():
+                                    matched_key = k
+                                    break
+                            if matched_key:
+                                logger.warning(
+                                    f"DBG_GQ: Coincidencia por case-insensitive. Usando clave '{matched_key}' para valor '{dependency_value_str}'"
+                                )
+                                question_details["options"] = conditions[matched_key]
+                                options_found = True
+                            else:
+                                logger.warning(
+                                    f"DBG_GQ: Valor '{dependency_value_str}' no encontrado como clave exacta o case-insensitive en 'conditions' para {question_id}."
+                                )
+                    else:
+                        logger.warning(
+                            f"DBG_GQ: El valor para state.{depends_on_key} es None o no se pudo obtener. No se pueden resolver opciones."
+                        )
+
                 else:
                     logger.error(
-                        f"Pregunta condicional {question_id} mal configurada: falta 'depends_on_key' o 'conditions'."
+                        f"DBG_GQ: Pregunta condicional {question_id} mal configurada: falta 'depends_on_key' o 'conditions'."
                     )
+
+                # Si no se encontraron opciones, asegurar que quede vacío
+                if not options_found:
                     question_details["options"] = []
-            # Asegurarse que 'options' existe incluso si no es condicional (para evitar KeyErrors)
+                    logger.warning(
+                        f"DBG_GQ: No se asignaron opciones para {question_id}, 'options' quedará vacía."
+                    )
+
             elif "options" not in question_details and q_type == "multiple_choice":
-                question_details["options"] = (
-                    []
-                )  # Inicializar si falta en una no condicional
+                question_details["options"] = []
                 logger.warning(
                     f"Pregunta {question_id} de tipo multiple_choice no tenía clave 'options'."
                 )
 
-        # Devolver la copia modificada (o la original si no hubo estado/cambios)
+        # Devolver la copia modificada
         return question_details
 
     def _determine_questionnaire_path(self, state: ConversationState) -> List[str]:
