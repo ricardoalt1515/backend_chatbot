@@ -1,26 +1,22 @@
 # app/routes/chat.py
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 import logging
 import os
+from datetime import datetime  # Asegurarse que datetime está importado
 from typing import Any
-from datetime import datetime
-
 
 # Modelos
 from app.models.conversation import ConversationResponse, Conversation
-from app.models.message import (
-    Message,
-    MessageCreate,
-)  # Asegurarse que MessageCreate está aquí
+from app.models.message import Message, MessageCreate
 
 # Servicios
 from app.services.storage_service import storage_service
-from app.services.ai_service import ai_service  # Cambiado a Híbrido
+from app.services.ai_service import ai_service  # Usar la instancia LLM-Driven
 from app.services.pdf_service import pdf_service
-from app.services.questionnaire_service import (
-    questionnaire_service,
-)  # Aún se usa para saludo/IDs
+
+# Ya no necesitamos QuestionnaireService aquí directamente
+# from app.services.questionnaire_service import questionnaire_service
 from app.config import settings
 
 router = APIRouter()
@@ -29,32 +25,22 @@ logger = logging.getLogger("hydrous")
 
 @router.post("/start", response_model=ConversationResponse)
 async def start_conversation():
-    """Inicia una nueva conversación y devuelve el saludo inicial."""
+    """Inicia una nueva conversación (solo crea el registro)."""
     try:
-        # 1. Crear conversación (storage_service maneja metadata inicial)
+        # 1. Crear conversación vacía (metadata por defecto)
         conversation = await storage_service.create_conversation()
-        logger.info(f"Nueva conversación HÍBRIDA iniciada con ID: {conversation.id}")
+        logger.info(f"Nueva conversación LLM-Driven iniciada con ID: {conversation.id}")
 
-        # 2. Obtener saludo inicial del QuestionnaireService
-        initial_greeting = questionnaire_service.get_initial_greeting()
-
-        # 3. Opcional: Añadir un mensaje inicial de sistema o asistente si quieres
-        #    PERO el flujo real empieza con el primer mensaje del usuario.
-        #    Podríamos devolver el saludo como parte de la respuesta para que el frontend lo muestre.
-        # initial_message = Message.assistant(initial_greeting)
-        # await storage_service.add_message_to_conversation(conversation.id, initial_message)
-        # await storage_service.save_conversation(conversation) # Guardar si añadimos mensaje
-
-        # 4. Devolver ID y metadata inicial (frontend mostrará UI vacía o saludo)
+        # 2. Devolver ID y metadata inicial. El primer mensaje real lo enviará la IA.
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
-            messages=[],  # Sin mensajes aún, el saludo es implícito o lo maneja el frontend
+            messages=[],  # Sin mensajes iniciales del backend
             metadata=conversation.metadata,
         )
     except Exception as e:
         logger.error(
-            f"Error crítico al iniciar conversación híbrida: {str(e)}", exc_info=True
+            f"Error crítico al iniciar conversación LLM-Driven: {str(e)}", exc_info=True
         )
         raise HTTPException(
             status_code=500, detail="No se pudo iniciar la conversación."
@@ -63,7 +49,7 @@ async def start_conversation():
 
 @router.post("/message")  # Quitar response_model
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
-    """Recibe mensaje del usuario, obtiene la siguiente respuesta del AI Service Híbrido."""
+    """Recibe mensaje del usuario, lo añade, obtiene respuesta del AI Service y devuelve."""
     conversation_id = data.conversation_id
     user_input = data.message
 
@@ -72,14 +58,12 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
             logger.error(f"Conversación no encontrada: {conversation_id}")
-            # Devolver un diccionario de error compatible con frontend
             return {
                 "id": "error-conv-not-found",
                 "message": "Error: Conversación no encontrada. Por favor, reinicia.",
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
             }
-        # Verificar metadata básica
         if not isinstance(conversation.metadata, dict):
             logger.error(f"Metadata inválida para conversación: {conversation_id}")
             return {
@@ -91,21 +75,82 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 
         # 2. Añadir mensaje del usuario a la conversación
         user_message_obj = Message.user(user_input)
-        conversation.add_message(user_message_obj)  # Añadir al historial
-        # Nota: La actualización de metadata (datos recolectados, sector, etc.)
-        # la hará AHORA el ai_service_hybrid ANTES de determinar la siguiente instrucción.
+        # conversation.add_message(user_message_obj) # NO añadir aún, pasamos el input a handle
+        # Actualizar el historial en memoria, pero sin guardar permanentemente todavía
+        conversation.messages.append(user_message_obj)
 
-        # 3. Llamar al AI Service Híbrido para obtener la siguiente respuesta
-        logger.info(
-            f"Llamando a ai_service_hybrid.get_next_response para {conversation_id}"
-        )
-        ai_response_content = await ai_service.get_next_response(conversation)
+        # --- Lógica de Procesamiento ---
+        # 3. Llamar al AI Service para obtener la siguiente respuesta
+        #    Este servicio ahora maneja la lógica de prompt/LLM/estado
+        logger.info(f"Llamando a ai_service.handle_conversation para {conversation_id}")
+        ai_response_content = await ai_service.handle_conversation(conversation)
+        # handle_conversation ya actualizó metadata necesaria (como current_question_asked_summary)
 
-        # 4. Crear y añadir mensaje del asistente
+        # 4. Crear y añadir mensaje del asistente al historial en memoria
         assistant_message = Message.assistant(ai_response_content)
-        conversation.add_message(assistant_message)
+        conversation.messages.append(assistant_message)  # Añadir ahora sí
 
-        # 5. Guardar conversación completa (con nuevos mensajes y metadata actualizada por AI Service)
+        # --- Actualizar metadata Sector/Subsector (MÁS FIABLE HACERLO AQUÍ) ---
+        # Si la última pregunta fue INIT_1 o INIT_2, actualizar metadata basado en user_input
+        last_q_summary = conversation.metadata.get("current_question_asked_summary", "")
+        if "sector principal opera" in last_q_summary:  # Identifica pregunta INIT_1
+            processed_answer = user_input.strip()
+            q_details = questionnaire_service.get_question_details(
+                "INIT_1"
+            )  # Usar servicio simplificado
+            options = q_details.get("options", []) if q_details else []
+            sector = None
+            if processed_answer.isdigit():
+                try:
+                    idx = int(processed_answer) - 1
+                    if 0 <= idx < len(options):
+                        sector = options[idx]
+                except ValueError:
+                    pass
+            elif processed_answer in options:
+                sector = processed_answer
+            if sector:
+                conversation.metadata["selected_sector"] = sector
+                logger.info(
+                    f"Metadata[selected_sector] actualizada a '{sector}' en chat.py"
+                )
+            else:
+                logger.warning(
+                    f"No se pudo determinar sector desde respuesta '{processed_answer}' a INIT_1"
+                )
+
+        elif "giro específico" in last_q_summary:  # Identifica pregunta INIT_2
+            processed_answer = user_input.strip()
+            sector = conversation.metadata.get("selected_sector")
+            subsector = None
+            if sector:
+                q_details = questionnaire_service.get_question_details("INIT_2")
+                conditions = q_details.get("conditions", {}) if q_details else {}
+                options = conditions.get(sector, [])
+                if processed_answer.isdigit():
+                    try:
+                        idx = int(processed_answer) - 1
+                        if 0 <= idx < len(options):
+                            subsector = options[idx]
+                    except ValueError:
+                        pass
+                else:
+                    for opt in options:
+                        if processed_answer.lower() == opt.lower():
+                            subsector = opt
+                            break
+            if subsector:
+                conversation.metadata["selected_subsector"] = subsector
+                logger.info(
+                    f"Metadata[selected_subsector] actualizada a '{subsector}' en chat.py"
+                )
+            else:
+                logger.warning(
+                    f"No se pudo determinar subsector desde respuesta '{processed_answer}' a INIT_2 para sector '{sector}'"
+                )
+        # -------------------------------------------------------------
+
+        # 5. Guardar conversación completa (con nuevos mensajes y metadata actualizada)
         await storage_service.save_conversation(conversation)
 
         # 6. Limpieza en segundo plano
@@ -119,25 +164,22 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             "created_at": assistant_message.created_at,
         }
 
-    # --- Manejo de Errores ---
+    # --- Manejo de Errores (Igual que en versión híbrida) ---
     except HTTPException as http_exc:
-        # Re-lanzar para que FastAPI maneje
         raise http_exc
     except Exception as e:
         logger.error(
-            f"Error fatal no controlado en send_message (híbrido) para {conversation_id}: {str(e)}",
+            f"Error fatal no controlado en send_message (LLM-Driven) para {conversation_id}: {str(e)}",
             exc_info=True,
         )
-        # Devolver un error genérico compatible con frontend
         error_response = {
             "id": "error-fatal",
             "message": "Lo siento, ha ocurrido un error inesperado al procesar tu mensaje.",
             "conversation_id": (
                 conversation_id if "conversation_id" in locals() else "unknown"
             ),
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.utcnow(),  # Usar datetime importado
         }
-        # Intentar guardar el error en metadata si la conversación se cargó
         try:
             if "conversation" in locals() and conversation:
                 conversation.metadata["last_error"] = f"Fatal: {str(e)}"
@@ -146,24 +188,18 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             logger.error(
                 f"Error adicional al guardar error fatal en metadata: {save_err}"
             )
-
-        return error_response  # Devolver el diccionario de error
-
-
-# --- Endpoints /download-pdf y _is_pdf_request ---
-# La lógica de descarga de PDF puede permanecer similar,
-# PERO el endpoint /message YA NO maneja la generación del mensaje de descarga.
-# El LLM ahora genera la propuesta y el mensaje de "Escribe PDF...".
-# El usuario escribe "PDF", eso llega a /message, y el flujo normal debería detectar
-# que has_proposal es True y is_pdf_request es True, devolviendo el enlace.
+        return error_response
 
 
-# Modificar _is_pdf_request para ser más preciso
+# --- Endpoints /download-pdf y _is_pdf_request (SIN CAMBIOS respecto a la versión híbrida) ---
+# Siguen dependiendo de que metadata['has_proposal'] y metadata['proposal_text'] sean correctos.
+
+
 def _is_pdf_request(message: str) -> bool:
+    # ... (igual que antes) ...
     if not message:
         return False
     message = message.lower().strip()
-    # Palabras clave específicas
     pdf_keywords = [
         "pdf",
         "descargar propuesta",
@@ -172,7 +208,6 @@ def _is_pdf_request(message: str) -> bool:
         "obtener documento",
         "propuesta final",
     ]
-    # Podría ser una coincidencia exacta o contener una de las frases clave
     return message in pdf_keywords or any(
         keyword in message for keyword in pdf_keywords
     )
@@ -180,15 +215,11 @@ def _is_pdf_request(message: str) -> bool:
 
 @router.get("/{conversation_id}/download-pdf")
 async def download_pdf(conversation_id: str):
-    """Genera (si es necesario) y devuelve la propuesta en formato PDF."""
-    # --- Esta lógica debería funcionar casi igual ---
-    # Verifica que has_proposal sea True y que proposal_text exista en metadata
+    # ... (pegar aquí la función download_pdf completa de la versión híbrida, no necesita cambios) ...
     try:
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada.")
-
-        # Verificar si la propuesta está lista en metadata
         if not conversation.metadata.get("has_proposal", False):
             logger.warning(
                 f"Intento de descarga PDF para {conversation_id} sin propuesta generada."
@@ -197,8 +228,6 @@ async def download_pdf(conversation_id: str):
                 status_code=400,
                 detail="La propuesta para esta conversación aún no está lista.",
             )
-
-        # Obtener texto de la propuesta de metadata
         proposal_text = conversation.metadata.get("proposal_text")
         if not proposal_text:
             logger.error(
@@ -206,20 +235,16 @@ async def download_pdf(conversation_id: str):
             )
             raise HTTPException(
                 status_code=500,
-                detail="Error interno: Falta contenido de la propuesta [PDFH01]",
+                detail="Error interno: Falta contenido de la propuesta [PDFL01]",
             )
-
-        # Verificar si el PDF ya existe en caché (ruta en metadata)
         pdf_path = conversation.metadata.get("pdf_path")
         if pdf_path and os.path.exists(pdf_path):
             logger.info(f"PDF encontrado en caché para {conversation_id}: {pdf_path}")
         else:
-            # Generar PDF si no existe
             logger.info(
-                f"Generando PDF bajo demanda (híbrido) para {conversation_id}..."
+                f"Generando PDF bajo demanda (LLM-Driven) para {conversation_id}..."
             )
             try:
-                # Llamar a pdf_service para generar desde el texto
                 pdf_path = await pdf_service.generate_pdf_from_text(
                     conversation_id, proposal_text
                 )
@@ -227,14 +252,11 @@ async def download_pdf(conversation_id: str):
                     raise ValueError(
                         "La generación de PDF falló o no devolvió una ruta válida."
                     )
-
-                # Guardar la ruta en metadatos para futuras descargas
                 conversation.metadata["pdf_path"] = pdf_path
                 await storage_service.save_conversation(conversation)
                 logger.info(
                     f"PDF generado y guardado en {pdf_path} para {conversation_id}"
                 )
-
             except Exception as e:
                 logger.error(
                     f"Error crítico generando PDF para {conversation_id}: {e}",
@@ -242,21 +264,16 @@ async def download_pdf(conversation_id: str):
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="No se pudo generar el archivo PDF de la propuesta [PDFH02]",
+                    detail="No se pudo generar el archivo PDF de la propuesta [PDFL02]",
                 )
-
-        # Preparar y devolver el archivo
         client_name = conversation.metadata.get("client_name", "Cliente")
         filename = f"Propuesta_Hydrous_{client_name}_{conversation_id[:8]}.pdf"
-
         return FileResponse(
             path=pdf_path,
             filename=filename,
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-
-    # ... (Manejo de excepciones de download_pdf igual que antes) ...
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
@@ -266,5 +283,5 @@ async def download_pdf(conversation_id: str):
         )
         raise HTTPException(
             status_code=500,
-            detail="Error interno al procesar la descarga del archivo [PDFH03]",
+            detail="Error interno al procesar la descarga del archivo [PDFL03]",
         )
