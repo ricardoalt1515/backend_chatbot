@@ -1,308 +1,431 @@
 # app/services/proposal_service.py
-import os
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime
+import os
 import re
+from typing import Dict, Any, Optional
 
 from app.models.conversation import Conversation
-from app.config import settings
+
+# Importar ai_service si queremos que LLM refine secciones (Opcional)
+# from app.services.ai_service import ai_service
 
 logger = logging.getLogger("hydrous")
 
 
 class ProposalService:
-    """Servicio para generar propuestas estructuradas basadas en la plantilla Hydrous"""
 
     def __init__(self):
-        """Inicialización del servicio"""
-        # Crear directorio para propuestas
-        self.proposals_dir = os.path.join(settings.UPLOAD_DIR, "proposals")
-        os.makedirs(self.proposals_dir, exist_ok=True)
+        # Cargar plantilla base de la propuesta
+        self.template_string = self._load_template()
+        # Cargar valores típicos (puedes expandir esto)
+        self.typical_values = self._load_typical_values()
 
-    def generate_proposal(self, conversation: Conversation) -> Dict[str, Any]:
-        """
-        Genera una propuesta estructurada basada en la información recopilada
+    def _load_template(self) -> str:
+        """Carga la plantilla de propuesta desde el archivo."""
+        try:
+            template_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/Format Proposal.txt"
+            )
+            if os.path.exists(template_path):
+                with open(template_path, "r", encoding="utf-8") as f:
+                    # Leer y reemplazar saltos de línea múltiples para evitar dobles espacios
+                    content = f.read()
+                    # content = re.sub(r'\n\s*\n', '\n', content) # Opcional: limpiar saltos
+                    return content
+            else:
+                logger.error(
+                    "Plantilla de propuesta (Format Proposal.txt) no encontrada."
+                )
+                # Devolver una plantilla básica como fallback
+                return """
+# Propuesta de Tratamiento de Agua - Hydrous Management Group
 
-        Args:
-            conversation: Conversación con la información recopilada
+**Importante Descargo de Responsabilidad:**
+[...]
 
-        Returns:
-            Dict: Estructura de la propuesta
-        """
-        # Extraer información clave de la conversación
-        client_info = self._extract_client_info(conversation)
-        water_info = self._extract_water_info(conversation)
-        treatment_info = self._extract_treatment_info(conversation)
+## 1. Introducción a Hydrous Management Group
+[...]
 
-        # Crear estructura de propuesta basada en la plantilla
-        proposal = {
-            "client_info": client_info,
-            "water_info": water_info,
-            "treatment_info": treatment_info,
-            "timestamp": datetime.now().isoformat(),
-            "proposal_id": f"HYD-{datetime.now().strftime('%Y%m%d')}-{conversation.id[:8]}",
+## 2. Antecedentes del Proyecto
+**Información del Cliente:**
+- Cliente: [CLIENT_NAME]
+- Ubicación: [LOCATION]
+- Industria: [INDUSTRY_SECTOR] / [INDUSTRY_SUBSECTOR]
+- Fuente de Agua: [WATER_SOURCE]
+- Consumo de Agua Actual: [WATER_CONSUMPTION]
+- Generación de Aguas Residuales Actual: [WASTEWATER_GENERATION]
+- Sistema de Tratamiento Existente: [EXISTING_SYSTEM_STATUS]
+
+## 3. Objetivo del Proyecto
+- Objetivo Principal: [MAIN_OBJECTIVE]
+- Objetivos de Reúso/Descarga: [REUSE_OBJECTIVES]
+
+## 4. Supuestos Clave y Comparación con Estándares
+| Parámetro | Aguas Residuales Crudas (Proporcionadas) | Estándar Industria Similar | Objetivo Efluente |
+|---|---|---|---|
+| SST (mg/L) | [TSS_VALUE] | [TSS_STANDARD] | [TSS_GOAL] |
+| DQO (mg/L) | [COD_VALUE] | [COD_STANDARD] | [COD_GOAL] |
+| DBO (mg/L) | [BOD_VALUE] | [BOD_STANDARD] | [BOD_GOAL] |
+| pH         | [PH_VALUE]  | [PH_STANDARD]  | [PH_GOAL]  |
+| TDS (mg/L) | [TDS_VALUE] | [TDS_STANDARD] | [TDS_GOAL] |
+| GyA (mg/L) | [FOG_VALUE] | [FOG_STANDARD] | [FOG_GOAL] |
+*Nota: [N/A] indica dato no proporcionado. Se usarán valores estándar para diseño preliminar.*
+
+## 5. Diseño del Proceso y Alternativas de Tratamiento
+[DISEÑO_PROCESO_TEXTO]
+
+## 6. Equipos Sugeridos y Dimensionamiento
+[EQUIPOS_DIMENSIONES_TEXTO]
+
+## 7. CAPEX y OPEX Estimados
+**CAPEX (Inversión Inicial):**
+- Rango Estimado: [BUDGET_RANGE] USD (Basado en información preliminar)
+- Desglose Detallado: [PENDIENTE - Requiere ingeniería de detalle]
+
+**OPEX (Costo Operativo Mensual):**
+- Rango Estimado: [OPEX_RANGE] USD/mes
+- Desglose Detallado: [PENDIENTE - Requiere análisis energético y de consumibles]
+
+## 8. Análisis de Retorno de Inversión (ROI)
+[ANALISIS_ROI_TEXTO]
+
+## 9. Exhibit de Preguntas y Respuestas
+[RESUMEN_Q&A_TEXTO]
+"""
+        except Exception as e:
+            logger.error(
+                f"Error al cargar la plantilla de propuesta: {e}", exc_info=True
+            )
+            return "Error: No se pudo cargar la plantilla."
+
+    def _load_typical_values(self) -> Dict[str, Any]:
+        """Carga o define valores típicos por sector/subsector."""
+        # Esto podría venir de un archivo JSON o estar codificado aquí
+        # Ejemplo muy básico
+        return {
+            "Comercial": {
+                "Hotel": {
+                    "TSS_STANDARD": "100-300",
+                    "COD_STANDARD": "400-800",
+                    "BOD_STANDARD": "200-400",
+                    "PH_STANDARD": "6-8",
+                    "TDS_STANDARD": "500-1000",
+                    "FOG_STANDARD": "20-60",
+                    "TSS_GOAL": "<50",
+                    "COD_GOAL": "<100",
+                    "BOD_GOAL": "<30",
+                    "PH_GOAL": "6.5-8.5",
+                    "TDS_GOAL": "<600 (reúso WC/riego)",
+                    "FOG_GOAL": "<15",
+                },
+                "Restaurante": {
+                    "TSS_STANDARD": "300-600",
+                    "COD_STANDARD": "800-2500",
+                    "BOD_STANDARD": "400-1200",
+                    "PH_STANDARD": "6-9",
+                    "TDS_STANDARD": "500-1500",
+                    "FOG_STANDARD": "100-300",
+                    "TSS_GOAL": "<100 (desc. alcant.)",
+                    "COD_GOAL": "<300",
+                    "BOD_GOAL": "<150",
+                    "PH_GOAL": "6.5-9",
+                    "TDS_GOAL": "N/A",
+                    "FOG_GOAL": "<100",
+                },
+                # Añadir otros subsectores comerciales
+            },
+            "Industrial": {
+                "Metal/Automotriz": {
+                    "TSS_STANDARD": "100-500",
+                    "COD_STANDARD": "500-2000",
+                    "BOD_STANDARD": "200-800",
+                    "PH_STANDARD": "5-10",
+                    "TDS_STANDARD": "1000-4000",
+                    "FOG_STANDARD": "50-500",  # Muy variable
+                    "TSS_GOAL": "<50 (desc. alcant.)",
+                    "COD_GOAL": "<200",
+                    "BOD_GOAL": "<100",
+                    "PH_GOAL": "6.5-9",
+                    "TDS_GOAL": "N/A",
+                    "FOG_GOAL": "<30 (o menos)",
+                },
+                # Añadir otros subsectores industriales
+            },
+            # Añadir Municipal, Residencial
+            "_default": {  # Valores por defecto si no se encuentra el sector
+                "TSS_STANDARD": "100-400",
+                "COD_STANDARD": "300-800",
+                "BOD_STANDARD": "150-400",
+                "PH_STANDARD": "6-9",
+                "TDS_STANDARD": "500-1500",
+                "FOG_STANDARD": "20-100",
+                "TSS_GOAL": "<50",
+                "COD_GOAL": "<150",
+                "BOD_GOAL": "<50",
+                "PH_GOAL": "6.5-8.5",
+                "TDS_GOAL": "N/A",
+                "FOG_GOAL": "<20",
+            },
         }
 
-        return proposal
+    def _get_typical_value(
+        self, sector: Optional[str], subsector: Optional[str], param_key: str
+    ) -> str:
+        """Obtiene un valor típico de la estructura."""
+        try:
+            if sector and subsector:
+                val = (
+                    self.typical_values.get(sector, {})
+                    .get(subsector, {})
+                    .get(param_key)
+                )
+                if val:
+                    return str(val)
+            # Fallback a sector general o default
+            if sector:
+                val = (
+                    self.typical_values.get(sector, {})
+                    .get("_default", {})
+                    .get(param_key)
+                )
+                if val:
+                    return str(val)
+            # Fallback a default general
+            return str(self.typical_values.get("_default", {}).get(param_key, "[N/D]"))
+        except Exception:
+            return "[N/D]"  # No disponible
 
-    def generate_proposal_html(self, proposal: Dict[str, Any]) -> str:
+    def _format_data_for_template(
+        self, collected_data: Dict[str, Any], metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Prepara los datos para ser insertados en la plantilla."""
+        data = {}
+        sector = metadata.get("selected_sector")
+        subsector = metadata.get("selected_subsector")
+
+        # Mapeo de IDs de preguntas a claves de plantilla (AJUSTAR IDs según questionnaire_data.py)
+        # Usamos .get con default para manejar respuestas faltantes
+        data["CLIENT_NAME"] = collected_data.get("INIT_0", "[Nombre no proporcionado]")
+        # Asumir ID de ubicación según sector/subsector o usar uno genérico si no cambia
+        location_id = "IAB_1"  # Ejemplo, ajustar según tu estructura real de IDs
+        if sector == "Comercial" and subsector == "Hotel":
+            location_id = "CHT_1"
+        elif sector == "Industrial" and subsector == "Metal/Automotriz":
+            location_id = "IMA_1"
+        # ... añadir más mapeos de ID de ubicación si son diferentes ...
+        data["LOCATION"] = collected_data.get(
+            location_id, "[Ubicación no proporcionada]"
+        )
+
+        data["INDUSTRY_SECTOR"] = sector or "[Sector no especificado]"
+        data["INDUSTRY_SUBSECTOR"] = subsector or "[Subsector no especificado]"
+
+        # IDs para fuente, costo, consumo, etc. (ajustar según tus IDs reales)
+        data["WATER_SOURCE"] = collected_data.get(
+            "CHT_11", "[Fuente no especificada]"
+        )  # Ejemplo Hotel
+        data["WATER_COST"] = collected_data.get("CHT_2", "[Costo no especificado]")
+        data["WATER_CONSUMPTION"] = collected_data.get(
+            "CHT_3", "[Consumo no especificado]"
+        )
+        data["WASTEWATER_GENERATION"] = collected_data.get(
+            "CHT_4", "[Generación no especificada]"
+        )
+        # ... mapear el resto de los datos comunes y específicos ...
+        data["EXISTING_SYSTEM_BOOL"] = collected_data.get("CHT_18", "No")
+        data["EXISTING_SYSTEM_DESC"] = collected_data.get(
+            "CHT_19", ""
+        )  # Asumiendo que esta es la descripción
+        data["MAIN_OBJECTIVE"] = collected_data.get(
+            "CHT_14", "[Objetivo no especificado]"
+        )
+        data["REUSE_OBJECTIVES"] = collected_data.get(
+            "CHT_15", "[Objetivo reúso no especificado]"
+        )
+        data["BUDGET_RANGE"] = collected_data.get(
+            "CHT_21", "[Presupuesto no especificado]"
+        )
+
+        # Estado del sistema existente
+        data["EXISTING_SYSTEM_STATUS"] = (
+            "Sí" if str(data["EXISTING_SYSTEM_BOOL"]).lower() == "sí" else "No"
+        )
+        if data["EXISTING_SYSTEM_STATUS"] == "Sí" and data["EXISTING_SYSTEM_DESC"]:
+            data["EXISTING_SYSTEM_STATUS"] += f": {data['EXISTING_SYSTEM_DESC']}"
+
+        # Datos de Calidad de Agua (usar N/A si no se proporcionó)
+        data["TSS_VALUE"] = collected_data.get("CHT_8_TSS", "[N/A]")  # Ejemplo Hotel
+        data["COD_VALUE"] = collected_data.get("CHT_8_COD", "[N/A]")
+        data["BOD_VALUE"] = collected_data.get("CHT_8_BOD", "[N/A]")
+        data["PH_VALUE"] = collected_data.get("CHT_8_PH", "[N/A]")
+        data["TDS_VALUE"] = collected_data.get(
+            "CHT_8_TDS_HVAC", "[N/A]"
+        )  # Ejemplo específico
+        data["FOG_VALUE"] = collected_data.get("CHT_8_FOG", "[N/A]")
+
+        # Obtener valores estándar y metas
+        data["TSS_STANDARD"] = self._get_typical_value(
+            sector, subsector, "TSS_STANDARD"
+        )
+        data["COD_STANDARD"] = self._get_typical_value(
+            sector, subsector, "COD_STANDARD"
+        )
+        data["BOD_STANDARD"] = self._get_typical_value(
+            sector, subsector, "BOD_STANDARD"
+        )
+        data["PH_STANDARD"] = self._get_typical_value(sector, subsector, "PH_STANDARD")
+        data["TDS_STANDARD"] = self._get_typical_value(
+            sector, subsector, "TDS_STANDARD"
+        )
+        data["FOG_STANDARD"] = self._get_typical_value(
+            sector, subsector, "FOG_STANDARD"
+        )
+        data["TSS_GOAL"] = self._get_typical_value(sector, subsector, "TSS_GOAL")
+        data["COD_GOAL"] = self._get_typical_value(sector, subsector, "COD_GOAL")
+        data["BOD_GOAL"] = self._get_typical_value(sector, subsector, "BOD_GOAL")
+        data["PH_GOAL"] = self._get_typical_value(sector, subsector, "PH_GOAL")
+        data["TDS_GOAL"] = self._get_typical_value(sector, subsector, "TDS_GOAL")
+        data["FOG_GOAL"] = self._get_typical_value(sector, subsector, "FOG_GOAL")
+
+        # Placeholders para secciones que generará el LLM o lógica más compleja
+        data["DISEÑO_PROCESO_TEXTO"] = (
+            "[PENDIENTE - Se requiere análisis detallado o consulta a IA]"
+        )
+        data["EQUIPOS_DIMENSIONES_TEXTO"] = (
+            "[PENDIENTE - Se requiere dimensionamiento basado en flujo y carga]"
+        )
+        data["OPEX_RANGE"] = "[Rango OPEX pendiente]"
+        data["ANALISIS_ROI_TEXTO"] = (
+            "[Análisis ROI pendiente - requiere estimaciones CAPEX/OPEX y ahorros]"
+        )
+        data["RESUMEN_Q&A_TEXTO"] = (
+            "[Resumen de preguntas y respuestas clave de la consulta]"  # Podríamos construir esto
+        )
+
+        logger.debug(f"Datos formateados para plantilla: {data}")
+        return data
+
+    def _fill_template(self, template_data: Dict[str, Any]) -> str:
+        """Rellena la plantilla con los datos usando reemplazo simple."""
+        filled_template = self.template_string
+        for key, value in template_data.items():
+            placeholder = f"[{key}]"  # Buscar placeholder [KEY]
+            # Convertir valor a string para reemplazo, manejar listas/dicts básicos
+            if isinstance(value, list):
+                str_value = ", ".join(map(str, value)) if value else "[No especificado]"
+            elif isinstance(value, dict):
+                str_value = json.dumps(value) if value else "[No especificado]"
+            else:
+                str_value = str(value) if value is not None else "[No especificado]"
+
+            # Usar regex para reemplazar insensible a mayúsculas/minúsculas y manejar espacios
+            try:
+                # Escapar caracteres especiales en el placeholder para regex
+                escaped_placeholder = re.escape(placeholder)
+                # Reemplazo insensible a mayúsculas
+                filled_template = re.sub(
+                    escaped_placeholder, str_value, filled_template, flags=re.IGNORECASE
+                )
+            except re.error as re_err:
+                logger.error(f"Error de Regex reemplazando '{placeholder}': {re_err}")
+                # Fallback a reemplazo simple si regex falla
+                filled_template = filled_template.replace(placeholder, str_value)
+
+        # Limpiar placeholders restantes que no se encontraron
+        filled_template = re.sub(
+            r"\[[A-Z_]{3,}\]", "[Dato no disponible]", filled_template
+        )
+
+        return filled_template
+
+    async def _refine_section_with_llm(self, section_name: str, prompt: str) -> str:
+        """Llama al LLM para generar/refinar una sección específica (Función Auxiliar Opcional)."""
+        logger.debug(f"Llamando a LLM para refinar sección: {section_name}")
+        try:
+            # Necesitaríamos importar y usar ai_service aquí
+            # response = await ai_service._call_llm_api([{"role":"user", "content":prompt}], max_tokens=300, temperature=0.5)
+            # return response
+            return (
+                f"[{section_name} - Contenido generado por IA pendiente]"  # Placeholder
+            )
+        except Exception as e:
+            logger.warning(
+                f"Fallo al llamar a LLM para refinar sección '{section_name}': {e}"
+            )
+            return f"[{section_name} - Error al generar contenido]"
+
+    def _generate_qa_summary(self, collected_data: Dict[str, Any]) -> str:
+        """Genera un resumen de Q&A a partir de los datos recolectados."""
+        summary = "A continuación se resumen las preguntas clave y respuestas proporcionadas:\n\n"
+        # Importar questionnaire_service aquí para obtener textos de preguntas
+        try:
+            from app.services.questionnaire_service import questionnaire_service
+
+            for q_id, answer in collected_data.items():
+                q_details = questionnaire_service.get_question_details(q_id)
+                q_text = q_details.get("text", q_id) if q_details else q_id
+                # Limpiar placeholders del texto de la pregunta si los hubiera
+                q_text = re.sub(r"{.*?}", "", q_text).strip()
+                summary += f"- **P: {q_text}**\n"
+                summary += f"  R: {answer}\n\n"
+        except ImportError:
+            logger.error("No se pudo importar questionnaire_service para generar Q&A.")
+            summary += "[Error al generar resumen Q&A]\n"
+        except Exception as e:
+            logger.error(f"Error generando resumen Q&A: {e}")
+            summary += "[Error al generar resumen Q&A]\n"
+
+        return summary
+
+    # --- Función Principal ---
+    async def generate_proposal_text(self, conversation: Conversation) -> str:
         """
-        Genera HTML formateado para la propuesta
-
-        Args:
-            proposal: Estructura de la propuesta
-
-        Returns:
-            str: HTML formateado
+        Genera el texto de la propuesta usando plantilla, datos recolectados,
+        y opcionalmente LLM para refinar secciones.
         """
-        # Obtener información de la propuesta
-        client_info = proposal.get("client_info", {})
-        water_info = proposal.get("water_info", {})
-        treatment_info = proposal.get("treatment_info", {})
+        logger.info(f"Generando texto de propuesta para {conversation.id} (Backend)")
 
-        # Crear HTML con la estructura exacta de la plantilla
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Propuesta Hydrous - {client_info.get('name', 'Cliente')}</title>
-            <style>
-                @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
-                body {{ 
-                    font-family: 'Roboto', Arial, sans-serif; 
-                    line-height: 1.6; 
-                    color: #333; 
-                    margin: 0;
-                    padding: 0;
-                }}
-                .container {{
-                    max-width: 800px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }}
-                .header {{ 
-                    background-color: #1a5276; 
-                    color: white; 
-                    padding: 20px; 
-                    text-align: center; 
-                    margin-bottom: 20px;
-                }}
-                h1, h2, h3 {{ color: #1a5276; }}
-                table {{ 
-                    width: 100%;
-                    border-collapse: collapse; 
-                    margin: 15px 0; 
-                }}
-                th, td {{ 
-                    border: 1px solid #ddd; 
-                    padding: 8px; 
-                    text-align: left; 
-                }}
-                th {{ background-color: #f2f2f2; }}
-                .disclaimer {{
-                    background-color: #f8f9fa;
-                    padding: 15px;
-                    border-left: 4px solid #1a5276;
-                    margin-bottom: 20px;
-                }}
-                .footer {{ 
-                    text-align: center; 
-                    margin-top: 30px; 
-                    font-size: 0.9em; 
-                    color: #777;
-                }}
-                .check-item {{
-                    background-color: #f1f8ff;
-                    padding: 10px;
-                    margin: 5px 0;
-                    border-left: 3px solid #4CAF50;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>HYDROUS MANAGEMENT GROUP</h1>
-                    <p>Soluciones de Tratamiento de Agua</p>
-                </div>
-                
-                <div class="disclaimer">
-                    <p><strong>📌 Aviso Importante</strong></p>
-                    <p>Esta propuesta fue <strong>generada usando IA</strong> basada en la información proporcionada por el usuario final y <strong>estándares de la industria</strong>. Se recomienda que todos los detalles sean <strong>validados por Hydrous Management Group</strong> antes de la implementación.</p>
-                </div>
-                
-                <h2>1. Introducción a Hydrous Management Group</h2>
-                <p>Hydrous Management Group se especializa en <strong>soluciones personalizadas de tratamiento de aguas residuales</strong> adaptadas para clientes industriales y comerciales. Nuestra <strong>experiencia en gestión del agua</strong> ayuda a las empresas a lograr <strong>cumplimiento normativo, reducción de costos y reutilización sostenible del agua</strong>.</p>
-                
-                <h2>2. Antecedentes del Proyecto</h2>
-                <table>
-                    <tr>
-                        <th>Información del Cliente</th>
-                        <th>Detalles</th>
-                    </tr>
-                    <tr>
-                        <td><strong>Nombre del Cliente</strong></td>
-                        <td>{client_info.get('name', 'No especificado')}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Ubicación</strong></td>
-                        <td>{client_info.get('location', 'No especificada')}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Industria</strong></td>
-                        <td>{client_info.get('sector', 'No especificada')}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Fuente de Agua</strong></td>
-                        <td>{water_info.get('source', 'No especificada')}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Consumo Actual de Agua</strong></td>
-                        <td>{water_info.get('consumption', 'No especificado')}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Generación Actual de Aguas Residuales</strong></td>
-                        <td>{water_info.get('wastewater', 'No especificado')}</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Sistema de Tratamiento Existente</strong></td>
-                        <td>{water_info.get('existing_system', 'No existe tratamiento')}</td>
-                    </tr>
-                </table>
-                
-                <h2>3. Objetivo del Proyecto</h2>
-                <div class="check-item">✅ <strong>Cumplimiento Normativo</strong> — Asegurar que las aguas residuales tratadas cumplan con las regulaciones de descarga.</div>
-                <div class="check-item">✅ <strong>Optimización de Costos</strong> — Reducir los costos de compra y descarga de agua.</div>
-                <div class="check-item">✅ <strong>Reutilización de Agua</strong> — Tratar las aguas residuales para su uso en procesos industriales.</div>
-                <div class="check-item">✅ <strong>Sostenibilidad</strong> — Mejorar la huella ambiental mediante una gestión eficiente de los recursos.</div>
-                
-                <!-- El resto de secciones seguiría la misma estructura -->
-                
-                <h2>4. Supuestos Clave de Diseño y Comparación con Estándares de la Industria</h2>
-                <!-- Tabla de parámetros -->
-                
-                <h2>5. Diseño del Proceso y Alternativas de Tratamiento</h2>
-                <!-- Tabla de etapas de tratamiento -->
-                
-                <h2>6. Equipamiento Sugerido y Dimensionamiento</h2>
-                <!-- Tabla de equipos -->
-                
-                <h2>7. CAPEX y OPEX Estimados</h2>
-                <!-- Tablas de costos -->
-                
-                <h2>8. Análisis de Retorno de Inversión (ROI)</h2>
-                <!-- Tabla de ROI -->
-                
-                <h2>9. Anexo de Preguntas y Respuestas</h2>
-                <p>Se incluyen todas las <strong>preguntas y respuestas clave</strong> recopiladas durante la consulta como referencia.</p>
-                
-                <div class="footer">
-                    <p>📩 <strong>Para consultas o validación de esta propuesta, contacte a Hydrous Management Group en:</strong> info@hydrous.com</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        if "Error" in self.template_string:
+            logger.error(
+                f"No se puede generar propuesta para {conversation.id} debido a error en plantilla."
+            )
+            return "Error Interno: No se pudo cargar la plantilla de la propuesta."
 
-        return html
+        collected_data = conversation.metadata.get("collected_data", {})
+        metadata = conversation.metadata
 
-    def _extract_client_info(self, conversation: Conversation) -> Dict[str, Any]:
-        """Extrae información del cliente de la conversación"""
-        info = {
-            "name": "Cliente",
-            "location": "No especificada",
-            "sector": "No especificado",
-        }
+        # 1. Preparar datos básicos para la plantilla
+        template_data = self._format_data_for_template(collected_data, metadata)
 
-        # Intentar extraer desde el estado del cuestionario
-        if hasattr(conversation, "questionnaire_state"):
-            key_entities = getattr(conversation.questionnaire_state, "key_entities", {})
-            answers = getattr(conversation.questionnaire_state, "answers", {})
+        # 2. (Opcional-Avanzado) Generar secciones complejas con LLM
+        #    Podríamos crear prompts específicos para cada sección que requiera IA
+        design_prompt = f"Basado en los siguientes datos de un cliente del sector {template_data['INDUSTRY_SECTOR']} / {template_data['INDUSTRY_SUBSECTOR']}: Flujo={template_data['WASTEWATER_GENERATION']}, Objetivo={template_data['MAIN_OBJECTIVE']}, Calidad Agua Estimada (si aplica)={ {k:v for k,v in template_data.items() if '_VALUE' in k} }, Presupuesto={template_data['BUDGET_RANGE']}. Sugiere un tren de tratamiento conceptual (Etapa: Tecnología - Justificación Breve) para la sección 'Diseño del Proceso y Alternativas'."
+        template_data["DISEÑO_PROCESO_TEXTO"] = await self._refine_section_with_llm(
+            "Diseño Proceso", design_prompt
+        )
 
-            if key_entities.get("company_name"):
-                info["name"] = key_entities["company_name"]
-            if key_entities.get("location"):
-                info["location"] = key_entities["location"]
-            if getattr(conversation.questionnaire_state, "sector", None):
-                info["sector"] = conversation.questionnaire_state.sector
+        equipment_prompt = f"Para el diseño de proceso anterior y un flujo de {template_data['WASTEWATER_GENERATION']}, sugiere equipos clave y un dimensionamiento MUY PRELIMINAR (ej. Tanque EQ: X m³, DAF: Y m³/h, MBBR: Z m³). Indica que son estimaciones."
+        template_data["EQUIPOS_DIMENSIONES_TEXTO"] = (
+            await self._refine_section_with_llm(
+                "Equipos y Dimensiones", equipment_prompt
+            )
+        )
 
-        # Buscar en los mensajes si aún no tenemos información
-        if info["name"] == "Cliente" or info["location"] == "No especificada":
-            for msg in conversation.messages:
-                if msg.role == "user":
-                    # Buscar nombre de empresa
-                    if info["name"] == "Cliente":
-                        company_match = re.search(
-                            r"(?:empresa|compañía|proyecto)[\s:]+([a-zA-Z0-9\s]+)",
-                            msg.content,
-                            re.IGNORECASE,
-                        )
-                        if company_match:
-                            info["name"] = company_match.group(1).strip()
+        roi_prompt = f"Considerando un costo de agua actual de {template_data['WATER_COST']}, un flujo de {template_data['WASTEWATER_GENERATION']}, y objetivos de reúso '{template_data['REUSE_OBJECTIVES']}' y ahorro '{template_data['MAIN_OBJECTIVE']}', describe brevemente el potencial de ahorro y estima un rango simple de ROI (ej. X-Y años) para la sección 'Análisis ROI'. Menciona que depende de CAPEX/OPEX finales."
+        template_data["ANALISIS_ROI_TEXTO"] = await self._refine_section_with_llm(
+            "Análisis ROI", roi_prompt
+        )
 
-                    # Buscar ubicación
-                    if info["location"] == "No especificada":
-                        location_match = re.search(
-                            r"(?:ubicación|ubicacion|localización|ciudad)[\s:]+([a-zA-Z0-9\s,]+)",
-                            msg.content,
-                            re.IGNORECASE,
-                        )
-                        if location_match:
-                            info["location"] = location_match.group(1).strip()
+        # 3. Generar Resumen Q&A
+        template_data["RESUMEN_Q&A_TEXTO"] = self._generate_qa_summary(collected_data)
 
-        return info
+        # 4. Rellenar la plantilla completa con todos los datos (incluidos los generados por LLM si se usó)
+        proposal_text = self._fill_template(template_data)
 
-    def _extract_water_info(self, conversation: Conversation) -> Dict[str, Any]:
-        """Extrae información sobre agua de la conversación"""
-        info = {
-            "source": "No especificada",
-            "consumption": "No especificado",
-            "wastewater": "No especificado",
-            "existing_system": "Ninguno",
-        }
-
-        # Extraer desde el estado del cuestionario
-        if hasattr(conversation, "questionnaire_state"):
-            answers = getattr(conversation.questionnaire_state, "answers", {})
-            key_entities = getattr(conversation.questionnaire_state, "key_entities", {})
-
-            if key_entities.get("water_volume"):
-                info["consumption"] = key_entities["water_volume"]
-            if answers.get("cantidad_agua_residual"):
-                info["wastewater"] = answers["cantidad_agua_residual"]
-            if answers.get("fuente_agua"):
-                info["source"] = answers["fuente_agua"]
-            if answers.get("sistema_existente"):
-                info["existing_system"] = answers["sistema_existente"]
-
-        return info
-
-    def _extract_treatment_info(self, conversation: Conversation) -> Dict[str, Any]:
-        """Extrae información sobre tratamiento propuesto de la conversación"""
-        # Buscar la propuesta de tratamiento en los mensajes del asistente
-        info = {}
-        treatment_text = ""
-
-        for msg in reversed(conversation.messages):
-            if msg.role == "assistant" and (
-                "Propuesta" in msg.content or "Tratamiento" in msg.content
-            ):
-                treatment_text = msg.content
-                break
-
-        # Extraer información de tecnologías recomendadas
-        if "MBBR" in treatment_text:
-            info["technology"] = "MBBR (Reactor de Lecho Móvil)"
-        elif "MBR" in treatment_text:
-            info["technology"] = "MBR (Biorreactor de Membrana)"
-        elif "DAF" in treatment_text:
-            info["technology"] = "DAF (Flotación por Aire Disuelto)"
-        else:
-            info["technology"] = "Sistema de tratamiento personalizado"
-
-        return info
+        logger.info(
+            f"Texto de propuesta generado (Backend) para {conversation.id} (Longitud: {len(proposal_text)})"
+        )
+        return proposal_text
 
 
 # Instancia global
