@@ -5,7 +5,7 @@ import logging
 import os
 import uuid  # Importar uuid
 from datetime import datetime  # Importar datetime
-from typing import Any, Optional, Dict  # Añadir Optional y Dict
+from typing import Any, Optional, Dict, List  # Añadir Optional y Dict
 
 # Modelos
 from app.models.conversation import ConversationResponse, Conversation
