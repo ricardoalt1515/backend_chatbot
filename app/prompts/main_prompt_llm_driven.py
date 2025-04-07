@@ -84,6 +84,7 @@ Eres Hydrous AI Water Solution Designer, un asistente experto, amigable y profes
 - Sector Seleccionado: {metadata_selected_sector}
 - Subsector Seleccionado: {metadata_selected_subsector}
 - Última Pregunta Realizada (Resumen): {metadata_current_question_asked_summary}
+- Última Respuesta Usuario: "{last_user_message_placeholder}"
 - ¿Cuestionario Completo?: {metadata_is_complete}
 
 # **CUESTIONARIO DE REFERENCIA**
@@ -106,23 +107,41 @@ Eres Hydrous AI Water Solution Designer, un asistente experto, amigable y profes
 6. **Excepción:** Si ya se completaron TODAS las preguntas aplicables, genera la Propuesta Final COMPLETA siguiendo las reglas detalladas.
 """
 
-    # Rellenar placeholders (igual que antes)
+    # --- DEFINIR VARIABLES ANTES DE USARLAS EN FORMAT ---
     metadata_selected_sector = metadata.get("selected_sector", "Aún no determinado")
-    # ... (resto de la asignación de metadata) ...
     metadata_selected_subsector = metadata.get(
         "selected_subsector", "Aún no determinado"
     )
-    metadata_current_question_asked_summary = metadata.get(
-        "current_question_asked_summary", "Ninguna (Inicio de conversación)"
+    # Asegurarse que el resumen no sea None para formatear
+    metadata_current_question_asked_summary = (
+        metadata.get(
+            "current_question_asked_summary", "Ninguna (Inicio de conversación)"
+        )
+        or "Ninguna (Inicio de conversación)"
     )
     metadata_is_complete = metadata.get("is_complete", False)
-
-    system_prompt = system_prompt_template.format(
-        metadata_selected_sector=metadata_selected_sector,
-        metadata_selected_subsector=metadata_selected_subsector,
-        metadata_current_question_asked_summary=metadata_current_question_asked_summary,
-        metadata_is_complete=metadata_is_complete,
-        full_questionnaire_text_placeholder=full_questionnaire_text,
-        proposal_format_text_placeholder=proposal_format_text,
+    # Obtener último mensaje (asegurarse que existe y no es None)
+    last_user_message_placeholder = (
+        metadata.get("last_user_message_content", "N/A") or "N/A"
     )
+    # -------------------------------------------------
+
+    # Formatear el prompt final
+    try:
+        system_prompt = system_prompt_template.format(
+            metadata_selected_sector=metadata_selected_sector,
+            metadata_selected_subsector=metadata_selected_subsector,
+            metadata_current_question_asked_summary=metadata_current_question_asked_summary,
+            metadata_is_complete=metadata_is_complete,
+            full_questionnaire_text_placeholder=full_questionnaire_text,
+            proposal_format_text_placeholder=proposal_format_text,
+            last_user_message_placeholder=last_user_message_placeholder,  # Pasar último mensaje
+        )
+    except KeyError as e:
+        logger.error(
+            f"Falta una clave al formatear el prompt principal: {e}", exc_info=True
+        )
+        # Devolver una versión básica si falla el formateo complejo
+        system_prompt = f"# ROL Y OBJETIVO...\n\n# INSTRUCCIÓN:\nContinúa la conversación. Error al formatear estado: {e}"
+
     return system_prompt
