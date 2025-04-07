@@ -106,23 +106,23 @@ Eres Hydrous AI Water Solution Designer, un asistente experto, amigable y profes
 6. **Excepción:** Si ya se completaron TODAS las preguntas aplicables, genera la Propuesta Final COMPLETA siguiendo las reglas detalladas.
 """
 
-    # --- EN LA PARTE DE RELLENO DE PLACEHOLDERS ---
-    # ... (obtener metadata igual que antes) ...
-    # Añadir el último mensaje del usuario al contexto del placeholder
-    last_user_message_placeholder = metadata.get(
-        "last_user_message_content", "N/A"
-    )  # Necesitamos guardar esto en metadata
+    # Rellenar placeholders (igual que antes)
+    metadata_selected_sector = metadata.get("selected_sector", "Aún no determinado")
+    # ... (resto de la asignación de metadata) ...
+    metadata_selected_subsector = metadata.get(
+        "selected_subsector", "Aún no determinado"
+    )
+    metadata_current_question_asked_summary = metadata.get(
+        "current_question_asked_summary", "Ninguna (Inicio de conversación)"
+    )
+    metadata_is_complete = metadata.get("is_complete", False)
 
-    # Formatear el prompt final
     system_prompt = system_prompt_template.format(
-        # ... (otros placeholders de metadata) ...
         metadata_selected_sector=metadata_selected_sector,
         metadata_selected_subsector=metadata_selected_subsector,
         metadata_current_question_asked_summary=metadata_current_question_asked_summary,
         metadata_is_complete=metadata_is_complete,
         full_questionnaire_text_placeholder=full_questionnaire_text,
         proposal_format_text_placeholder=proposal_format_text,
-        # --- Añadir placeholder para el último mensaje ---
-        last_user_message_placeholder=last_user_message_placeholder,
     )
     return system_prompt
