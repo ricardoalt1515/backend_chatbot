@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 import logging
 import os
+import uuid
 from datetime import datetime  # Asegurarse que datetime está importado
 from typing import Any
 
@@ -49,9 +50,13 @@ async def start_conversation():
 
 @router.post("/message")  # Quitar response_model
 async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
-    """Recibe mensaje del usuario, lo añade, obtiene respuesta del AI Service y devuelve."""
+    """
+    Recibe mensaje del usuario. Si es petición de PDF (y está listo),
+    devuelve trigger de descarga. Si no, añade mensaje, obtiene respuesta
+    de la IA, actualiza estado y devuelve respuesta de IA.
+    """
     conversation_id = data.conversation_id
-    user_input = data.message
+    user_input = data.message.strip()  # Limpiar input
 
     try:
         # 1. Cargar Conversación
@@ -73,103 +78,160 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                 "created_at": datetime.utcnow(),
             }
 
-        # 2. Añadir mensaje del usuario a la conversación
-        user_message_obj = Message.user(user_input)
-        # conversation.add_message(user_message_obj) # NO añadir aún, pasamos el input a handle
-        # Actualizar el historial en memoria, pero sin guardar permanentemente todavía
-        conversation.messages.append(user_message_obj)
+        # --- Comprobar si es petición de PDF ---
+        is_pdf_req = _is_pdf_request(user_input)
+        proposal_ready = conversation.metadata.get("has_proposal", False)
 
-        # --- Lógica de Procesamiento ---
-        # 3. Llamar al AI Service para obtener la siguiente respuesta
-        #    Este servicio ahora maneja la lógica de prompt/LLM/estado
-        logger.info(f"Llamando a ai_service.handle_conversation para {conversation_id}")
-        ai_response_content = await ai_service.handle_conversation(conversation)
-        # handle_conversation ya actualizó metadata necesaria (como current_question_asked_summary)
+        # --- Manejo Especial para Petición de PDF ---
+        if is_pdf_req and proposal_ready:
+            logger.info(
+                f"Petición de PDF detectada para {conversation_id} (propuesta lista). Devolviendo trigger."
+            )
 
-        # 4. Crear y añadir mensaje del asistente al historial en memoria
-        assistant_message = Message.assistant(ai_response_content)
-        conversation.messages.append(assistant_message)  # Añadir ahora sí
+            # NO añadir mensaje "descargar pdf" al historial
+            # NO llamar a AI Service
 
-        # --- Actualizar metadata Sector/Subsector (MÁS FIABLE HACERLO AQUÍ) ---
-        # Si la última pregunta fue INIT_1 o INIT_2, actualizar metadata basado en user_input
-        last_q_summary = conversation.metadata.get("current_question_asked_summary", "")
-        if "sector principal opera" in last_q_summary:  # Identifica pregunta INIT_1
-            processed_answer = user_input.strip()
-            q_details = questionnaire_service.get_question_details(
-                "INIT_1"
-            )  # Usar servicio simplificado
-            options = q_details.get("options", []) if q_details else []
-            sector = None
-            if processed_answer.isdigit():
-                try:
-                    idx = int(processed_answer) - 1
-                    if 0 <= idx < len(options):
-                        sector = options[idx]
-                except ValueError:
-                    pass
-            elif processed_answer in options:
-                sector = processed_answer
-            if sector:
-                conversation.metadata["selected_sector"] = sector
-                logger.info(
-                    f"Metadata[selected_sector] actualizada a '{sector}' en chat.py"
-                )
-            else:
-                logger.warning(
-                    f"No se pudo determinar sector desde respuesta '{processed_answer}' a INIT_1"
-                )
+            # Devolver respuesta especial para disparar descarga en frontend
+            download_url = f"{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
+            trigger_response = {
+                "id": "pdf-trigger-" + str(uuid.uuid4())[:8],
+                "message": None,  # Indicar al frontend que no muestre mensaje
+                "conversation_id": conversation_id,
+                "created_at": datetime.utcnow(),
+                "action": "trigger_download",  # Flag para el frontend
+                "download_url": download_url,  # URL directa
+            }
+            # Opcional: Guardar conversación por si acaso (aunque no cambió mucho)
+            # await storage_service.save_conversation(conversation)
+            return trigger_response  # Devolver el JSON especial
 
-        elif "giro específico" in last_q_summary:  # Identifica pregunta INIT_2
-            processed_answer = user_input.strip()
-            sector = conversation.metadata.get("selected_sector")
-            subsector = None
-            if sector:
-                q_details = questionnaire_service.get_question_details("INIT_2")
-                conditions = q_details.get("conditions", {}) if q_details else {}
-                options = conditions.get(sector, [])
-                if processed_answer.isdigit():
+        # --- Flujo Normal: No es petición de PDF (o la propuesta no está lista) ---
+        else:
+            # Añadir mensaje del usuario al historial en memoria primero
+            user_message_obj = Message.user(user_input)
+            conversation.messages.append(user_message_obj)
+
+            # Llamar al AI Service para obtener la siguiente respuesta del bot
+            logger.info(
+                f"Llamando a ai_service.handle_conversation para {conversation_id}"
+            )
+            # handle_conversation internamente actualizará metadata como 'current_question_asked_summary'
+            ai_response_content = await ai_service.handle_conversation(conversation)
+
+            # Crear y añadir mensaje del asistente al historial en memoria
+            assistant_message = Message.assistant(ai_response_content)
+            conversation.messages.append(assistant_message)
+
+            # --- Actualizar metadata Sector/Subsector (basado en input del usuario) ---
+            # (Esta lógica es crucial para que el prompt tenga el estado correcto en la siguiente llamada)
+            last_q_summary = conversation.metadata.get(
+                "current_question_asked_summary", ""
+            )
+            logger.debug(
+                f"Última pregunta resumida: '{last_q_summary}'"
+            )  # Log para ver qué pregunta se hizo
+
+            # Chequeo si la última pregunta FUE la de pedir el sector
+            if last_q_summary and "sector principal opera" in last_q_summary:
+                logger.debug(f"Procesando respuesta '{user_input}' para SECTOR")
+                sector = None
+                q_details = questionnaire_service.get_question_details(
+                    "INIT_1"
+                )  # Usar servicio simplificado
+                options = q_details.get("options", []) if q_details else []
+                if user_input.isdigit():
                     try:
-                        idx = int(processed_answer) - 1
+                        idx = int(user_input) - 1
                         if 0 <= idx < len(options):
-                            subsector = options[idx]
-                    except ValueError:
+                            sector = options[idx]
+                    except (ValueError, IndexError):
                         pass
+                elif (
+                    user_input in options
+                ):  # Chequeo simple por texto exacto (sensible a mayúsculas aquí)
+                    sector = user_input
+                # Podríamos añadir chequeo case-insensitive si quisiéramos más robustez
+                # else:
+                #      for opt in options:
+                #          if user_input.lower() == opt.lower():
+                #              sector = opt
+                #              break
+
+                if sector:
+                    conversation.metadata["selected_sector"] = sector
+                    logger.info(
+                        f"Metadata[selected_sector] actualizada a '{sector}' en chat.py"
+                    )
                 else:
-                    for opt in options:
-                        if processed_answer.lower() == opt.lower():
-                            subsector = opt
-                            break
-            if subsector:
-                conversation.metadata["selected_subsector"] = subsector
-                logger.info(
-                    f"Metadata[selected_subsector] actualizada a '{subsector}' en chat.py"
-                )
-            else:
-                logger.warning(
-                    f"No se pudo determinar subsector desde respuesta '{processed_answer}' a INIT_2 para sector '{sector}'"
-                )
-        # -------------------------------------------------------------
+                    conversation.metadata["selected_sector"] = (
+                        None  # Resetear si no es válido
+                    )
+                    logger.warning(
+                        f"No se pudo determinar sector desde respuesta '{user_input}' a INIT_1"
+                    )
 
-        # 5. Guardar conversación completa (con nuevos mensajes y metadata actualizada)
-        await storage_service.save_conversation(conversation)
+            # Chequeo si la última pregunta FUE la de pedir el giro específico
+            elif last_q_summary and "giro específico" in last_q_summary:
+                logger.debug(f"Procesando respuesta '{user_input}' para SUBSECTOR")
+                subsector = None
+                sector = conversation.metadata.get(
+                    "selected_sector"
+                )  # Necesitamos el sector ya guardado
+                if sector:
+                    q_details = questionnaire_service.get_question_details("INIT_2")
+                    conditions = q_details.get("conditions", {}) if q_details else {}
+                    options = conditions.get(
+                        sector, []
+                    )  # Obtener opciones para ese sector
+                    if user_input.isdigit():
+                        try:
+                            idx = int(user_input) - 1
+                            if 0 <= idx < len(options):
+                                subsector = options[idx]
+                        except (ValueError, IndexError):
+                            pass
+                    else:  # Chequeo por texto (case-insensitive)
+                        for opt in options:
+                            if user_input.lower() == opt.lower():
+                                subsector = opt
+                                break
+                if subsector:
+                    conversation.metadata["selected_subsector"] = subsector
+                    logger.info(
+                        f"Metadata[selected_subsector] actualizada a '{subsector}' en chat.py"
+                    )
+                else:
+                    conversation.metadata["selected_subsector"] = (
+                        None  # Resetear si no es válido
+                    )
+                    logger.warning(
+                        f"No se pudo determinar subsector desde respuesta '{user_input}' a INIT_2 para sector '{sector}'"
+                    )
+            # --------------------------------------------------------------------
 
-        # 6. Limpieza en segundo plano
-        background_tasks.add_task(storage_service.cleanup_old_conversations)
+            # Guardar conversación completa con mensajes y metadata actualizada
+            await storage_service.save_conversation(conversation)
 
-        # 7. Devolver respuesta en formato esperado por frontend
-        return {
-            "id": assistant_message.id,
-            "message": assistant_message.content,
-            "conversation_id": conversation_id,
-            "created_at": assistant_message.created_at,
-        }
+            # Limpieza
+            background_tasks.add_task(storage_service.cleanup_old_conversations)
 
-    # --- Manejo de Errores (Igual que en versión híbrida) ---
+            # Devolver respuesta normal del asistente
+            return {
+                "id": assistant_message.id,
+                "message": assistant_message.content,
+                "conversation_id": conversation_id,
+                "created_at": assistant_message.created_at,
+            }
+
+    # --- Manejo de Excepciones ---
     except HTTPException as http_exc:
+        logger.warning(
+            f"HTTPException en send_message ({'PDF Req' if is_pdf_req else 'Normal'}) para {conversation_id}: {http_exc.status_code} - {http_exc.detail}"
+        )
         raise http_exc
     except Exception as e:
         logger.error(
-            f"Error fatal no controlado en send_message (LLM-Driven) para {conversation_id}: {str(e)}",
+            f"Error fatal no controlado en send_message ({'PDF Req' if 'is_pdf_req' in locals() and is_pdf_req else 'Normal'}) para {conversation_id}: {str(e)}",
             exc_info=True,
         )
         error_response = {
@@ -178,25 +240,29 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             "conversation_id": (
                 conversation_id if "conversation_id" in locals() else "unknown"
             ),
-            "created_at": datetime.utcnow(),  # Usar datetime importado
+            "created_at": datetime.utcnow(),
         }
         try:
-            if "conversation" in locals() and conversation:
+            if (
+                "conversation" in locals()
+                and conversation
+                and isinstance(conversation.metadata, dict)
+            ):  # Verificar tipo metadata
                 conversation.metadata["last_error"] = f"Fatal: {str(e)}"
                 await storage_service.save_conversation(conversation)
         except Exception as save_err:
             logger.error(
-                f"Error adicional al guardar error fatal en metadata: {save_err}"
+                f"Error adicional al intentar guardar error fatal en metadata: {save_err}"
             )
         return error_response
 
 
-# --- Endpoints /download-pdf y _is_pdf_request (SIN CAMBIOS respecto a la versión híbrida) ---
-# Siguen dependiendo de que metadata['has_proposal'] y metadata['proposal_text'] sean correctos.
+# --- HASTA AQUÍ REEMPLAZAR ---
+
+# --- Las funciones _is_pdf_request y download_pdf permanecen igual que en la versión anterior ---
 
 
 def _is_pdf_request(message: str) -> bool:
-    # ... (igual que antes) ...
     if not message:
         return False
     message = message.lower().strip()
@@ -207,9 +273,11 @@ def _is_pdf_request(message: str) -> bool:
         "generar pdf",
         "obtener documento",
         "propuesta final",
-    ]
+        "descargar",
+    ]  # Añadir 'descargar'
+    # Comprobar si es una de las palabras clave exactas o si contiene una
     return message in pdf_keywords or any(
-        keyword in message for keyword in pdf_keywords
+        keyword in message for keyword in ["propuesta", "documento", "pdf"]
     )
 
 

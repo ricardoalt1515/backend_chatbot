@@ -148,17 +148,26 @@ class AIServiceLLMDriven:
 
             # Marcar como completo si la respuesta contiene el marcador final
             if "[PROPOSAL_COMPLETE:" in llm_response:
+                # Guardar texto SIN el marcador (opcional, pero más limpio)
+                proposal_clean_text = llm_response.split("[PROPOSAL_COMPLETE:")[
+                    0
+                ].strip()
+                conversation.metadata["proposal_text"] = proposal_clean_text
                 conversation.metadata["is_complete"] = True
                 conversation.metadata["has_proposal"] = True
-                conversation.metadata["proposal_text"] = (
-                    llm_response  # Guardar texto completo
-                )
                 logger.info(
                     f"Propuesta detectada y guardada en metadata para {conversation.id}"
                 )
-                # Devolver un mensaje indicando que está lista (el LLM debería haber terminado con el marcador)
-                # Si queremos un mensaje más amigable, podríamos quitar el marcador aquí y poner texto fijo
-                # llm_response = "¡Propuesta generada! Puedes pedir el PDF."
+                # --- DEVOLVER MENSAJE FIJO ---
+                llm_response = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+                # -----------------------------
+            else:
+                # Si el LLM olvidó el marcador (menos probable con prompt V3/V4)
+                # Podríamos añadirlo aquí antes de guardar, o considerarlo un error
+                logger.warning(
+                    f"LLM olvidó el marcador [PROPOSAL_COMPLETE:] en {conversation.id}"
+                )
+                # Decidir si guardarlo de todas formas o devolver error
 
         except Exception as e:
             logger.error(
