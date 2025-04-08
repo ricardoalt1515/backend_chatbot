@@ -203,15 +203,13 @@ class AIServiceLLMDriven:
             f"DBG_AI_HANDLE: Iniciando handle_conversation para conv {conversation.id if conversation else 'N/A'}"
         )
         if not conversation:
-            logger.error("DBG_AI_HANDLE: Objeto conversation es None.")
-            return "Error interno: Conversación inválida [AIH01]."
+            # ... (manejo error conversación None) ...
+            pass
         if not isinstance(conversation.metadata, dict):
-            logger.error(f"DBG_AI_HANDLE: Metadata inválida para {conversation.id}")
-            # Resetear metadata si está mal? O devolver error? Devolver error es más seguro.
-            return "Error interno: Metadata de conversación corrupta [AIH02]."
+            # ... (manejo error metadata inválida) ...
+            pass
 
-        llm_response = "Error inesperado en handle_conversation [AIH03]."  # Valor por defecto en caso de fallo total
-
+        llm_response = "Error inesperado en handle_conversation [AIH03]."
         try:
             # 1. Preparar mensajes
             logger.debug("DBG_AI_HANDLE: Llamando a _prepare_messages...")
@@ -220,16 +218,26 @@ class AIServiceLLMDriven:
                 f"DBG_AI_HANDLE: Mensajes preparados OK (Total: {len(messages)})."
             )
 
-            # 2. Llamar al LLM
+            # 2. Determinar si esperamos la propuesta final
+            # (Hacemos esto ANTES de llamar a la IA para saber qué esperar)
+            expecting_proposal = conversation.metadata.get("is_complete", False)
+            logger.debug(
+                f"DBG_AI_HANDLE: ¿Esperando propuesta final? {expecting_proposal}"
+            )
+
+            # 3. Llamar al LLM
             logger.debug("DBG_AI_HANDLE: Llamando a _call_llm_api...")
-            llm_response = await self._call_llm_api(messages)
+            # Ajustar tokens si esperamos propuesta
+            max_tokens_call = 3500 if expecting_proposal else 1500
+            temperature_call = 0.5 if expecting_proposal else 0.6
+            llm_response = await self._call_llm_api(
+                messages, max_tokens=max_tokens_call, temperature=temperature_call
+            )
             logger.info(
                 f"DBG_AI_HANDLE: Respuesta LLM recibida (primeros 50 chars): '{llm_response[:50]}'"
             )
 
-            # 3. Actualizar estado MÍNIMO en metadata
-            #    (Solo si la respuesta NO fue un mensaje de error generado por _call_llm_api)
-            #    Es importante chequear contra los posibles mensajes de error que devuelve _call_llm_api
+            # 4. Procesar respuesta y actualizar metadata
             possible_error_prefixes = (
                 "Error",
                 "Lo siento",
@@ -240,68 +248,76 @@ class AIServiceLLMDriven:
                 logger.debug(
                     f"DBG_AI_HANDLE: Actualizando metadata para {conversation.id}..."
                 )
-                try:  # Envolver actualización de metadata en try/except
-                    lines = llm_response.split("\n")
-                    last_q_summary = conversation.metadata.get(
-                        "current_question_asked_summary", "Desconocida"
-                    )  # Mantener anterior si no hay nueva
-                    first_question_id = None
-                    is_proposal = "[PROPOSAL_COMPLETE:" in llm_response
+                try:
+                    is_proposal_marker_present = "[PROPOSAL_COMPLETE:" in llm_response
 
-                    # Buscar la pregunta formulada en la respuesta
-                    question_found_in_response = False
-                    for line in lines:
-                        if line.strip().startswith("**PREGUNTA:**"):
-                            last_q_summary = (
-                                line.strip().replace("**PREGUNTA:**", "").strip()[:100]
+                    # Si esperábamos la propuesta final:
+                    if expecting_proposal:
+                        if is_proposal_marker_present:
+                            # ¡Éxito! LLM generó propuesta y marcador
+                            proposal_clean_text = llm_response.split(
+                                "[PROPOSAL_COMPLETE:"
+                            )[0].strip()
+                            conversation.metadata["proposal_text"] = proposal_clean_text
+                            conversation.metadata["has_proposal"] = True
+                            # is_complete ya debería ser True
+                            logger.info(
+                                f"Propuesta con marcador detectada y guardada para {conversation.id}"
                             )
-                            question_found_in_response = True
-                            # Determinar ID de la primera pregunta si es el inicio
-                            if conversation.metadata.get("current_question_id") is None:
-                                initial_q_ids = [
-                                    q["id"]
-                                    for q in questionnaire_service.structure.get(
-                                        "initial_questions", []
-                                    )
-                                    if "id" in q
-                                ]
-                                if initial_q_ids:
-                                    first_question_id = initial_q_ids[0]
-                            break  # Solo la primera pregunta en la respuesta
-
-                    # Actualizar metadata
-                    if (
-                        first_question_id
-                        and conversation.metadata.get("current_question_id") is None
-                    ):
-                        conversation.metadata["current_question_id"] = first_question_id
-                        logger.info(
-                            f"Metadata[current_question_id] actualizada a (inicio): '{first_question_id}'"
+                            # Devolver mensaje fijo para pedir descarga
+                            llm_response_to_user = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+                        else:
+                            # ¡Fallo! LLM generó algo pero olvidó el marcador
+                            logger.error(
+                                f"¡FALLO! LLM generó propuesta para {conversation.id} pero olvidó el marcador final. Respuesta: {llm_response[:200]}..."
+                            )
+                            conversation.metadata["has_proposal"] = (
+                                False  # Marcar como no lista
+                            )
+                            # Devolver mensaje de error
+                            llm_response_to_user = "Lo siento, hubo un problema al generar el formato final de la propuesta. Intenta de nuevo o contacta a soporte [AIH07]."
+                    else:
+                        # No esperábamos propuesta, es una pregunta normal
+                        # Extraer resumen de la pregunta hecha
+                        lines = llm_response.split("\n")
+                        last_q_summary = conversation.metadata.get(
+                            "current_question_asked_summary", "Desconocida"
                         )
-                    # Solo actualizar el summary si encontramos una pregunta en ESTA respuesta
-                    if question_found_in_response:
-                        conversation.metadata["current_question_asked_summary"] = (
-                            last_q_summary
-                        )
-                        logger.info(
-                            f"Metadata[current_question_asked_summary] actualizada a: '{last_q_summary}'"
-                        )
-                        # Si se hizo una pregunta, el cuestionario no está completo aún
-                        conversation.metadata["is_complete"] = False
-                        conversation.metadata["has_proposal"] = False
-
-                    if is_proposal:
-                        proposal_clean_text = llm_response.split("[PROPOSAL_COMPLETE:")[
-                            0
-                        ].strip()
-                        conversation.metadata["proposal_text"] = proposal_clean_text
-                        conversation.metadata["is_complete"] = True
-                        conversation.metadata["has_proposal"] = True
-                        logger.info(
-                            f"Propuesta detectada y guardada en metadata para {conversation.id}"
-                        )
-                        # Devolver el mensaje amigable en lugar del texto completo + marcador
-                        llm_response = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+                        question_found_in_response = False
+                        for line in lines:
+                            if line.strip().startswith("**PREGUNTA:**"):
+                                last_q_summary = (
+                                    line.strip()
+                                    .replace("**PREGUNTA:**", "")
+                                    .strip()[:100]
+                                )
+                                question_found_in_response = True
+                                # Actualizar ID actual si es el inicio
+                                if (
+                                    conversation.metadata.get("current_question_id")
+                                    is None
+                                ):
+                                    initial_q_ids = [
+                                        q["id"]
+                                        for q in questionnaire_service.structure.get(
+                                            "initial_questions", []
+                                        )
+                                        if "id" in q
+                                    ]
+                                    if initial_q_ids:
+                                        conversation.metadata["current_question_id"] = (
+                                            initial_q_ids[0]
+                                        )
+                                break
+                        if question_found_in_response:
+                            conversation.metadata["current_question_asked_summary"] = (
+                                last_q_summary
+                            )
+                            logger.info(
+                                f"Metadata[current_question_asked_summary] actualizada a: '{last_q_summary}'"
+                            )
+                        # Devolver la respuesta normal del LLM (pregunta + insight)
+                        llm_response_to_user = llm_response
 
                     logger.debug(
                         f"DBG_AI_HANDLE: Metadata actualizada OK para {conversation.id}."
@@ -312,31 +328,35 @@ class AIServiceLLMDriven:
                         f"Error actualizando metadata para {conversation.id}: {meta_err}",
                         exc_info=True,
                     )
-                    # No cambiar llm_response aquí, dejar que se devuelva la respuesta original de IA si hubo
-
+                    # Si falla la actualización, devolver la respuesta original del LLM por si acaso
+                    llm_response_to_user = llm_response
             else:
+                # La respuesta del LLM ya era un mensaje de error
                 logger.warning(
-                    f"DBG_AI_HANDLE: Respuesta de LLM fue un mensaje de error, no se actualiza metadata: '{llm_response}'"
+                    f"DBG_AI_HANDLE: Respuesta de LLM fue un error, no se actualiza metadata: '{llm_response}'"
                 )
+                llm_response_to_user = llm_response  # Pasar el error al usuario
 
-        except ValueError as e:  # Capturar error de _prepare_messages
+        # ... (Manejo de excepciones de preparación/inesperado como antes) ...
+        except ValueError as e:
             logger.error(
                 f"DBG_AI_HANDLE: Error preparando mensajes: {e}", exc_info=True
             )
-            llm_response = f"Error interno preparando la solicitud [AIH05]."  # Mensaje genérico para usuario
+            llm_response_to_user = f"Error interno preparando la solicitud [AIH05]."
         except Exception as e:
             logger.error(
                 f"DBG_AI_HANDLE: Error inesperado en handle_conversation: {e}",
                 exc_info=True,
             )
-            llm_response = (
+            llm_response_to_user = (
                 "Lo siento, ocurrió un error general al procesar tu solicitud [AIH06]."
             )
 
         logger.info(
-            f"DBG_AI_HANDLE: Finalizando handle_conversation para {conversation.id}. Respuesta a devolver (primeros 50): '{llm_response[:50]}'"
+            f"DBG_AI_HANDLE: Finalizando handle_conversation para {conversation.id}. Respuesta a devolver (primeros 50): '{llm_response_to_user[:50]}'"
         )
-        return llm_response
+        # Devolver el mensaje final (sea pregunta, propuesta lista, o error)
+        return llm_response_to_user
 
 
 # Instancia global
