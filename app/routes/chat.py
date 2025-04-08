@@ -125,34 +125,19 @@ async def start_conversation():
     """Inicia conversación, devuelve saludo/pregunta inicial de la IA."""
     try:
         conversation = await storage_service.create_conversation()
-        logger.info(
-            f"Nueva conversación (Flujo PDF Automático) iniciada: {conversation.id}"
-        )
+        logger.info(f"Nueva conversación iniciada (Usuario inicia): {conversation.id}")
 
-        # Llamar a la IA para obtener el primer mensaje (saludo + primera pregunta)
-        # Pasamos una conversación "vacía" (solo con ID y metadata) para que sepa que es el inicio
-        initial_ai_response = await ai_service.handle_conversation(conversation)
-        assistant_message = Message.assistant(initial_ai_response)
-
-        # Añadir este primer mensaje al historial de la conversación
-        conversation.messages.append(assistant_message)
-        # Actualizar metadata con la primera pregunta hecha (extraída por ai_service)
-        # ai_service.handle_conversation debería haber actualizado metadata['current_question_asked_summary']
-
-        # Guardar estado inicial con el primer mensaje
+        # 2. NO llamar a IA aquí. Guardar estado vacío.
         await storage_service.save_conversation(conversation)
-
+        # 3. Devolver solo ID y metadata vacía
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
-            messages=[assistant_message],  # Devolver solo el primer mensaje
+            messages=[],  # Sin mensajes iniciales
             metadata=conversation.metadata,
         )
     except Exception as e:
-        logger.error(
-            f"Error crítico al iniciar conversación (PDF Automático): {str(e)}",
-            exc_info=True,
-        )
+        logger.error(f"Error crítico al iniciar conversación: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="No se pudo iniciar la conversación."
         )
