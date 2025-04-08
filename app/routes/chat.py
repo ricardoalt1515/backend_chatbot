@@ -209,7 +209,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             )
             # NO añadir mensaje "descargar pdf" al historial
             # NO llamar a AI Service
-            download_url = f"{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
+            download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
             assistant_response_data = {  # Usamos la variable común
                 "id": "pdf-trigger-" + str(uuid.uuid4())[:8],
                 "message": None,  # No hay mensaje de chat
@@ -296,9 +296,7 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                     )
 
                     # e. Si TODO OK: Preparar Respuesta Especial para descarga automática
-                    download_url = (
-                        f"{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
-                    )
+                    download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
                     assistant_response_data = {
                         "id": "proposal-ready-" + str(uuid.uuid4())[:8],
                         "message": "¡Hemos completado tu propuesta! Puedes descargarla ahora.",
