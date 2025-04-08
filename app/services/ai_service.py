@@ -2,16 +2,17 @@
 import logging
 import httpx
 import os
-import json
-from typing import List, Dict, Any, Optional
+import json  # Importar json
+from typing import List, Dict, Any, Optional  # Asegurarse que Optional esté importado
 
 from app.config import settings
 from app.models.conversation import Conversation
 
-# Importar el nuevo prompt
+# Importar el prompt LLM-Driven (ajusta el nombre si usaste V4)
 from app.prompts.main_prompt_llm_driven import get_llm_driven_master_prompt
 
-# Ya no necesitamos QuestionnaireService aquí
+# Importar QuestionnaireService SOLO para IDs iniciales/texto de preguntas en metadata
+from app.services.questionnaire_service import questionnaire_service
 
 logger = logging.getLogger("hydrous")
 
@@ -19,7 +20,7 @@ logger = logging.getLogger("hydrous")
 class AIServiceLLMDriven:
 
     def __init__(self):
-        # Cargar configuración API (igual que antes)
+        # Cargar configuración API
         self.api_key = settings.API_KEY
         self.model = settings.MODEL
         self.api_url = settings.API_URL
@@ -27,7 +28,7 @@ class AIServiceLLMDriven:
             logger.critical("¡Clave API de IA no configurada!")
         if not self.api_url:
             logger.critical("¡URL de API de IA no configurada!")
-        # Nota: El prompt ahora se genera dinámicamente en _prepare_messages
+        # El prompt maestro ahora se genera dinámicamente en _prepare_messages
 
     async def _call_llm_api(
         self,
@@ -35,12 +36,14 @@ class AIServiceLLMDriven:
         max_tokens: int = 1500,
         temperature: float = 0.6,
     ) -> str:
-        """Llama a la API del LLM (Sin cambios respecto a versiones anteriores)."""
-        # ... (pegar aquí la función _call_llm_api completa de la versión híbrida) ...
+        """Llama a la API del LLM con logging y manejo de errores detallado."""
         if not self.api_key or not self.api_url:
             error_msg = "Error de configuración: Clave API o URL no proporcionada."
             logger.error(error_msg)
-            return error_msg
+            # Devolver mensaje de error que se mostrará al usuario
+            return "Error de Configuración Interna [AIC01]."
+
+        response_text = ""  # Para guardar el texto de respuesta en caso de error JSON
         try:
             async with httpx.AsyncClient() as client:
                 headers = {
@@ -53,130 +56,290 @@ class AIServiceLLMDriven:
                     "temperature": temperature,
                     "max_tokens": max_tokens,
                 }
-                logger.debug(
-                    f"Llamando a API LLM: {self.api_url} con modelo {self.model}. Mensajes: {len(messages)}"
+
+                logger.info(
+                    f"DBG_AI_CALL: Iniciando llamada a API LLM. URL: {self.api_url}, Model: {self.model}, #Msgs: {len(messages)}"
                 )
+                # Loggear parte del payload para depuración (ej. último mensaje)
+                if messages:
+                    logger.debug(f"DBG_AI_CALL: Último mensaje enviado: {messages[-1]}")
+
                 response = await client.post(
                     self.api_url, json=payload, headers=headers, timeout=90.0
                 )
-                response.raise_for_status()
-                data = response.json()
-                # Añadir manejo robusto por si 'choices' no está o está vacío
+                response_text = (
+                    response.text
+                )  # Guardar texto crudo para posible error JSON
+                logger.info(
+                    f"DBG_AI_CALL: Llamada a API completada. Status: {response.status_code}"
+                )
+
+                response.raise_for_status()  # Lanza excepción en errores HTTP 4xx/5xx
+
+                logger.debug("DBG_AI_CALL: Procesando respuesta JSON...")
+                data = response.json()  # Puede lanzar JSONDecodeError
+                logger.debug(
+                    f"DBG_AI_CALL: JSON recibido OK (primeros 500 chars): {str(data)[:500]}"
+                )
+
                 choices = data.get("choices")
                 if not choices:
-                    logger.warning(f"Respuesta LLM no contiene 'choices': {data}")
-                    return "(El asistente no proporcionó una respuesta válida)"
+                    logger.warning(
+                        f"DBG_AI_CALL: Respuesta LLM sin 'choices'. JSON: {data}"
+                    )
+                    return "(Respuesta inválida del asistente [AIC02])"  # Mensaje más específico
+
                 message_data = choices[0].get("message", {})
                 content = message_data.get("content", "")
-                # -------
-                logger.debug(
-                    f"Respuesta LLM recibida (primeros 100 chars): {content[:100]}"
-                )
+
                 if not content:
-                    logger.warning("Respuesta del LLM vacía.")
-                    return "(El asistente no proporcionó una respuesta)"
+                    logger.warning(
+                        "DBG_AI_CALL: Respuesta del LLM con contenido vacío."
+                    )
+                    # Podríamos devolver un mensaje específico o dejar que el flujo continúe
+                    # y chat.py maneje la respuesta vacía si es necesario.
+                    # Devolver un placeholder podría ser más claro que un string vacío.
+                    return "(El asistente no proporcionó texto en la respuesta)"
+
+                logger.info(
+                    f"DBG_AI_CALL: Contenido LLM extraído exitosamente (longitud: {len(content)})."
+                )
                 return content.strip()
+
         except httpx.HTTPStatusError as e:
             error_body = e.response.text
             logger.error(
-                f"Error HTTP en API LLM: {e.response.status_code} - {error_body}",
+                f"DBG_AI_CALL: Error HTTP {e.response.status_code} en API LLM: {error_body}",
                 exc_info=True,
             )
-            return f"Error al contactar el servicio de IA ({e.response.status_code}). Detalles: {error_body[:500]}"
+            # Devolver mensaje de error claro al usuario
+            user_error_msg = (
+                f"Error de comunicación con la IA ({e.response.status_code})."
+            )
+            # Incluir más detalles si es un error común (ej. rate limit, auth)
+            if e.response.status_code == 429:
+                user_error_msg += " Límite de solicitudes excedido. Espera un momento."
+            elif e.response.status_code in [401, 403]:
+                user_error_msg += " Problema de autenticación con la API."
+            return user_error_msg
         except httpx.RequestError as e:
-            logger.error(f"Error de red llamando a API LLM: {e}", exc_info=True)
-            return f"Error de red al contactar el servicio de IA: {e}"
+            logger.error(
+                f"DBG_AI_CALL: Error de red llamando a API LLM: {e}", exc_info=True
+            )
+            return f"Error de red al contactar la IA. Verifica tu conexión."
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"DBG_AI_CALL: Error decodificando JSON de API LLM: {e}", exc_info=True
+            )
+            logger.error(
+                f"DBG_AI_CALL: Cuerpo de respuesta (texto crudo): {response_text}"
+            )
+            return "Error interno al procesar la respuesta de la IA [AIC03]."
         except Exception as e:
-            logger.error(f"Error inesperado en _call_llm_api: {str(e)}", exc_info=True)
-            return "Lo siento, ha ocurrido un error inesperado al procesar la solicitud con la IA."
+            logger.error(
+                f"DBG_AI_CALL: Error inesperado en _call_llm_api: {str(e)}",
+                exc_info=True,
+            )
+            return (
+                "Lo siento, ocurrió un error inesperado en el servicio de IA [AIC04]."
+            )
 
     def _prepare_messages(self, conversation: Conversation) -> List[Dict[str, str]]:
         """Prepara los mensajes para la API, incluyendo el prompt dinámico."""
+        logger.debug("DBG_AI_PREP: Iniciando preparación de mensajes...")
+        try:
+            # Generar el prompt maestro con el estado actual y el cuestionario
+            # Usar metadata directamente, asegurarse que no sea None
+            current_metadata = conversation.metadata if conversation.metadata else {}
+            system_prompt = get_llm_driven_master_prompt(current_metadata)
 
-        # 1. Generar el prompt maestro con el estado actual y el cuestionario
-        system_prompt = get_llm_driven_master_prompt(conversation.metadata)
+            if "[ERROR" in system_prompt:
+                logger.error(
+                    f"Error detectado en system_prompt al cargar plantillas/cuestionario: {system_prompt}"
+                )
+                # Es crítico, lanzar excepción para detener el flujo
+                raise ValueError(
+                    "Fallo al generar system_prompt debido a error en carga de archivos."
+                )
 
-        messages = [{"role": "system", "content": system_prompt}]
+            messages = [{"role": "system", "content": system_prompt}]
 
-        # 2. Añadir historial de conversación (últimos N mensajes)
-        MAX_HISTORY_MSGS = 15  # Ajustar
-        start_index = max(0, len(conversation.messages) - MAX_HISTORY_MSGS)
-        for msg in conversation.messages[start_index:]:
-            if msg.role != "system":  # Evitar duplicar system prompts
-                messages.append({"role": msg.role, "content": msg.content})
+            # Añadir historial de conversación (si existe)
+            if conversation.messages:
+                MAX_HISTORY_MSGS = 15  # Ajustar según necesidad y límites de tokens
+                start_index = max(0, len(conversation.messages) - MAX_HISTORY_MSGS)
+                for msg in conversation.messages[start_index:]:
+                    # Asegurarse que msg es un objeto con atributos role y content
+                    # (Si viene de BD, podría ser un dict)
+                    role = getattr(msg, "role", None)
+                    content = getattr(msg, "content", None)
+                    if role and content and role != "system":
+                        messages.append({"role": role, "content": content})
+                    else:
+                        logger.warning(
+                            f"Mensaje inválido o de sistema en historial omitido: {msg}"
+                        )
 
-        logger.debug(
-            f"Mensajes preparados para LLM (Total: {len(messages)}). Último user: {messages[-1]['content'] if messages[-1]['role']=='user' else 'N/A'}"
-        )
-        return messages
+                logger.debug(
+                    f"DBG_AI_PREP: Mensajes preparados (Total: {len(messages)}). Historial añadido."
+                )
+            else:
+                logger.debug(
+                    "DBG_AI_PREP: Mensajes preparados (Total: 1). Sin historial previo."
+                )
+
+            return messages
+        except Exception as e:
+            logger.error(f"Error fatal en _prepare_messages: {e}", exc_info=True)
+            # Lanzar excepción para que handle_conversation la capture
+            raise ValueError(f"Fallo al preparar mensajes: {e}")
 
     async def handle_conversation(self, conversation: Conversation) -> str:
         """
-        Prepara los mensajes con el prompt dinámico y obtiene la respuesta del LLM.
-        Actualiza el estado mínimo en metadata basado en la respuesta.
+        Prepara los mensajes y obtiene la respuesta del LLM.
+        Actualiza el estado mínimo en metadata basado en la respuesta del LLM.
         """
-        if not conversation or not conversation.messages:
-            logger.error("handle_conversation llamada sin conversación o mensajes.")
-            return "Error interno: No se pudo procesar la conversación."
+        logger.info(
+            f"DBG_AI_HANDLE: Iniciando handle_conversation para conv {conversation.id if conversation else 'N/A'}"
+        )
+        if not conversation:
+            logger.error("DBG_AI_HANDLE: Objeto conversation es None.")
+            return "Error interno: Conversación inválida [AIH01]."
+        if not isinstance(conversation.metadata, dict):
+            logger.error(f"DBG_AI_HANDLE: Metadata inválida para {conversation.id}")
+            # Resetear metadata si está mal? O devolver error? Devolver error es más seguro.
+            return "Error interno: Metadata de conversación corrupta [AIH02]."
 
-        # 1. Preparar mensajes (incluye prompt dinámico con estado)
-        messages = self._prepare_messages(conversation)
+        llm_response = "Error inesperado en handle_conversation [AIH03]."  # Valor por defecto en caso de fallo total
 
-        # 2. Llamar al LLM
-        llm_response = await self._call_llm_api(messages)
-
-        # 3. Actualizar estado MÍNIMO en metadata (basado en lo que el LLM dijo)
-        #    Esto es menos preciso que el enfoque anterior, confiamos en el LLM.
         try:
-            # Intentar extraer la última pregunta formulada por el LLM (simplificado)
-            lines = llm_response.split("\n")
-            last_q_summary = "Desconocida"
-            for line in reversed(lines):
-                if line.strip().startswith("**PREGUNTA:**"):
-                    last_q_summary = (
-                        line.strip().replace("**PREGUNTA:**", "").strip()[:100]
-                    )  # Resumen corto
-                    break
-            conversation.metadata["current_question_asked_summary"] = last_q_summary
+            # 1. Preparar mensajes
+            logger.debug("DBG_AI_HANDLE: Llamando a _prepare_messages...")
+            messages = self._prepare_messages(conversation)
             logger.info(
-                f"Metadata[current_question_asked_summary] actualizada a: '{last_q_summary}'"
+                f"DBG_AI_HANDLE: Mensajes preparados OK (Total: {len(messages)})."
             )
 
-            # Actualizar sector/subsector si el LLM los mencionó en su respuesta (más frágil)
-            # O mejor, hacerlo en chat.py después de recibir la respuesta del usuario
-            # Por ahora, solo actualizamos el resumen de la pregunta.
+            # 2. Llamar al LLM
+            logger.debug("DBG_AI_HANDLE: Llamando a _call_llm_api...")
+            llm_response = await self._call_llm_api(messages)
+            logger.info(
+                f"DBG_AI_HANDLE: Respuesta LLM recibida (primeros 50 chars): '{llm_response[:50]}'"
+            )
 
-            # Marcar como completo si la respuesta contiene el marcador final
-            if "[PROPOSAL_COMPLETE:" in llm_response:
-                # Guardar texto SIN el marcador (opcional, pero más limpio)
-                proposal_clean_text = llm_response.split("[PROPOSAL_COMPLETE:")[
-                    0
-                ].strip()
-                conversation.metadata["proposal_text"] = proposal_clean_text
-                conversation.metadata["is_complete"] = True
-                conversation.metadata["has_proposal"] = True
-                logger.info(
-                    f"Propuesta detectada y guardada en metadata para {conversation.id}"
+            # 3. Actualizar estado MÍNIMO en metadata
+            #    (Solo si la respuesta NO fue un mensaje de error generado por _call_llm_api)
+            #    Es importante chequear contra los posibles mensajes de error que devuelve _call_llm_api
+            possible_error_prefixes = (
+                "Error",
+                "Lo siento",
+                "(Respuesta inválida",
+                "(El asistente no",
+            )
+            if not llm_response.startswith(possible_error_prefixes):
+                logger.debug(
+                    f"DBG_AI_HANDLE: Actualizando metadata para {conversation.id}..."
                 )
-                # --- DEVOLVER MENSAJE FIJO ---
-                llm_response = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
-                # -----------------------------
+                try:  # Envolver actualización de metadata en try/except
+                    lines = llm_response.split("\n")
+                    last_q_summary = conversation.metadata.get(
+                        "current_question_asked_summary", "Desconocida"
+                    )  # Mantener anterior si no hay nueva
+                    first_question_id = None
+                    is_proposal = "[PROPOSAL_COMPLETE:" in llm_response
+
+                    # Buscar la pregunta formulada en la respuesta
+                    question_found_in_response = False
+                    for line in lines:
+                        if line.strip().startswith("**PREGUNTA:**"):
+                            last_q_summary = (
+                                line.strip().replace("**PREGUNTA:**", "").strip()[:100]
+                            )
+                            question_found_in_response = True
+                            # Determinar ID de la primera pregunta si es el inicio
+                            if conversation.metadata.get("current_question_id") is None:
+                                initial_q_ids = [
+                                    q["id"]
+                                    for q in questionnaire_service.structure.get(
+                                        "initial_questions", []
+                                    )
+                                    if "id" in q
+                                ]
+                                if initial_q_ids:
+                                    first_question_id = initial_q_ids[0]
+                            break  # Solo la primera pregunta en la respuesta
+
+                    # Actualizar metadata
+                    if (
+                        first_question_id
+                        and conversation.metadata.get("current_question_id") is None
+                    ):
+                        conversation.metadata["current_question_id"] = first_question_id
+                        logger.info(
+                            f"Metadata[current_question_id] actualizada a (inicio): '{first_question_id}'"
+                        )
+                    # Solo actualizar el summary si encontramos una pregunta en ESTA respuesta
+                    if question_found_in_response:
+                        conversation.metadata["current_question_asked_summary"] = (
+                            last_q_summary
+                        )
+                        logger.info(
+                            f"Metadata[current_question_asked_summary] actualizada a: '{last_q_summary}'"
+                        )
+                        # Si se hizo una pregunta, el cuestionario no está completo aún
+                        conversation.metadata["is_complete"] = False
+                        conversation.metadata["has_proposal"] = False
+
+                    if is_proposal:
+                        proposal_clean_text = llm_response.split("[PROPOSAL_COMPLETE:")[
+                            0
+                        ].strip()
+                        conversation.metadata["proposal_text"] = proposal_clean_text
+                        conversation.metadata["is_complete"] = True
+                        conversation.metadata["has_proposal"] = True
+                        logger.info(
+                            f"Propuesta detectada y guardada en metadata para {conversation.id}"
+                        )
+                        # Devolver el mensaje amigable en lugar del texto completo + marcador
+                        llm_response = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+
+                    logger.debug(
+                        f"DBG_AI_HANDLE: Metadata actualizada OK para {conversation.id}."
+                    )
+
+                except Exception as meta_err:
+                    logger.error(
+                        f"Error actualizando metadata para {conversation.id}: {meta_err}",
+                        exc_info=True,
+                    )
+                    # No cambiar llm_response aquí, dejar que se devuelva la respuesta original de IA si hubo
+
             else:
-                # Si el LLM olvidó el marcador (menos probable con prompt V3/V4)
-                # Podríamos añadirlo aquí antes de guardar, o considerarlo un error
                 logger.warning(
-                    f"LLM olvidó el marcador [PROPOSAL_COMPLETE:] en {conversation.id}"
+                    f"DBG_AI_HANDLE: Respuesta de LLM fue un mensaje de error, no se actualiza metadata: '{llm_response}'"
                 )
-                # Decidir si guardarlo de todas formas o devolver error
 
+        except ValueError as e:  # Capturar error de _prepare_messages
+            logger.error(
+                f"DBG_AI_HANDLE: Error preparando mensajes: {e}", exc_info=True
+            )
+            llm_response = f"Error interno preparando la solicitud [AIH05]."  # Mensaje genérico para usuario
         except Exception as e:
             logger.error(
-                f"Error actualizando metadata después de respuesta LLM: {e}",
+                f"DBG_AI_HANDLE: Error inesperado en handle_conversation: {e}",
                 exc_info=True,
             )
+            llm_response = (
+                "Lo siento, ocurrió un error general al procesar tu solicitud [AIH06]."
+            )
 
+        logger.info(
+            f"DBG_AI_HANDLE: Finalizando handle_conversation para {conversation.id}. Respuesta a devolver (primeros 50): '{llm_response[:50]}'"
+        )
         return llm_response
 
 
 # Instancia global
-ai_service = AIServiceLLMDriven()  # Nombre de instancia genérico
+# Asegúrate de que el nombre de la clase aquí coincida con el usado en el import de chat.py
+# Si chat.py importa 'ai_service', la instancia debe llamarse así.
+ai_service = AIServiceLLMDriven()
