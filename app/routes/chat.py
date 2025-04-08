@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 import logging
 import os
 import uuid  # Importar uuid
+import re
 from datetime import datetime  # Importar datetime
 from typing import Any, Optional, Dict, List  # Añadir Optional y Dict
 
@@ -89,6 +90,31 @@ def _is_last_question(
             f"_is_last_question: ID '{current_question_id}' no encontrado en ruta {path}"
         )
         return False  # No estaba en la ruta
+
+
+def _is_pdf_request(message: str) -> bool:
+    """Determina si el mensaje es una solicitud de PDF de forma más robusta."""
+    if not message:
+        return False
+    message = message.lower().strip()
+    # Palabras clave específicas
+    pdf_keywords = [
+        "pdf",
+        "descargar propuesta",
+        "descargar pdf",
+        "generar pdf",
+        "obtener documento",
+        "propuesta final",
+        "descargar",
+    ]  # Añadir descargar
+    # Podría ser una coincidencia exacta o contener una de las frases clave
+    is_request = message in pdf_keywords or any(
+        keyword in message for keyword in pdf_keywords
+    )
+    logger.debug(
+        f"_is_pdf_request: Input='{message}', Keywords={pdf_keywords}, Result={is_request}"
+    )
+    return is_request
 
 
 # --- Endpoints ---
