@@ -378,52 +378,97 @@ class ProposalService:
         return summary
 
     # --- Función Principal ---
-    async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """
-        Genera el texto de la propuesta usando plantilla, datos recolectados,
-        y opcionalmente LLM para refinar secciones.
-        """
-        logger.info(f"Generando texto de propuesta para {conversation.id} (Backend)")
+    async def generate_proposal_text_only(self, conversation: Conversation) -> str:
+        """Llama al LLM específicamente para generar solo el texto de la propuesta basado en Format Proposal.txt."""
+        logger.info(
+            f"DBG_AI_PROP: Iniciando generación de SOLO TEXTO de propuesta para {conversation.id}"
+        )
 
-        if "Error" in self.template_string:
+        # Comprobar la validez de los datos
+        if not conversation or not conversation.metadata:
             logger.error(
-                f"No se puede generar propuesta para {conversation.id} debido a error en plantilla."
+                "generate_proposal_text_only llamada sin conversación/metadata válida."
             )
-            return "Error Interno: No se pudo cargar la plantilla de la propuesta."
+            return "Error: Datos de conversación inválidos para generar propuesta."
+        if not conversation.metadata.get("collected_data"):
+            logger.error(
+                f"No hay datos recolectados en metadata para generar propuesta {conversation.id}"
+            )
+            return (
+                "Error: No se encontraron datos suficientes para generar la propuesta."
+            )
 
+        # Preparar datos recolectados para el prompt
         collected_data = conversation.metadata.get("collected_data", {})
-        metadata = conversation.metadata
+        sector = conversation.metadata.get("selected_sector", "No especificado")
+        subsector = conversation.metadata.get("selected_subsector", "No especificado")
 
-        # 1. Preparar datos básicos para la plantilla
-        template_data = self._format_data_for_template(collected_data, metadata)
+        # Crear un resumen de los datos recopilados
+        collected_data_summary = "\n### Datos Recopilados del Usuario:\n"
+        for q_id, answer in collected_data.items():
+            q_details = questionnaire_service.get_question_details(q_id)
+            q_text = q_details.get("text", q_id) if q_details else q_id
+            q_text = re.sub(r"{.*?}", "", q_text).strip()  # Limpiar placeholders
+            collected_data_summary += f"- **{q_text}:** {answer}\n"
 
-        # 2. (Opcional-Avanzado) Generar secciones complejas con LLM
-        #    Podríamos crear prompts específicos para cada sección que requiera IA
-        design_prompt = f"Basado en los siguientes datos de un cliente del sector {template_data['INDUSTRY_SECTOR']} / {template_data['INDUSTRY_SUBSECTOR']}: Flujo={template_data['WASTEWATER_GENERATION']}, Objetivo={template_data['MAIN_OBJECTIVE']}, Calidad Agua Estimada (si aplica)={ {k:v for k,v in template_data.items() if '_VALUE' in k} }, Presupuesto={template_data['BUDGET_RANGE']}. Sugiere un tren de tratamiento conceptual (Etapa: Tecnología - Justificación Breve) para la sección 'Diseño del Proceso y Alternativas'."
-        template_data["DISEÑO_PROCESO_TEXTO"] = await self._refine_section_with_llm(
-            "Diseño Proceso", design_prompt
-        )
-
-        equipment_prompt = f"Para el diseño de proceso anterior y un flujo de {template_data['WASTEWATER_GENERATION']}, sugiere equipos clave y un dimensionamiento MUY PRELIMINAR (ej. Tanque EQ: X m³, DAF: Y m³/h, MBBR: Z m³). Indica que son estimaciones."
-        template_data["EQUIPOS_DIMENSIONES_TEXTO"] = (
-            await self._refine_section_with_llm(
-                "Equipos y Dimensiones", equipment_prompt
+        # Cargar formato de propuesta
+        proposal_format = ""
+        try:
+            format_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/Format Proposal.txt"
             )
+            if os.path.exists(format_path):
+                with open(format_path, "r", encoding="utf-8") as f:
+                    proposal_format = f.read()
+            else:
+                logger.warning("No se encontró el archivo Format Proposal.txt")
+                proposal_format = "FORMATO NO ENCONTRADO"
+        except Exception as e:
+            logger.error(f"Error cargando formato de propuesta: {e}")
+            proposal_format = "ERROR CARGANDO FORMATO"
+
+        # Crear instrucción específica para el LLM
+        instruction = f"""
+# INSTRUCCIÓN PARA GENERAR PROPUESTA DE TRATAMIENTO DE AGUA
+
+    Necesito que generes una propuesta profesional completa para un sistema de tratamiento de agua. 
+    Esta es una propuesta FINAL para el cliente, por lo que debe ser detallada, técnica pero comprensible, 
+    y seguir EXACTAMENTE el formato de propuesta proporcionado.
+
+## DATOS DEL CLIENTE
+    Sector: {sector}
+    Subsector: {subsector}
+    {collected_data_summary}
+
+## FORMATO DE PROPUESTA A SEGUIR
+    {proposal_format}
+
+## INSTRUCCIONES IMPORTANTES:
+    1. Sigue EXACTAMENTE el formato proporcionado, manteniendo todas las secciones
+    2. Rellena todos los campos con información basada en los datos recopilados
+    3. Cuando falte información específica, usa valores estándar de la industria y menciona que son estimaciones
+    4. Sé detallado y técnico pero comprensible
+    5. La propuesta debe ser COMPLETA y lista para convertirse en PDF
+    6. No añadas notas adicionales ni comentarios fuera del formato de la propuesta
+
+    GENERA LA PROPUESTA COMPLETA AHORA:
+    """
+
+        # Llamar a la API del LLM con suficiente contexto y tokens
+        messages = [{"role": "user", "content": instruction}]
+        proposal_text = await self._call_llm_api(
+            messages, max_tokens=4000, temperature=0.5
         )
 
-        roi_prompt = f"Considerando un costo de agua actual de {template_data['WATER_COST']}, un flujo de {template_data['WASTEWATER_GENERATION']}, y objetivos de reúso '{template_data['REUSE_OBJECTIVES']}' y ahorro '{template_data['MAIN_OBJECTIVE']}', describe brevemente el potencial de ahorro y estima un rango simple de ROI (ej. X-Y años) para la sección 'Análisis ROI'. Menciona que depende de CAPEX/OPEX finales."
-        template_data["ANALISIS_ROI_TEXTO"] = await self._refine_section_with_llm(
-            "Análisis ROI", roi_prompt
-        )
-
-        # 3. Generar Resumen Q&A
-        template_data["RESUMEN_Q&A_TEXTO"] = self._generate_qa_summary(collected_data)
-
-        # 4. Rellenar la plantilla completa con todos los datos (incluidos los generados por LLM si se usó)
-        proposal_text = self._fill_template(template_data)
+        # Validar y limpiar la respuesta
+        if proposal_text.startswith("Error") or len(proposal_text) < 200:
+            logger.error(
+                f"Error en respuesta LLM para propuesta: {proposal_text[:100]}"
+            )
+            return f"Error: No se pudo generar la propuesta correctamente: {proposal_text[:100]}"
 
         logger.info(
-            f"Texto de propuesta generado (Backend) para {conversation.id} (Longitud: {len(proposal_text)})"
+            f"Texto de propuesta generado para {conversation.id} (Longitud: {len(proposal_text)})"
         )
         return proposal_text
 

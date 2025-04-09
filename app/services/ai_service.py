@@ -9,7 +9,10 @@ from app.config import settings
 from app.models.conversation import Conversation
 
 # Importar el prompt LLM-Driven (ajusta el nombre si usaste V4)
-from app.prompts.main_prompt_llm_driven import get_llm_driven_master_prompt
+from app.prompts.main_prompt_llm_driven import (
+    get_llm_driven_master_prompt,
+)
+
 
 # Importar QuestionnaireService SOLO para IDs iniciales/texto de preguntas en metadata
 from app.services.questionnaire_service import questionnaire_service
@@ -265,7 +268,7 @@ class AIServiceLLMDriven:
                                 f"Propuesta con marcador detectada y guardada para {conversation.id}"
                             )
                             # Devolver mensaje fijo para pedir descarga
-                            llm_response_to_user = "✅ ¡Propuesta Lista! Escribe 'descargar pdf' para obtener tu documento."
+                            llm_response_to_user = "¡Excelente! Hemos completado el cuestionario. Estoy generando tu propuesta personalizada en formato PDF, espera un momento..."
                         else:
                             # ¡Fallo! LLM generó algo pero olvidó el marcador
                             logger.error(

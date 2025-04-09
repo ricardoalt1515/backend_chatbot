@@ -228,54 +228,52 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                 proposal_text = None
                 pdf_path = None
                 error_occurred = False
-                final_message_content = (
-                    "Lo siento, hubo un problema al generar tu propuesta final."
-                )
 
                 try:
-                    # Paso 3.2: LLAMAR A IA PARA GENERAR SOLO TEXTO
+                    # Generar texto de propuesta
+                    logger.info(
+                        f"Generando texto de propuesta para {conversation_id}..."
+                    )
                     proposal_text = await ai_service.generate_proposal_text_only(
                         conversation
                     )
-                    if proposal_text.startswith(
-                        "Error"
-                    ):  # Verificar error de la función
+
+                    if proposal_text.startswith("Error"):
                         raise ValueError(
                             f"AI Service falló al generar texto: {proposal_text}"
                         )
+
                     conversation.metadata["proposal_text"] = proposal_text
                     conversation.metadata["has_proposal"] = True
                     client_name = conversation.metadata.get("collected_data", {}).get(
                         "INIT_0", "Cliente"
                     )
                     conversation.metadata["client_name"] = client_name
-                    logger.info(
-                        f"Texto de propuesta generado (Backend) para {conversation.id}"
-                    )
 
-                    # Paso 3.4: Generar PDF Inmediatamente
+                    # Generar PDF
+                    logger.info(f"Generando PDF para {conversation_id}...")
                     pdf_path = await pdf_service.generate_pdf_from_text(
                         conversation_id, proposal_text
                     )
-                    if not pdf_path:
-                        raise ValueError(
-                            "Fallo generación PDF - pdf_service no devolvió ruta."
-                        )
-                    conversation.metadata["pdf_path"] = pdf_path
-                    logger.info(
-                        f"PDF generado (Backend) para {conversation_id} en: {pdf_path}"
-                    )
 
-                    # Paso 3.6: Preparar Respuesta Especial (SI TODO OK)
+                    if not pdf_path or not os.path.exists(pdf_path):
+                        raise ValueError("PDF no generado correctamente.")
+
+                    conversation.metadata["pdf_path"] = pdf_path
+
+                    # Preparar respuesta con descarga automática
                     download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
+
+                    # Respuesta con acción de descarga
                     assistant_response_data = {
                         "id": "proposal-ready-" + str(uuid.uuid4())[:8],
-                        "message": "¡Hemos completado tu propuesta! Puedes descargarla ahora.",
+                        "message": "¡Propuesta lista! Se está descargando el PDF con tu propuesta personalizada.",
                         "conversation_id": conversation_id,
                         "created_at": datetime.utcnow(),
-                        "action": "download_proposal_pdf",  # Acción para frontend
+                        "action": "trigger_download",  # Acción para frontend que inicia descarga
                         "download_url": download_url,
                     }
+
                     # Añadir mensaje al historial
                     msg_to_add = Message.assistant(assistant_response_data["message"])
                     await storage_service.add_message_to_conversation(
@@ -284,9 +282,12 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 
                 except Exception as e:
                     error_occurred = True
-                    logger.error(f"Error en bloque final_answer: {e}", exc_info=True)
-                    # Crear respuesta de error para frontend
-                    error_msg_obj = Message.assistant(final_message_content)
+                    logger.error(f"Error generando propuesta/PDF: {e}", exc_info=True)
+                    conversation.metadata["last_error"] = (
+                        f"Error propuesta: {str(e)[:200]}"
+                    )
+                    error_msg = "Lo siento, ha ocurrido un error al generar tu propuesta. Por favor intenta nuevamente."
+                    error_msg_obj = Message.assistant(error_msg)
                     await storage_service.add_message_to_conversation(
                         conversation.id, error_msg_obj
                     )
