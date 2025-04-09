@@ -158,7 +158,12 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         logger.debug(f"Recibida petición /message para conv: {conversation_id}")
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation or not isinstance(conversation.metadata, dict):
-             return { /* ... error ... */ }
+            return {
+                "id": "error-conv-not-found",
+                "message": "Error: Conversación no encontrada. Por favor, reinicia.",
+                "conversation_id": conversation_id,
+                "created_at": datetime.utcnow(),
+            }
 
         # 2. Crear objeto mensaje usuario
         user_message_obj = Message.user(user_input)
@@ -167,11 +172,15 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         is_pdf_req = _is_pdf_request(user_input)
         proposal_ready = conversation.metadata.get("has_proposal", False)
 
-        logger.info(f"DBG_PDF_CHECK: ConvID={conversation_id}, Input='{user_input}', is_pdf_req={is_pdf_req}, proposal_ready={proposal_ready}")
+        logger.info(
+            f"DBG_PDF_CHECK: ConvID={conversation_id}, Input='{user_input}', is_pdf_req={is_pdf_req}, proposal_ready={proposal_ready}"
+        )
 
         if is_pdf_req and proposal_ready:
             # --- Flujo Descarga PDF Explícita (SIN CAMBIOS) ---
-            logger.info(f"DBG_PDF_CHECK: Entrando en flujo de descarga PDF explícita para {conversation_id}.")
+            logger.info(
+                f"DBG_PDF_CHECK: Entrando en flujo de descarga PDF explícita para {conversation_id}."
+            )
             download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
             assistant_response_data = {
                 "id": "pdf-trigger-" + str(uuid.uuid4())[:8],
@@ -179,54 +188,83 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                 "conversation_id": conversation_id,
                 "created_at": datetime.utcnow(),
                 "action": "trigger_download",
-                "download_url": download_url
+                "download_url": download_url,
             }
             # No guardar aquí
 
         else:
             # --- Flujo Normal ---
-            logger.info(f"DBG_PDF_CHECK: Entrando en flujo normal/final para {conversation_id}.")
-            conversation.messages.append(user_message_obj) # Añadir mensaje usuario
+            logger.info(
+                f"DBG_PDF_CHECK: Entrando en flujo normal/final para {conversation_id}."
+            )
+            conversation.messages.append(user_message_obj)  # Añadir mensaje usuario
 
             # Actualizar metadata básica (sector/subsector) si aplica
             last_question_id = conversation.metadata.get("current_question_id")
             if last_question_id:
-                conversation.metadata["collected_data"][last_question_id] = user_input.strip()
+                conversation.metadata["collected_data"][
+                    last_question_id
+                ] = user_input.strip()
                 # ... (lógica sector/subsector si last_question_id es INIT_1 o INIT_2) ...
                 pass
 
             # Verificar si fue la última respuesta
             is_final_answer = _is_last_question(last_question_id, conversation.metadata)
-            logger.debug(f"DBG_PDF_CHECK: last_q_id='{last_question_id}', is_final_answer={is_final_answer}")
+            logger.debug(
+                f"DBG_PDF_CHECK: last_q_id='{last_question_id}', is_final_answer={is_final_answer}"
+            )
 
             if is_final_answer:
                 # --- Cuestionario Terminado: Generar Texto y PDF (Backend) ---
-                logger.info(f"Última respuesta recibida. Generando Propuesta+PDF (Backend) para {conversation_id}.")
-                conversation.metadata['is_complete'] = True
-                conversation.metadata['current_question_id'] = None
-                conversation.metadata['current_question_asked_summary'] = "Cuestionario Completado"
+                logger.info(
+                    f"Última respuesta recibida. Generando Propuesta+PDF (Backend) para {conversation_id}."
+                )
+                conversation.metadata["is_complete"] = True
+                conversation.metadata["current_question_id"] = None
+                conversation.metadata["current_question_asked_summary"] = (
+                    "Cuestionario Completado"
+                )
 
                 proposal_text = None
                 pdf_path = None
                 error_occurred = False
-                final_message_content = "Lo siento, hubo un problema al generar tu propuesta final."
+                final_message_content = (
+                    "Lo siento, hubo un problema al generar tu propuesta final."
+                )
 
                 try:
                     # Paso 3.2: LLAMAR A IA PARA GENERAR SOLO TEXTO
-                    proposal_text = await ai_service.generate_proposal_text_only(conversation)
-                    if proposal_text.startswith("Error"): # Verificar error de la función
-                         raise ValueError(f"AI Service falló al generar texto: {proposal_text}")
-                    conversation.metadata['proposal_text'] = proposal_text
-                    conversation.metadata['has_proposal'] = True
-                    client_name = conversation.metadata.get("collected_data", {}).get("INIT_0", "Cliente")
+                    proposal_text = await ai_service.generate_proposal_text_only(
+                        conversation
+                    )
+                    if proposal_text.startswith(
+                        "Error"
+                    ):  # Verificar error de la función
+                        raise ValueError(
+                            f"AI Service falló al generar texto: {proposal_text}"
+                        )
+                    conversation.metadata["proposal_text"] = proposal_text
+                    conversation.metadata["has_proposal"] = True
+                    client_name = conversation.metadata.get("collected_data", {}).get(
+                        "INIT_0", "Cliente"
+                    )
                     conversation.metadata["client_name"] = client_name
-                    logger.info(f"Texto de propuesta generado (Backend) para {conversation.id}")
+                    logger.info(
+                        f"Texto de propuesta generado (Backend) para {conversation.id}"
+                    )
 
                     # Paso 3.4: Generar PDF Inmediatamente
-                    pdf_path = await pdf_service.generate_pdf_from_text(conversation_id, proposal_text)
-                    if not pdf_path: raise ValueError("Fallo generación PDF - pdf_service no devolvió ruta.")
-                    conversation.metadata['pdf_path'] = pdf_path
-                    logger.info(f"PDF generado (Backend) para {conversation_id} en: {pdf_path}")
+                    pdf_path = await pdf_service.generate_pdf_from_text(
+                        conversation_id, proposal_text
+                    )
+                    if not pdf_path:
+                        raise ValueError(
+                            "Fallo generación PDF - pdf_service no devolvió ruta."
+                        )
+                    conversation.metadata["pdf_path"] = pdf_path
+                    logger.info(
+                        f"PDF generado (Backend) para {conversation_id} en: {pdf_path}"
+                    )
 
                     # Paso 3.6: Preparar Respuesta Especial (SI TODO OK)
                     download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
@@ -235,34 +273,47 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                         "message": "¡Hemos completado tu propuesta! Puedes descargarla ahora.",
                         "conversation_id": conversation_id,
                         "created_at": datetime.utcnow(),
-                        "action": "download_proposal_pdf", # Acción para frontend
-                        "download_url": download_url
+                        "action": "download_proposal_pdf",  # Acción para frontend
+                        "download_url": download_url,
                     }
                     # Añadir mensaje al historial
                     msg_to_add = Message.assistant(assistant_response_data["message"])
-                    await storage_service.add_message_to_conversation(conversation.id, msg_to_add)
+                    await storage_service.add_message_to_conversation(
+                        conversation.id, msg_to_add
+                    )
 
                 except Exception as e:
-                     error_occurred = True
-                     logger.error(f"Error en bloque final_answer: {e}", exc_info=True)
-                     # Crear respuesta de error para frontend
-                     error_msg_obj = Message.assistant(final_message_content)
-                     await storage_service.add_message_to_conversation(conversation.id, error_msg_obj)
-                     assistant_response_data = { "id": error_msg_obj.id, "message": error_msg_obj.content, "conversation_id": conversation_id, "created_at": error_msg_obj.created_at }
+                    error_occurred = True
+                    logger.error(f"Error en bloque final_answer: {e}", exc_info=True)
+                    # Crear respuesta de error para frontend
+                    error_msg_obj = Message.assistant(final_message_content)
+                    await storage_service.add_message_to_conversation(
+                        conversation.id, error_msg_obj
+                    )
+                    assistant_response_data = {
+                        "id": error_msg_obj.id,
+                        "message": error_msg_obj.content,
+                        "conversation_id": conversation_id,
+                        "created_at": error_msg_obj.created_at,
+                    }
 
             else:
                 # --- Aún hay preguntas: Llamar a IA para siguiente paso ---
-                logger.info(f"DBG_PDF_CHECK: Llamando a AI Service para obtener siguiente pregunta.")
+                logger.info(
+                    f"DBG_PDF_CHECK: Llamando a AI Service para obtener siguiente pregunta."
+                )
                 # Guardar antes de llamar
                 await storage_service.save_conversation(conversation)
                 ai_response_content = await ai_service.handle_conversation(conversation)
                 assistant_message = Message.assistant(ai_response_content)
-                await storage_service.add_message_to_conversation(conversation.id, assistant_message)
+                await storage_service.add_message_to_conversation(
+                    conversation.id, assistant_message
+                )
                 assistant_response_data = {
                     "id": assistant_message.id,
                     "message": assistant_message.content,
                     "conversation_id": conversation_id,
-                    "created_at": assistant_message.created_at
+                    "created_at": assistant_message.created_at,
                 }
 
         # --- Guardar y Devolver ---
@@ -270,10 +321,12 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
         background_tasks.add_task(storage_service.cleanup_old_conversations)
 
         if not assistant_response_data:
-             # ... (fallback error) ...
-             pass
+            # ... (fallback error) ...
+            pass
 
-        logger.info(f"Devolviendo respuesta para {conversation_id}: action={assistant_response_data.get('action', 'N/A')}, msg_len={len(assistant_response_data.get('message', '') or '')}")
+        logger.info(
+            f"Devolviendo respuesta para {conversation_id}: action={assistant_response_data.get('action', 'N/A')}, msg_len={len(assistant_response_data.get('message', '') or '')}"
+        )
         return assistant_response_data
 
     # --- Manejo de Excepciones ---
