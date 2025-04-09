@@ -379,98 +379,101 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text_only(self, conversation: Conversation) -> str:
-        """Llama al LLM específicamente para generar solo el texto de la propuesta basado en Format Proposal.txt."""
-        logger.info(
-            f"DBG_AI_PROP: Iniciando generación de SOLO TEXTO de propuesta para {conversation.id}"
-        )
+        """Genera el texto de propuesta usando AI basado en los datos recopilados."""
 
-        # Comprobar la validez de los datos
+        logger.info(f"Generando propuesta completa para {conversation.id}")
+
+        # Verificar validez de datos
         if not conversation or not conversation.metadata:
             logger.error(
-                "generate_proposal_text_only llamada sin conversación/metadata válida."
+                "generate_proposal_text llamada sin conversación/metadata válida."
             )
             return "Error: Datos de conversación inválidos para generar propuesta."
-        if not conversation.metadata.get("collected_data"):
-            logger.error(
-                f"No hay datos recolectados en metadata para generar propuesta {conversation.id}"
-            )
-            return (
-                "Error: No se encontraron datos suficientes para generar la propuesta."
-            )
 
-        # Preparar datos recolectados para el prompt
+        # Obtener datos recopilados
         collected_data = conversation.metadata.get("collected_data", {})
         sector = conversation.metadata.get("selected_sector", "No especificado")
         subsector = conversation.metadata.get("selected_subsector", "No especificado")
 
-        # Crear un resumen de los datos recopilados
-        collected_data_summary = "\n### Datos Recopilados del Usuario:\n"
-        for q_id, answer in collected_data.items():
-            q_details = questionnaire_service.get_question_details(q_id)
-            q_text = q_details.get("text", q_id) if q_details else q_id
-            q_text = re.sub(r"{.*?}", "", q_text).strip()  # Limpiar placeholders
-            collected_data_summary += f"- **{q_text}:** {answer}\n"
+        # Importar ai_service para usar el modelo LLM directamente
+        from app.services.ai_service import ai_service
 
-        # Cargar formato de propuesta
-        proposal_format = ""
-        try:
-            format_path = os.path.join(
-                os.path.dirname(__file__), "../prompts/Format Proposal.txt"
+        # Crear resumen organizado de los datos recopilados
+        data_summary = ""
+        for key, value in collected_data.items():
+            # Intentar obtener texto más amigable de la pregunta
+            question_text = (
+                questionnaire_service.get_question_details(key).get("text", key)
+                if questionnaire_service.get_question_details(key)
+                else key
             )
-            if os.path.exists(format_path):
-                with open(format_path, "r", encoding="utf-8") as f:
-                    proposal_format = f.read()
-            else:
-                logger.warning("No se encontró el archivo Format Proposal.txt")
-                proposal_format = "FORMATO NO ENCONTRADO"
-        except Exception as e:
-            logger.error(f"Error cargando formato de propuesta: {e}")
-            proposal_format = "ERROR CARGANDO FORMATO"
+            question_text = (
+                re.sub(r"{.*?}", "", question_text).strip() if question_text else key
+            )  # Limpiar placeholders
+            data_summary += f"- **{question_text}**: {value}\n"
 
-        # Crear instrucción específica para el LLM
-        instruction = f"""
-# INSTRUCCIÓN PARA GENERAR PROPUESTA DE TRATAMIENTO DE AGUA
+        # Cargar plantilla formato base
+        format_template = self._load_template()
 
-    Necesito que generes una propuesta profesional completa para un sistema de tratamiento de agua. 
-    Esta es una propuesta FINAL para el cliente, por lo que debe ser detallada, técnica pero comprensible, 
-    y seguir EXACTAMENTE el formato de propuesta proporcionado.
+        # Crear prompt detallado para la IA con INSTRUCCIONES ESPECÍFICAS
+        prompt = f"""
+# INSTRUCCIÓN: CREAR PROPUESTA TÉCNICA DE TRATAMIENTO DE AGUA
+
+    Necesito que generes una propuesta técnica y económica COMPLETA y DETALLADA para un sistema de tratamiento de agua.
+    Esta propuesta debe estar 100% PERSONALIZADA con los datos del cliente proporcionados y seguir EXACTAMENTE la estructura del formato base.
 
 ## DATOS DEL CLIENTE
-    Sector: {sector}
-    Subsector: {subsector}
-    {collected_data_summary}
+    - Sector Industrial: {sector}
+    - Subsector: {subsector}
 
-## FORMATO DE PROPUESTA A SEGUIR
-    {proposal_format}
+## DATOS RECOPILADOS:
+    {data_summary}
+
+## FORMATO A SEGUIR:
+    {format_template}
 
 ## INSTRUCCIONES IMPORTANTES:
-    1. Sigue EXACTAMENTE el formato proporcionado, manteniendo todas las secciones
-    2. Rellena todos los campos con información basada en los datos recopilados
-    3. Cuando falte información específica, usa valores estándar de la industria y menciona que son estimaciones
-    4. Sé detallado y técnico pero comprensible
-    5. La propuesta debe ser COMPLETA y lista para convertirse en PDF
-    6. No añadas notas adicionales ni comentarios fuera del formato de la propuesta
+    1. Completa TODOS los campos con información personalizada basada en los datos proporcionados.
+    2. NO dejes ningún placeholder (como [XX,XXX] o [Brand X]) - reemplaza TODO con valores realistas.
+    3. Cuando falten datos específicos, usa valores típicos para el sector {sector}/{subsector} pero menciona que son estimaciones.
+    4. Incluye costos y dimensiones realistas basados en datos del sector.
+    5. La propuesta debe ser TÉCNICAMENTE CORRECTA para el tipo de industria.
+    6. Proporciona parámetros específicos para diseño, dimensionamiento, CAPEX y OPEX completos.
+    7. Al final, incluye un análisis ROI realista con tiempos de retorno de inversión.
+    8. Incluye una sección Q&A que resuma los datos clave proporcionados por el cliente.
 
-    GENERA LA PROPUESTA COMPLETA AHORA:
+    GENERA LA PROPUESTA PROFESIONAL COMPLETA AHORA:
     """
 
-        # Llamar a la API del LLM con suficiente contexto y tokens
-        messages = [{"role": "user", "content": instruction}]
-        proposal_text = await self._call_llm_api(
-            messages, max_tokens=4000, temperature=0.5
-        )
-
-        # Validar y limpiar la respuesta
-        if proposal_text.startswith("Error") or len(proposal_text) < 200:
-            logger.error(
-                f"Error en respuesta LLM para propuesta: {proposal_text[:100]}"
+        # Llamar a la IA para generar la propuesta (usando método interno de ai_service)
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            # Usar método interno para evitar procesamiento adicional
+            proposal_text = await ai_service._call_llm_api(
+                messages, max_tokens=4000, temperature=0.5
             )
-            return f"Error: No se pudo generar la propuesta correctamente: {proposal_text[:100]}"
 
-        logger.info(
-            f"Texto de propuesta generado para {conversation.id} (Longitud: {len(proposal_text)})"
-        )
-        return proposal_text
+            # Verificar calidad de respuesta
+            if not proposal_text or len(proposal_text) < 500:
+                logger.error(
+                    f"Respuesta LLM insuficiente para propuesta: {proposal_text[:100]}"
+                )
+                return "Error: No se pudo generar una propuesta completa. Por favor intenta nuevamente."
+
+            # Añadir marcador de finalización para procesos posteriores
+            proposal_text = (
+                proposal_text.strip()
+                + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
+            )
+
+            logger.info(
+                f"Propuesta generada exitosamente para {conversation.id} ({len(proposal_text)} caracteres)"
+            )
+            return proposal_text
+
+        except Exception as e:
+            logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
+            return f"Error: No se pudo completar la generación de la propuesta. Detalles: {str(e)[:100]}"
 
 
 # Instancia global
