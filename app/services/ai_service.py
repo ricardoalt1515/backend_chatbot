@@ -358,6 +358,90 @@ class AIServiceLLMDriven:
         # Devolver el mensaje final (sea pregunta, propuesta lista, o error)
         return llm_response_to_user
 
+    async def generate_proposal_text_only(self, conversation: Conversation) -> str:
+        """Llama al LLM específicamente para generar solo el texto de la propuesta."""
+        logger.info(
+            f"DBG_AI_PROP: Iniciando generación de SOLO TEXTO de propuesta para {conversation.id}"
+        )
+        if not conversation or not conversation.metadata:
+            logger.error(
+                "generate_proposal_text_only llamada sin conversación/metadata válida."
+            )
+            return "Error: Datos de conversación inválidos para generar propuesta."
+        if not conversation.metadata.get("collected_data"):
+            logger.error(
+                f"No hay datos recolectados en metadata para generar propuesta {conversation.id}"
+            )
+            return (
+                "Error: No se encontraron datos suficientes para generar la propuesta."
+            )
+
+        # Preparar datos recolectados para el prompt
+        collected_data = conversation.metadata.get("collected_data", {})
+        collected_data_summary = "\n### Datos Recopilados del Usuario:\n"
+        for q_id, answer in collected_data.items():
+            # Usar una etiqueta simple o ID
+            q_details = questionnaire_service.get_question_details(q_id)
+            q_text = q_details.get("text", q_id) if q_details else q_id
+            q_text = re.sub(r"{.*?}", "", q_text).strip()  # Limpiar placeholders
+            collected_data_summary += f"- **{q_text}:** {answer}\n"
+
+        # Cargar prompt base (sin marcador final) y plantilla de propuesta
+        # Usar una versión del prompt que NO pida el marcador [PROPOSAL_COMPLETE]
+        # Podríamos tener una función get_proposal_generation_prompt()
+        system_prompt_base = get_llm_driven_master_prompt(
+            conversation.metadata
+        )  # Usamos el prompt actual por ahora
+        # QUITAR la instrucción del marcador final del prompt base si es posible,
+        # o instruir explícitamente que NO lo añada.
+
+        # Construir instrucción específica para generar SOLO texto
+        instruction = "[INSTRUCCIÓN MUY IMPORTANTE]:\n"
+        instruction += "1. Tu ÚNICA tarea es generar el texto completo de la propuesta técnica y económica.\n"
+        instruction += f"2. Utiliza los siguientes 'Datos Recopilados del Usuario': {collected_data_summary}\n"
+        instruction += f"3. Sigue ESTRICTAMENTE la 'Plantilla de Propuesta' proporcionada en el prompt del sistema (entre <plantilla_propuesta>).\n"
+        instruction += f"4. Incluye TODAS las secciones requeridas por la plantilla (Intro, Antecedentes, ..., ROI, Q&A).\n"
+        instruction += "5. Rellena la plantilla usando los datos recopilados. Si faltan datos, usa placeholders claros como '[Dato no proporcionado]' o rangos típicos si los conoces.\n"
+        instruction += "6. **NO AÑADAS NINGÚN MARCADOR como [PROPOSAL_COMPLETE] al final.** Solo genera el texto de la propuesta."
+
+        logger.debug(
+            f"Instrucción LLM para generar SOLO texto propuesta: {instruction}"
+        )
+
+        # Usar prompt base V4/V5 pero SOBRESCRIBIR la instrucción final
+        # Es crucial que el system_prompt aquí NO tenga la instrucción original que pide el marcador.
+        # Idealmente, refactorizar el prompt para separar reglas base de la instrucción final.
+
+        # Solución temporal: Usar el prompt base pero asegurar que la instrucción final sea la de arriba.
+        messages = [
+            {
+                "role": "system",
+                "content": system_prompt_base.split("**INSTRUCCIÓN:**")[0],
+            },  # Tomar solo la parte de reglas/plantilla
+            {
+                "role": "user",
+                "content": instruction,
+            },  # Usar nuestra instrucción específica
+        ]
+
+        # Llamar al LLM con tokens suficientes para la propuesta
+        proposal_text = await self._call_llm_api(
+            messages, max_tokens=3500, temperature=0.5
+        )
+
+        # Verificar si aún así añadió el marcador y quitarlo si es necesario
+        if "[PROPOSAL_COMPLETE:" in proposal_text:
+            logger.warning(
+                "LLM añadió el marcador aunque se le pidió que no lo hiciera. Eliminándolo."
+            )
+            proposal_text = proposal_text.split("[PROPOSAL_COMPLETE:")[0].strip()
+
+        logger.info(
+            f"Texto de propuesta (solo texto) generado para {conversation.id} (Longitud: {len(proposal_text)})"
+        )
+        # Devolver solo el texto limpio
+        return proposal_text
+
 
 # Instancia global
 # Asegúrate de que el nombre de la clase aquí coincida con el usado en el import de chat.py
