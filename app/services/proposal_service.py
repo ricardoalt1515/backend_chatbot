@@ -378,9 +378,8 @@ class ProposalService:
         return summary
 
     # --- Función Principal ---
-    async def generate_proposal_text_only(self, conversation: Conversation) -> str:
+    async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Genera el texto de propuesta usando AI basado en los datos recopilados."""
-
         logger.info(f"Generando propuesta completa para {conversation.id}")
 
         # Verificar validez de datos

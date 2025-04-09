@@ -225,79 +225,83 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             )
 
             if is_final_answer:
-                # --- Cuestionario Terminado: Generar Texto y PDF (Backend) ---
+                # --- Cuestionario Terminado: Generar Propuesta y PDF (Backend) ---
                 logger.info(
-                    f"Última respuesta recibida. Generando Propuesta+PDF (Backend) para {conversation_id}."
+                    f"Última respuesta ({last_question_id}) recibida. Generando Propuesta+PDF (Backend)."
                 )
-                conversation.metadata["is_complete"] = True
-                conversation.metadata["current_question_id"] = None
-                conversation.metadata["current_question_asked_summary"] = (
-                    "Cuestionario Completado"
+
+                # Preparar mensaje de error por defecto
+                error_occurred = False
+                final_message_content = (
+                    "Lo siento, hubo un problema al generar tu propuesta final."
                 )
 
                 try:
-                    # 1. Generar el texto de la propuesta
-                    proposal_text = await ai_service.generate_proposal_text_only(
+                    # a. Actualizar metadata con última respuesta
+                    if last_question_id:  # Asegurarse que había una última pregunta
+                        conversation.metadata["collected_data"][
+                            last_question_id
+                        ] = user_input.strip()
+                        logger.info(
+                            f"DBG_CHAT: Dato final guardado para {last_question_id}: '{user_input.strip()}'"
+                        )
+                    conversation.metadata["is_complete"] = True
+                    conversation.metadata["current_question_id"] = (
+                        None  # Limpiar pregunta actual
+                    )
+                    conversation.metadata["current_question_asked_summary"] = (
+                        "Cuestionario Completado"
+                    )
+
+                    # b. Generar Texto Propuesta (Backend)
+                    proposal_text = await proposal_service.generate_proposal_text(
                         conversation
                     )
-                    if proposal_text.startswith("Error"):
-                        raise ValueError(
-                            f"AI Service falló al generar texto: {proposal_text}"
-                        )
-
-                    # Eliminar el marcador de finalización si existe
-                    if "[PROPOSAL_COMPLETE:" in proposal_text:
-                        proposal_text = proposal_text.split("[PROPOSAL_COMPLETE:")[
-                            0
-                        ].strip()
-
-                    # 2. Guardar el texto en metadata
                     conversation.metadata["proposal_text"] = proposal_text
                     conversation.metadata["has_proposal"] = True
                     client_name = conversation.metadata.get("collected_data", {}).get(
                         "INIT_0", "Cliente"
                     )
                     conversation.metadata["client_name"] = client_name
+                    logger.info(
+                        f"Texto de propuesta generado (Backend) para {conversation_id}"
+                    )
 
-                    # 3. Generar el PDF
+                    # c. Generar PDF (Backend)
                     pdf_path = await pdf_service.generate_pdf_from_text(
                         conversation_id, proposal_text
                     )
-                    if not pdf_path or not os.path.exists(pdf_path):
+                    if not pdf_path:
                         raise ValueError(
-                            "Generación PDF falló - pdf_service no devolvió ruta válida"
+                            "Fallo generación PDF - pdf_service no devolvió ruta."
                         )
-
                     conversation.metadata["pdf_path"] = pdf_path
-
-                    # 4. Crear mensaje para el usuario con enlace de descarga
-                    download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
-
-                    # 5. IMPORTANTE: No mostrar la propuesta completa, solo un mensaje de confirmación
-                    confirmation_message = "¡Excelente! Hemos completado tu propuesta de tratamiento de agua. Puedes descargarla ahora."
-
-                    # 6. Guardar este mensaje corto en la conversación
-                    msg_obj = Message.assistant(confirmation_message)
-                    await storage_service.add_message_to_conversation(
-                        conversation_id, msg_obj
+                    logger.info(
+                        f"PDF generado (Backend) para {conversation_id} en: {pdf_path}"
                     )
 
-                    # 7. Devolver la respuesta con acción de descarga
+                    # e. Si TODO OK: Preparar Respuesta Especial para descarga automática
+                    download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
                     assistant_response_data = {
-                        "id": msg_obj.id,
-                        "message": confirmation_message,
+                        "id": "proposal-ready-" + str(uuid.uuid4())[:8],
+                        "message": "¡Hemos completado tu propuesta! Puedes descargarla ahora.",
                         "conversation_id": conversation_id,
                         "created_at": datetime.utcnow(),
-                        "action": "trigger_download",  # Acción para frontend
+                        "action": "download_proposal_pdf",  # Nueva acción
                         "download_url": download_url,
                     }
+                    # Añadir el mensaje "Hemos completado..." al historial también
+                    msg_to_add = Message.assistant(assistant_response_data["message"])
+                    await storage_service.add_message_to_conversation(
+                        conversation.id, msg_to_add
+                    )
 
                 except Exception as e:
                     error_occurred = True
                     logger.error(
-                        f"Error en generación de propuesta/PDF: {e}", exc_info=True
+                        f"Error en bloque final_answer para {conversation_id}: {e}",
+                        exc_info=True,
                     )
-
                     # Usar el mensaje de error por defecto definido antes
                     error_msg = Message.assistant(final_message_content)
                     await storage_service.add_message_to_conversation(
