@@ -382,12 +382,10 @@ class ProposalService:
     async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Genera propuesta completa y personalizada usando LLM."""
 
-        # Verificar si existe el resumen de respuestas
-
         if not conversation or not conversation.metadata:
             return "Error: Datos de conversación incompletos."
 
-        # Extraer resúmenes
+        # Extraer resúmenes de respuestas
         summaries = conversation.metadata.get("response_summaries", {})
         if not summaries:
             logger.error(
@@ -401,52 +399,62 @@ class ProposalService:
             question = data.get("question", "")
             answer = data.get("answer", "")
             if question and answer:
-                organized_data += f"PREGUNTA: {question}\n"
-                organized_data += f"RESPUESTA: {answer}\n\n"
+                organized_data += f"- Pregunta: {question}\n"
+                organized_data += f"  Respuesta: {answer}\n\n"
 
         # Extraer datos clave más importantes
         sector = conversation.metadata.get("selected_sector", "No especificado")
         subsector = conversation.metadata.get("selected_subsector", "No especificado")
 
-        # Prompt simple y directo
+        # Cargar el contenido de la plantilla Format Proposal
+        try:
+            template_path = os.path.join(
+                os.path.dirname(__file__), "../prompts/Format Proposal.txt"
+            )
+            with open(template_path, "r", encoding="utf-8") as f:
+                format_proposal_template = f.read()
+        except Exception as e:
+            logger.error(
+                f"Error cargando plantilla Format Proposal: {e}", exc_info=True
+            )
+            format_proposal_template = "Error: No se pudo cargar la plantilla."
+
+        # Prompt directo que le pide a la IA llenar la plantilla con los datos del cliente
         prompt = f"""
 # INSTRUCCIÓN: CREAR PROPUESTA DE TRATAMIENTO DE AGUA
 
-    Eres un ingeniero especialista en tratamiento de agua. Necesito que generes una propuesta técnica completa y profesional basada en las respuestas de un cliente.
+    Eres un ingeniero especialista en tratamiento de agua. Necesito que generes una propuesta técnica completa para el cliente, 
+    siguiendo EXACTAMENTE la estructura de la plantilla que te proporciono a continuación.
 
-## RESUMEN DEL CLIENTE:
+## INFORMACIÓN DEL CLIENTE:
     - Sector: {sector}
     - Subsector: {subsector}
 
-## TODAS LAS PREGUNTAS Y RESPUESTAS DEL CLIENTE:
+## PREGUNTAS Y RESPUESTAS DEL CLIENTE:
     {organized_data}
 
-## INSTRUCCIONES:
-    1. Crea una propuesta completa con los siguientes elementos:
-    - Introducción a Hydrous Management Group
-    - Datos del Proyecto (usa exactamente lo que respondió el cliente)
-    - Objetivos del Proyecto (basados en sus respuestas)
-    - Solución Técnica Propuesta (detallada y dimensionada)
-    - Análisis de Costos (específico y sin placeholders)
-    - Retorno de Inversión (calculado con sus datos)
-    - Conclusiones
+## PLANTILLA A SEGUIR (USAR ESTA ESTRUCTURA EXACTA):
+    {format_proposal_template}
 
-    2. IMPORTANTE:
-    - NO uses placeholders como [XX,XXX] o [Brand X]
-    - Usa EXACTAMENTE los datos que proporcionó el cliente
-    - Calcula valores reales para costos, dimensiones y capacidades
-    - Organiza los datos en tablas claras
-    - Sé específico y profesional
+## INSTRUCCIONES IMPORTANTES:
+    1. Basándote en la información del cliente, rellena TODOS los espacios de la plantilla.
+    2. Donde falte información específica, utiliza valores típicos de la industria para ese sector/subsector.
+    3. NO incluyas placeholders como [XX,XXX] en la propuesta final.
+    4. Proporciona estimaciones realistas de CAPEX, OPEX y ROI basadas en los datos del cliente.
+    5. Incluye todas las secciones de la plantilla.
+    6. Asegúrate de que las tablas se vean bien formateadas.
+    7. Formula conclusiones y recomendaciones específicas para el cliente.
 
-    GENERA LA PROPUESTA COMPLETA AHORA:
+    Genera ahora la propuesta completa siguiendo exactamente la estructura de la plantilla proporcionada.
     """
 
         from app.services.ai_service import ai_service
 
         try:
+            # Llamar a la IA con un prompt simplificado
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=3000, temperature=0.4
+                messages, max_tokens=3500, temperature=0.3
             )
 
             # Añadir marcador para procesamiento posterior
@@ -455,7 +463,6 @@ class ProposalService:
                 + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
             )
             return proposal_text
-
         except Exception as e:
             logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
             return f"Error: Falló la generación de propuesta. {str(e)[:100]}"
