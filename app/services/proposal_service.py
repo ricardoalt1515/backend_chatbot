@@ -381,9 +381,9 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """Genera propuesta completa usando directamente el contexto de la conversación."""
+        """Genera propuesta completa dejando que la IA gestione libremente el contenido."""
 
-        # Extraer la conversación completa como contexto
+        # Extraer contexto de la conversación
         conversation_text = ""
         if conversation.messages:
             for msg in conversation.messages:
@@ -392,50 +392,51 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Cargar plantilla como referencia de formato
-        template_path = os.path.join(
-            os.path.dirname(__file__), "../prompts/Format Proposal.txt"
-        )
-        template_content = ""
-        try:
-            with open(template_path, "r", encoding="utf-8") as f:
-                template_content = f.read()
-        except Exception as e:
-            logger.error(f"Error al cargar plantilla: {e}")
-            template_content = "Error al cargar plantilla"
+        metadata = conversation.metadata or {}
+        sector = metadata.get("selected_sector", "No especificado")
+        subsector = metadata.get("selected_subsector", "No especificado")
 
-        # Prompt simple y directo
+        # Prompt simple que permite creatividad pero con estructura base
         prompt = f"""
-# INSTRUCCIÓN: GENERA UNA PROPUESTA COMPLETA DE TRATAMIENTO DE AGUA
+# INSTRUCCIÓN: CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
 
-    Has tenido una conversación con un cliente potencial sobre sus necesidades de tratamiento de agua.
-    A continuación tienes el historial completo de la conversación:
+    Has tenido una conversación con un cliente del sector {sector}, subsector {subsector}, sobre sus necesidades de tratamiento de agua:
 
     ---INICIO DE LA CONVERSACIÓN---
     {conversation_text}
     ---FIN DE LA CONVERSACIÓN---
 
-    Ahora, crea una propuesta técnica COMPLETA para este cliente basada en toda la información proporcionada.
+    Crea una propuesta técnica y económica COMPLETA para este cliente.
 
-    IMPORTANTE:
-    1. NO uses placeholders como [Cliente], [XX,XXX], etc. Usa la información real de la conversación.
-    2. Genera valores específicos para cualquier dato que necesites y no tengas.
-    3. Completa TODAS las tablas con datos realistas - sin celdas vacías.
+## REQUISITOS:
+    1. La propuesta debe ser PROFESIONAL y estar lista para entregar como PDF oficial.
+    2. Usa TODA la información específica del cliente que obtuviste en la conversación.
+    3. Proporciona valores concretos para todos los costos, dimensiones y parámetros técnicos.
+    4. Incluye estas secciones:
+    - Introducción a Hydrous Management Group
+    - Antecedentes del Proyecto (con datos del cliente)
+    - Objetivo del Proyecto
+    - Diseño del Proceso de Tratamiento
+    - Equipos Sugeridos y Dimensionamiento
+    - Costos Estimados (CAPEX y OPEX con cifras específicas)
+    - Análisis del Retorno de Inversión
+    - Conclusiones
 
-    Utiliza esta plantilla como referencia para la estructura:
+    5. Usa este formato para tablas:
+    | Columna 1 | Columna 2 | Columna 3 |
+    |-----------|-----------|-----------|
+    | Valor 1   | Valor 2   | Valor 3   |
 
-    ---PLANTILLA DE REFERENCIA---
-    {template_content}
-    ---FIN DE PLANTILLA---
+    6. NO USES PLACEHOLDERS ni campos vacíos - proporciona información completa y específica.
     """
 
-        # Llamar a la IA
+        # Llamar a la IA con espacio suficiente para respuestas detalladas
         from app.services.ai_service import ai_service
 
         try:
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=6000, temperature=0.4
+                messages, max_tokens=7000, temperature=0.4
             )
 
             # Añadir marcador para procesamiento posterior
