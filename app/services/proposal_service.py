@@ -386,85 +386,69 @@ class ProposalService:
         if not conversation or not conversation.metadata:
             return "Error: Datos de conversación incompletos."
 
-        # 1. EXTRAER TODA LA INFORMACIÓN DISPONIBLE
-        # Metadata estructurada
-        metadata = conversation.metadata
-        sector = metadata.get("selected_sector", "No especificado")
-        subsector = metadata.get("selected_subsector", "No especificado")
-        collected_data = metadata.get("collected_data", {})
-        summaries = metadata.get("response_summaries", {})
-
-        # Historial completo de conversación (esto es clave)
-        full_conversation_history = ""
+        # Extraer la conversación completa como contexto
+        conversation_text = ""
         if conversation.messages:
             for msg in conversation.messages:
-                if msg.role == "user":
-                    full_conversation_history += f"USUARIO: {msg.content}\n\n"
-                elif msg.role == "assistant":
-                    full_conversation_history += f"ASISTENTE: {msg.content}\n\n"
+                role = getattr(msg, "role", "unknown")
+                content = getattr(msg, "content", "")
+                if content and role in ["user", "assistant"]:
+                    conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # 2. CARGAR LA PLANTILLA DE PROPUESTA COMO REFERENCIA
+        # Extraer información básica del sector/subsector para referencia
+        metadata = conversation.metadata or {}
+        sector = metadata.get("selected_sector", "No especificado")
+        subsector = metadata.get("selected_subsector", "No especificado")
+
+        # Cargar plantilla como referencia de formato
         template_path = os.path.join(
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"
         )
-        proposal_template = ""
+        template_content = ""
         try:
             with open(template_path, "r", encoding="utf-8") as f:
-                proposal_template = f.read()
+                template_content = f.read()
         except Exception as e:
-            logger.error(f"Error leyendo plantilla de propuesta: {e}")
-            proposal_template = "Error al cargar plantilla"
+            logger.error(f"Error al cargar plantilla: {e}")
+            template_content = "Error al cargar plantilla"
 
-        # 3. CREAR UN PROMPT DETALLADO Y ESTRUCTURADO
+        # Crear un prompt simple pero directo
         prompt = f"""
-# INSTRUCCIÓN: CREAR PROPUESTA DE TRATAMIENTO DE AGUA DETALLADA Y COMPLETA
+# INSTRUCCIÓN: GENERAR PROPUESTA COMPLETA DE TRATAMIENTO DE AGUA
 
-    Eres un ingeniero experto en soluciones de tratamiento de agua para Hydrous Management Group. Necesito que generes una propuesta técnica detallada, profesional y completa basada en la conversación con un cliente.
+    Has participado en una conversación con un cliente potencial de Hydrous Management Group. 
+    El cliente pertenece al sector {sector}, subsector {subsector}.
 
-## INFORMACIÓN DEL CLIENTE
-    - Sector: {sector}
-    - Subsector: {subsector}
+    A continuación tienes el historial completo de la conversación donde has recopilado todos los datos necesarios:
 
-## DATOS RECOPILADOS DEL CUESTIONARIO
-    {json.dumps(collected_data, indent=2, ensure_ascii=False)}
+    ---INICIO DE LA CONVERSACIÓN---
+    {conversation_text}
+    ---FIN DE LA CONVERSACIÓN---
 
-## HISTORIAL COMPLETO DE LA CONVERSACIÓN
-    {full_conversation_history}
+    Ahora, tu tarea es generar una propuesta técnica y económica COMPLETA para este cliente.
 
-## PLANTILLA A SEGUIR (ESTRUCTURA BÁSICA)
-    La propuesta debe seguir esta estructura, pero completándola totalmente con datos reales:
-    {proposal_template}
+## REQUISITOS IMPORTANTES:
+    1. NO uses placeholders como [XX,XXX], [Proporcione estimación], etc. Si no tienes un dato exacto, genera uno realista.
+    2. Usa la siguiente plantilla como guía de estructura y formato, pero complétala con información real y específica:
 
-## INSTRUCCIONES ESPECÍFICAS:
-    1. COMPLETA TODOS LOS CAMPOS. No dejes placeholders como "[XX,XXX]" o "[$X,XXX]".
-    2. Utiliza DATOS REALES del cliente extraídos de la conversación.
-    3. Si algún dato específico no fue proporcionado, usa valores típicos para el sector {sector}, subsector {subsector}, pero INDICA CLARAMENTE que son valores estimados estándar.
-    4. Incluye información técnica detallada sobre:
-    - Tecnologías recomendadas (con ventajas/desventajas)
-    - Dimensionamiento específico (tanques, equipos, capacidades)
-    - Estimaciones de costos realistas (CAPEX y OPEX)
-    - Análisis de ROI con números concretos
-    5. Añade secciones de valor agregado:
-    - Cronograma estimado de implementación
-    - Opciones de financiamiento (si aplicable)
-    - Recomendaciones de mantenimiento
-    6. Formato profesional: usa tablas para presentar datos comparativos y técnicos.
+    ---PLANTILLA DE REFERENCIA---
+    {template_content}
+    ---FIN DE PLANTILLA---
 
-## IMPORTANTE:
-    - SÉ ESPECÍFICO con marcas, modelos, dimensiones y costos.
-    - NO USES PLACEHOLDERS genéricos.
-    - LA PROPUESTA DEBE SER AUTÓNOMA y completa, lista para presentar.
+    3. Genera valores numéricos concretos para todas las medidas, costos, dimensiones, etc.
+    4. Incluye marcas y modelos reales de equipos.
+    5. Asegúrate de que todas las tablas estén completas con datos específicos.
 
-    GENERA LA PROPUESTA COMPLETA AHORA.
+    Recuerda que esta propuesta será convertida directamente a PDF, así que debe estar completa y profesional.
     """
 
-        # 4. LLAMAR A LA IA PARA GENERAR LA PROPUESTA
+        # Llamar a la IA con contexto amplio y baja temperatura para respuestas precisas
         from app.services.ai_service import ai_service
 
         try:
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=4000, temperature=0.3
+                messages, max_tokens=4500, temperature=0.2
             )
 
             # Añadir marcador para procesamiento posterior
