@@ -381,75 +381,160 @@ class ProposalService:
     async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Genera propuesta completa y personalizada usando LLM."""
 
-        # Obtener datos recopilados
+        # Obtener datos básicos
+
         metadata = conversation.metadata
         collected_data = metadata.get("collected_data", {})
         sector = metadata.get("selected_sector", "No especificado")
         subsector = metadata.get("selected_subsector", "No especificado")
 
-        # Crear un resumen más conciso de datos
+        # Extraer datos clave
+        client_name = collected_data.get("INIT_0", "Cliente")
+        location = collected_data.get("INIT_1", "No especificada")
+        water_cost = collected_data.get("INIT_2", "No especificado")
+        water_consumption = collected_data.get("INIT_3", "No especificado")
+        wastewater = collected_data.get("INIT_4", "No especificado")
+        people = collected_data.get("INIT_5", "No especificado")
 
-        data_summary = "DATOS DEL CLIENTE:\n"
-        key_fields = {
-            "INIT_0": "Nombre",
-            "INIT_1": "Ubicación",
-            "INIT_2": "Costo agua",
-            "INIT_3": "Consumo agua",
-            "INIT_4": "Aguas residuales",
-            "INIT_5": "Número personas",
-        }
-
-        for key, label in key_fields.items():
-            value = collected_data.get(key, "No proporcionado")
-            data_summary += f"- {label}: {value}\n"
-
-        data_summary += f"- Sector: {sector}\n- Subsector: {subsector}\n"
-
-        # Prompt más conciso pero específico
-        prompt = f"""
-    INSTRUCCIÓN: Genera una propuesta técnica de tratamiento de agua COMPLETA y PERSONALIZADA.
-
-    {data_summary}
-
-    REQUISITOS CRÍTICOS:
-    1. NO usar placeholders [XX,XXX]. Usar valores calculados específicos.
-    2. Dimensionar sistema para los volúmenes indicados.
-    3. Incluir costos específicos (CAPEX y OPEX).
-    4. Calcular ROI basado en ahorro de agua.
-
-    ESTRUCTURA:
-    1. Introducción Hydrous
-    2. Resumen Ejecutivo
-    3. Datos del Proyecto
-    4. Solución Técnica con equipamiento específico
-    5. Análisis Financiero
-    6. Conclusiones
+        # Preparar datos básicos que se usarán en todas las secciones
+        client_data = f"""
+    Cliente: {client_name}
+    Ubicación: {location}
+    Sector: {sector}
+    Subsector: {subsector}
+    Costo del agua: {water_cost}
+    Consumo de agua: {water_consumption}
+    Aguas residuales: {wastewater}
+    Número de personas: {people}
     """
 
         from app.services.ai_service import ai_service
 
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=2000, temperature=0.1
-            )
+        # Función auxiliar para llamadas a la API con reintentos
+        async def call_api_with_retry(prompt, max_retries=2):
+            retries = 0
+            while retries <= max_retries:
+                try:
+                    messages = [{"role": "user", "content": prompt}]
+                    return await ai_service._call_llm_api(
+                        messages,
+                        max_tokens=1800,  # Reducido para evitar timeouts
+                        temperature=0.3,
+                    )
+                except Exception as e:
+                    retries += 1
+                    logger.error(f"Intento {retries}: Error llamando a API: {e}")
+                    if retries > max_retries:
+                        return f"Error generando esta sección: {str(e)[:100]}"
+                    # Esperar antes de reintentar (espera exponencial)
+                    import asyncio
 
-            if not proposal_text or len(proposal_text) < 500:
-                logger.error(
-                    f"Respuesta demasiado corta: {len(proposal_text)} caracteres"
-                )
-                return "Error: Propuesta generada incompleta. Por favor, intente nuevamente."
+                    await asyncio.sleep(2 * retries)
 
-            proposal_text = (
-                proposal_text.strip()
-                + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
-            )
-            return proposal_text
+        # 1. Generar introducción y resumen ejecutivo
+        intro_prompt = f"""
+    Como experto en tratamiento de agua, genera SOLO la introducción y resumen ejecutivo para una propuesta técnica.
+    Datos básicos:
+    {client_data}
 
-        except Exception as e:
-            logger.error(f"Error generando propuesta: {e}", exc_info=True)
-            # Usar una fallback solution en caso de error
-            return self._generate_fallback_proposal(conversation)
+    Genera:
+    1. Introducción breve a Hydrous Management Group
+    2. Resumen ejecutivo (max 200 palabras) que destaque:
+    - Beneficios principales
+    - Ahorro estimado de agua y costos
+    - ROI aproximado
+    - Tecnologías principales recomendadas
+
+    IMPORTANTE: Sé específico, no uses placeholders, calcula valores reales basados en los datos proporcionados.
+    """
+
+        intro_section = await call_api_with_retry(intro_prompt)
+
+        # 2. Generar solución técnica
+        tech_prompt = f"""
+    Como ingeniero especialista en tratamiento de agua, diseña una solución técnica detallada para:
+    {client_data}
+
+    La solución debe:
+    1. Especificar tecnologías exactas recomendadas para este caso específico
+    2. Incluir dimensionamiento preciso (capacidades, volúmenes, tiempos de retención)
+    3. Explicar el proceso de tratamiento paso a paso
+    4. Mencionar equipos específicos con capacidades
+
+    IMPORTANTE: Incluye valores numéricos reales (no placeholders). Basa tus cálculos en el consumo y generación de aguas residuales indicados.
+    """
+
+        tech_section = await call_api_with_retry(tech_prompt)
+
+        # 3. Generar análisis financiero
+        financial_prompt = f"""
+    Como analista financiero especializado en proyectos de agua, genera un análisis financiero completo para:
+    {client_data}
+
+    El análisis debe incluir:
+    1. CAPEX detallado con costos por equipo/componente
+    2. OPEX mensual (químicos, energía, personal, mantenimiento)
+    3. Cálculo del ROI específico basado en ahorro de agua
+    4. Ahorro anual proyectado
+
+    IMPORTANTE: 
+    - Usa el costo del agua proporcionado para calcular ahorros
+    - Proporciona cifras exactas (no placeholders)
+    - Incluye una tabla clara con el desglose de costos
+    """
+
+        financial_section = await call_api_with_retry(financial_prompt)
+
+        # 4. Generar conclusiones y recomendaciones
+        conclusion_prompt = f"""
+    Como consultor en soluciones de agua, genera conclusiones y recomendaciones finales para:
+    {client_data}
+
+    Incluye:
+    1. Resumen de los principales beneficios
+    2. Cronograma recomendado de implementación
+    3. Próximos pasos sugeridos
+    4. Consideraciones adicionales importantes
+
+    Sé específico y conciso.
+    """
+
+        conclusion_section = await call_api_with_retry(conclusion_prompt)
+
+        # Combinar todas las secciones
+        full_proposal = f"""
+# Propuesta de Tratamiento y Reúso de Agua
+
+## Información del Proyecto
+    - **Cliente:** {client_name}
+    - **Ubicación:** {location}
+    - **Sector:** {sector}
+    - **Subsector:** {subsector}
+    - **Costo actual del agua:** {water_cost}
+    - **Consumo actual:** {water_consumption}
+    - **Aguas residuales generadas:** {wastewater}
+    - **Usuarios aproximados:** {people}
+
+    {intro_section}
+
+## Solución Técnica Propuesta
+    {tech_section}
+
+## Análisis Financiero
+    {financial_section}
+
+## Conclusiones y Recomendaciones
+    {conclusion_section}
+
+    ---
+    Para consultas adicionales, contacte a Hydrous Management Group: info@hydrous.com
+    """
+
+        # Añadir marcador para procesamiento posterior
+        full_proposal = (
+            full_proposal.strip() + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
+        )
+        return full_proposal
 
 
 # Instancia global
