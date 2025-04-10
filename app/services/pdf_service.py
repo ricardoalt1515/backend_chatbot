@@ -163,46 +163,45 @@ class PDFService:
         import re
 
         # Quitar marcador final
-        html_content = proposal_text.replace("[PROPOSAL_COMPLETE: Propuesta lista para PDF]", "").strip()
-        
-        # PASO 0: Sustituir placeholders específicos con "No especificado" 
-        pattern = r'\[([\w\s\.\-\_\$]+)\]'
+        html_content = proposal_text.replace(
+            "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
+        ).strip()
+
+        # PASO 0: Sustituir placeholders específicos con "No especificado"
+        pattern = r"\[([\w\s\.\-\_\$]+)\]"
         html_content = re.sub(pattern, "No especificado", html_content)
-        
+
         # PASO 1: Mejorar procesamiento de tablas - patrón más flexible
-        table_pattern = r'(\|[^\n]+\|\n)((?:\|[^\n]+\|\n)+)'
-        
+        table_pattern = r"(\|[^\n]+\|\n)((?:\|[^\n]+\|\n)+)"
+
         def convert_table(match):
             header_row = match.group(1).strip()
-            body_rows = match.group(2).strip().split('\n')
-            
+            body_rows = match.group(2).strip().split("\n")
+
             # Crear tabla HTML
             html_table = '<table class="proposal-table" border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%;">\n'
-            
+
             # Procesar encabezado
-            header_cells = [cell.strip() for cell in header_row.split('|')[1:-1]]
-            html_table += '  <thead>\n    <tr>\n'
+            header_cells = [cell.strip() for cell in header_row.split("|")[1:-1]]
+            html_table += "  <thead>\n    <tr>\n"
             for cell in header_cells:
                 html_table += f'      <th style="background-color: #f2f2f2; font-weight: bold;">{cell}</th>\n'
-            html_table += '    </tr>\n  </thead>\n  <tbody>\n'
-            
+            html_table += "    </tr>\n  </thead>\n  <tbody>\n"
+
             # Procesar filas del cuerpo
             for row in body_rows:
                 if not row.strip():
                     continue
-                cells = [cell.strip() for cell in row.split('|')[1:-1]]
-                html_table += '    <tr>\n'
+                cells = [cell.strip() for cell in row.split("|")[1:-1]]
+                html_table += "    <tr>\n"
                 for cell in cells:
                     # Reemplazar cualquier placeholder restante
-                    cell = re.sub(r'\[([\w\s\.\-\_\$]+)\]', "No especificado", cell)
-                    html_table += f'      <td>{cell}</td>\n'
-                html_table += '    </tr>\n'
-            
-            html_table += '  </tbody>\n</table>'
+                    cell = re.sub(r"\[([\w\s\.\-\_\$]+)\]", "No especificado", cell)
+                    html_table += f"      <td>{cell}</td>\n"
+                html_table += "    </tr>\n"
+
+            html_table += "  </tbody>\n</table>"
             return html_table
-    
-    # Aplicar conversión de tablas con el nuevo patrón
-    html_content = re.sub(table_pattern, convert_table, html_content)
 
         # Reemplazar tablas
         html_content = re.sub(table_pattern, convert_table, html_content)
