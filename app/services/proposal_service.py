@@ -379,100 +379,118 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """Genera el texto de propuesta usando AI basado en los datos recopilados."""
-        logger.info(f"Generando propuesta completa para {conversation.id}")
-
-        # Verificar validez de datos
-        if not conversation or not conversation.metadata:
-            logger.error(
-                "generate_proposal_text llamada sin conversación/metadata válida."
-            )
-            return "Error: Datos de conversación inválidos para generar propuesta."
+        """Genera propuesta completa y personalizada usando LLM."""
 
         # Obtener datos recopilados
-        collected_data = conversation.metadata.get("collected_data", {})
-        sector = conversation.metadata.get("selected_sector", "No especificado")
-        subsector = conversation.metadata.get("selected_subsector", "No especificado")
+        metadata = conversation.metadata
+        collected_data = metadata.get("collected_data", {})
+        sector = metadata.get("selected_sector", "No especificado")
+        subsector = metadata.get("selected_subsector", "No especificado")
 
-        # Importar ai_service para usar el modelo LLM directamente
-        from app.services.ai_service import ai_service
+        # Extraer datos específicos para simplificar el prompt
+        client_name = collected_data.get("INIT_0", "Cliente")  # Nombre
+        location = collected_data.get("INIT_1", "No especificada")  # Ubicación
+        water_cost = collected_data.get("INIT_2", "No especificado")  # Costo de agua
+        water_consumption = collected_data.get(
+            "INIT_3", "No especificado"
+        )  # Consumo de agua
+        wastewater = collected_data.get("INIT_4", "No especificado")  # Aguas residuales
+        people = collected_data.get("INIT_5", "No especificado")  # Personas
 
-        # Crear resumen organizado de los datos recopilados
-        data_summary = ""
-        for key, value in collected_data.items():
-            # Intentar obtener texto más amigable de la pregunta
-            question_text = (
-                questionnaire_service.get_question_details(key).get("text", key)
-                if questionnaire_service.get_question_details(key)
-                else key
-            )
-            question_text = (
-                re.sub(r"{.*?}", "", question_text).strip() if question_text else key
-            )  # Limpiar placeholders
-            data_summary += f"- **{question_text}**: {value}\n"
-
-        # Cargar plantilla formato base
-        format_template = self._load_template()
-
-        # Crear prompt detallado para la IA con INSTRUCCIONES ESPECÍFICAS
-        prompt = f"""
-# INSTRUCCIÓN: CREAR PROPUESTA TÉCNICA DE TRATAMIENTO DE AGUA
-
-    Necesito que generes una propuesta técnica y económica COMPLETA y DETALLADA para un sistema de tratamiento de agua.
-    Esta propuesta debe estar 100% PERSONALIZADA con los datos del cliente proporcionados y seguir EXACTAMENTE la estructura del formato base.
-
-## DATOS DEL CLIENTE
-    - Sector Industrial: {sector}
+        # Crear un resumen estructurado de los datos críticos
+        data_summary = f"""
+# DATOS CRÍTICOS DEL CLIENTE Y PROYECTO
+    - Nombre: {client_name}
+    - Ubicación: {location}
+    - Sector: {sector}
     - Subsector: {subsector}
-
-## DATOS RECOPILADOS:
-    {data_summary}
-
-## FORMATO A SEGUIR:
-    {format_template}
-
-## INSTRUCCIONES IMPORTANTES:
-    1. Completa TODOS los campos con información personalizada basada en los datos proporcionados.
-    2. NO dejes ningún placeholder (como [XX,XXX] o [Brand X]) - reemplaza TODO con valores realistas.
-    3. Cuando falten datos específicos, usa valores típicos para el sector {sector}/{subsector} pero menciona que son estimaciones.
-    4. Incluye costos y dimensiones realistas basados en datos del sector.
-    5. La propuesta debe ser TÉCNICAMENTE CORRECTA para el tipo de industria.
-    6. Proporciona parámetros específicos para diseño, dimensionamiento, CAPEX y OPEX completos.
-    7. Al final, incluye un análisis ROI realista con tiempos de retorno de inversión.
-    8. Incluye una sección Q&A que resuma los datos clave proporcionados por el cliente.
-
-    GENERA LA PROPUESTA PROFESIONAL COMPLETA AHORA:
+    - Costo del agua: {water_cost}
+    - Consumo de agua: {water_consumption}
+    - Generación de aguas residuales: {wastewater}
+    - Número de personas: {people}
     """
 
-        # Llamar a la IA para generar la propuesta (usando método interno de ai_service)
-        messages = [{"role": "user", "content": prompt}]
+        # Incluir todos los datos recopilados para referencia
+        all_data = "\n\n# DATOS ADICIONALES RECOPILADOS\n"
+        for key, value in collected_data.items():
+            question = questionnaire_service.get_question_details(key)
+            question_text = question.get("text", key) if question else key
+            all_data += f"- {question_text}: {value}\n"
+
+        # Crear prompt detallado y EXTREMADAMENTE específico
+        prompt = f"""
+# INSTRUCCIÓN: CREAR PROPUESTA TÉCNICA-ECONÓMICA DE TRATAMIENTO DE AGUA COMPLETA
+
+    Como experto ingeniero en tratamiento de agua, crea una propuesta técnica y económica COMPLETA, DETALLADA y PERSONALIZADA.
+    Esta propuesta DEBE incluir TODOS los elementos solicitados, con cálculos exactos, dimensionamiento preciso y estimaciones económicas realistas.
+
+## DATOS DEL CLIENTE:
+    {data_summary}
+
+## DATOS ADICIONALES:
+    {all_data}
+
+## INSTRUCCIONES CRÍTICAS:
+    1. **NO INCLUIR PLACEHOLDERS** - Reemplaza TODOS los campos como [XX,XXX], [Dimensiones], etc., con valores reales calculados. TODO valor debe ser específico para este cliente.
+
+    2. **USAR VALORES ESPECÍFICOS DEL CLIENTE** - Usa explícitamente todos los datos proporcionados sobre consumo, costo y volumen.
+
+    3. **CALCULAR VALORES NO PROPORCIONADOS** - Si faltan datos, calcula valores típicos para este sector/subsector específico.
+
+    4. **CREAR DIMENSIONAMIENTO DETALLADO** - Calcula y especifica capacidades, dimensiones y especificaciones técnicas exactas.
+
+    5. **REALIZAR ANÁLISIS FINANCIERO COMPLETO**:
+    - CAPEX detallado con costos por componente
+    - OPEX mensual completo (químicos, energía, mano de obra)
+    - ROI específico con tiempo de recuperación de inversión basado en ahorro de agua
+    - Ahorro anual proyectado basado en el costo del agua proporcionado
+    
+    6. **INCLUIR DISEÑO TÉCNICO COMPLETO** - No sólo listar componentes, sino explicar cómo se conectan y por qué se seleccionaron.
+
+    7. **AÑADIR RESUMEN EJECUTIVO** - Al inicio, presenta un resumen conciso de los beneficios clave.
+
+## ESTRUCTURA OBLIGATORIA:
+    1. Introducción a Hydrous Management Group
+    2. Resumen Ejecutivo (beneficios clave)
+    3. Información del Proyecto (todos los datos del cliente)
+    4. Objetivos del Proyecto (adaptados a lo proporcionado)
+    5. Solución Técnica Propuesta (detallada, con dimensiones específicas)
+    6. Equipamiento y Materiales (marcas, modelos, especificaciones)
+    7. Análisis Financiero (CAPEX, OPEX, ROI - todos con cifras exactas)
+    8. Cronograma de Implementación
+    9. Conclusiones y Recomendaciones
+
+    IMPORTANTE: Esta propuesta será entregada como PDF oficial y no debe contener ningún placeholder o información genérica.
+    """
+
+        from app.services.ai_service import ai_service
+
         try:
-            # Usar método interno para evitar procesamiento adicional
+            # Usar un modelo potente con suficiente contexto y más tokens para generar contenido completo
+            messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=4000, temperature=0.5
+                messages,
+                max_tokens=4000,  # Aumentar tokens para respuesta más completa
+                temperature=0.2,  # Reducir temperatura para respuestas más deterministas
             )
 
-            # Verificar calidad de respuesta
-            if not proposal_text or len(proposal_text) < 500:
+            # Verificar calidad de la respuesta
+            if not proposal_text or len(proposal_text) < 1000:
                 logger.error(
-                    f"Respuesta LLM insuficiente para propuesta: {proposal_text[:100]}"
+                    f"Respuesta LLM demasiado corta: {len(proposal_text)} caracteres"
                 )
-                return "Error: No se pudo generar una propuesta completa. Por favor intenta nuevamente."
+                return "Error: Propuesta generada incompleta. Por favor, intente nuevamente."
 
-            # Añadir marcador de finalización para procesos posteriores
+            # Añadir marcador para procesamiento posterior
             proposal_text = (
                 proposal_text.strip()
                 + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
-            )
-
-            logger.info(
-                f"Propuesta generada exitosamente para {conversation.id} ({len(proposal_text)} caracteres)"
             )
             return proposal_text
 
         except Exception as e:
             logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
-            return f"Error: No se pudo completar la generación de la propuesta. Detalles: {str(e)[:100]}"
+            return f"Error: Falló la generación de propuesta. Detalles: {str(e)[:100]}"
 
 
 # Instancia global
