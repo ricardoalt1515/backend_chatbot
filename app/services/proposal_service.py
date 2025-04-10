@@ -381,26 +381,77 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """Genera propuesta completa y personalizada usando LLM."""
+        """Genera propuesta completa y personalizada usando LLM con instrucciones mejoradas."""
 
         if not conversation or not conversation.metadata:
             return "Error: Datos de conversación incompletos."
 
-        # Extraer la conversación completa como contexto
+        # --- 1. MEJORAR PREPARACIÓN DE CONTEXTO ---
+        # Extraer información estructurada de la conversación
         conversation_text = ""
+        qa_pairs = []  # Para almacenar pares pregunta-respuesta explícitos
+
         if conversation.messages:
+            last_question = ""
+
             for msg in conversation.messages:
                 role = getattr(msg, "role", "unknown")
                 content = getattr(msg, "content", "")
-                if content and role in ["user", "assistant"]:
-                    conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Extraer información básica del sector/subsector para referencia
+                if not content:
+                    continue
+
+                # Si es mensaje del asistente, buscar si contiene una pregunta
+                if role == "assistant" and (
+                    "?" in content or "**PREGUNTA:**" in content
+                ):
+                    # Intentar extraer la pregunta para hacerla más visible
+                    question_match = re.search(
+                        r"\*\*PREGUNTA:\*\*(.*?)(?:\n|$)", content
+                    )
+                    if question_match:
+                        last_question = question_match.group(1).strip()
+                    else:
+                        # Buscar la primera oración con signo de interrogación
+                        sentences = re.split(r"(?<=[.!?])\s+", content)
+                        for sentence in sentences:
+                            if "?" in sentence:
+                                last_question = sentence.strip()
+                                break
+
+                # Si es respuesta del usuario y tenemos una pregunta previa guardada
+                if role == "user" and last_question and content:
+                    qa_pairs.append((last_question, content))
+                    last_question = ""  # Reiniciar para la próxima
+
+                # Añadir todo al contexto completo también
+                conversation_text += f"{role.upper()}: {content}\n\n"
+
+        # --- 2. EXTRAER METADATA CLAVE ---
         metadata = conversation.metadata or {}
         sector = metadata.get("selected_sector", "No especificado")
         subsector = metadata.get("selected_subsector", "No especificado")
+        collected_data = metadata.get("collected_data", {})
 
-        # Cargar plantilla como referencia de formato
+        # Intentar extraer datos importantes
+        summary_data = {
+            "CLIENTE": collected_data.get(
+                "INIT_0", metadata.get("client_name", "Cliente")
+            ),
+            "SECTOR": sector,
+            "SUBSECTOR": subsector,
+        }
+
+        # Buscar respuestas específicas importantes
+        for q_id, answer in collected_data.items():
+            if isinstance(answer, str) and answer.strip():
+                if q_id.endswith(
+                    "_1"
+                ):  # Suponiendo que los IDs de ubicación terminan en _1
+                    summary_data["UBICACION"] = answer
+                # Añadir más mapeos específicos si es necesario
+
+        # --- 3. CARGAR PLANTILLA ---
         template_path = os.path.join(
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"
         )
@@ -412,43 +463,63 @@ class ProposalService:
             logger.error(f"Error al cargar plantilla: {e}")
             template_content = "Error al cargar plantilla"
 
-        # Crear un prompt simple pero directo
+        # --- 4. CREAR PROMPT MEJORADO ---
         prompt = f"""
-# INSTRUCCIÓN: GENERAR PROPUESTA COMPLETA DE TRATAMIENTO DE AGUA
+# INSTRUCCIÓN: GENERAR PROPUESTA COMPLETA Y DETALLADA DE TRATAMIENTO DE AGUA
 
-    Has participado en una conversación con un cliente potencial de Hydrous Management Group. 
-    El cliente pertenece al sector {sector}, subsector {subsector}.
+    Has sido contratado para crear una propuesta profesional para Hydrous Management Group. Esta propuesta debe ser COMPLETA, DETALLADA y PERSONALIZADA basada en la conversación con el cliente.
 
-    A continuación tienes el historial completo de la conversación donde has recopilado todos los datos necesarios:
+## DATOS DEL CLIENTE:
+    - Nombre/Empresa: {summary_data.get('CLIENTE', 'No especificado')}
+    - Sector: {sector}
+    - Subsector: {subsector}
+    - Ubicación: {summary_data.get('UBICACION', 'No especificada')}
 
+## PARES PREGUNTA-RESPUESTA CLAVE:
+    {
+        ''.join([f"- Pregunta: {q}\n  Respuesta: {a}\n\n" for q, a in qa_pairs])
+    }
+
+## HISTORIAL COMPLETO DE LA CONVERSACIÓN:
     ---INICIO DE LA CONVERSACIÓN---
     {conversation_text}
     ---FIN DE LA CONVERSACIÓN---
 
-    Ahora, tu tarea es generar una propuesta técnica y económica COMPLETA para este cliente.
+## TU TAREA:
+    Genera una propuesta técnica y económica COMPLETA que será entregada como PDF oficial al cliente.
 
-## REQUISITOS IMPORTANTES:
-    1. NO uses placeholders como [XX,XXX], [Proporcione estimación], etc. Si no tienes un dato exacto, genera uno realista.
-    2. Usa la siguiente plantilla como guía de estructura y formato, pero complétala con información real y específica:
+## INSTRUCCIONES ESPECÍFICAS:
+    1. EXTRAE TODA la información relevante de la conversación y utilízala para personalizar cada sección.
+    2. NO USES PLACEHOLDERS como [XX,XXX] o [Proporcione estimación] bajo ninguna circunstancia.
+    3. Si falta información específica, GENERA datos realistas basados en el sector/subsector del cliente.
+    4. Para cada valor numérico (costos, dimensiones, capacidades, etc.) proporciona CIFRAS CONCRETAS, no rangos vagos.
+    5. Incluye especificaciones técnicas DETALLADAS, marcas y modelos DE EQUIPOS REALES.
+    6. Desarrolla un análisis ROI (Retorno de Inversión) con cifras específicas basadas en los ahorros potenciales.
+    7. LLENA TODAS LAS TABLAS completamente - sin celdas vacías.
+    8. MANTÉN el formato markdown para las tablas usando | para separar columnas.
+    9. No te preocupes por la longitud - es mejor una propuesta detallada que una incompleta.
 
-    ---PLANTILLA DE REFERENCIA---
+## ESTRUCTURA REQUERIDA:
+    Usa la siguiente plantilla como guía estricta para la estructura y formato:
+
+    ---INICIO DE PLANTILLA---
     {template_content}
     ---FIN DE PLANTILLA---
 
-    3. Genera valores numéricos concretos para todas las medidas, costos, dimensiones, etc.
-    4. Incluye marcas y modelos reales de equipos.
-    5. Asegúrate de que todas las tablas estén completas con datos específicos.
-
-    Recuerda que esta propuesta será convertida directamente a PDF, así que debe estar completa y profesional.
+    IMPORTANTE: Esta propuesta será presentada directamente al cliente como documento oficial de la empresa. Debe ser profesional, completa y sin placeholders.
     """
 
-        # Llamar a la IA con contexto amplio y baja temperatura para respuestas precisas
+        # --- 5. LLAMAR AL LLM CON PARÁMETROS OPTIMIZADOS ---
         from app.services.ai_service import ai_service
 
         try:
             messages = [{"role": "user", "content": prompt}]
+            # Aumentar max_tokens para permitir propuestas más detalladas
+            # Ajustar temperature para balance entre creatividad y precisión
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=4500, temperature=0.2
+                messages,
+                max_tokens=7500,  # Aumentado de 4500
+                temperature=0.3,  # Ajustado de 0.2
             )
 
             # Añadir marcador para procesamiento posterior
@@ -456,6 +527,20 @@ class ProposalService:
                 proposal_text.strip()
                 + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
             )
+
+            # Verificación básica de completitud
+            if "[" in proposal_text and "]" in proposal_text:
+                # Todavía hay placeholders, intentar eliminar
+                placeholder_pattern = r"\[([A-Z0-9_]+)\]"
+                placeholders = re.findall(placeholder_pattern, proposal_text)
+
+                if placeholders:
+                    logger.warning(
+                        f"Detectados {len(placeholders)} placeholders en la propuesta: {placeholders[:5]}"
+                    )
+                    # Podríamos intentar un segundo pase aquí, o simplemente limpiar
+                    proposal_text = re.sub(placeholder_pattern, "N/A", proposal_text)
+
             return proposal_text
         except Exception as e:
             logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
