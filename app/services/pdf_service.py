@@ -1,6 +1,7 @@
 # app/services/pdf_service.py
 import logging
 import os
+import markdown
 from xhtml2pdf import pisa  # type: ignore
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -161,155 +162,21 @@ class PDFService:
 
         import re
 
-        # Quitar marcador final
+        # Quitar marcador antes de convertir
 
-        html_content = proposal_text.replace(
-            "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
-        ).strip()
-
-        # Crear estructura HTML con estilos mejorados
-        return f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Propuesta de Tratamiento de Agua - Hydrous</title>
-            <style>
-                @page {{ size: letter; margin: 2.5cm 1.5cm; }}
-                body {{ 
-                    font-family: 'Arial', sans-serif; 
-                    line-height: 1.5; 
-                    color: #333;
-                    font-size: 11pt;
-                }}
-                h1 {{ 
-                    font-size: 18pt; 
-                    color: #2c5282; 
-                    margin-top: 20px; 
-                    margin-bottom: 10px;
-                    border-bottom: 2px solid #2c5282;
-                    padding-bottom: 5px;
-                }}
-                h2 {{ 
-                    font-size: 16pt; 
-                    color: #2c5282; 
-                    margin-top: 18px; 
-                    margin-bottom: 8px;
-                }}
-                h3 {{ 
-                    font-size: 14pt; 
-                    color: #2c5282; 
-                    margin-top: 15px; 
-                    margin-bottom: 8px;
-                }}
-                p {{ margin: 8px 0; }}
-                table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 15px 0;
-                    page-break-inside: avoid;
-                }}
-                table, th, td {{
-                    border: 1px solid #ddd;
-                }}
-                th {{
-                    background-color: #f2f2f2;
-                    padding: 10px;
-                    text-align: left;
-                    font-weight: bold;
-                }}
-                td {{
-                    padding: 8px;
-                    vertical-align: top;
-                }}
-                ul, ol {{ 
-                    margin: 10px 0; 
-                    padding-left: 20px; 
-                }}
-                li {{ margin-bottom: 5px; }}
-                .footer {{ 
-                    position: fixed; 
-                    bottom: 0.5cm; 
-                    width: 100%; 
-                    text-align: center;
-                    font-size: 9pt;
-                    color: #666;
-                    border-top: 1px solid #ddd;
-                    padding-top: 5px;
-                }}
-                .hydrous-header {{
-                    background-color: #2c5282;
-                    color: white;
-                    padding: 15px;
-                    text-align: center;
-                    margin-bottom: 20px;
-                    border-radius: 5px;
-                }}
-                .disclaimer {{
-                    background-color: #f8f9fa;
-                    border-left: 4px solid #2c5282;
-                    padding: 10px;
-                    margin: 15px 0;
-                    font-size: 9pt;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="hydrous-header">
-                <h1 style="color:white; border:none; margin:0; padding:0;">Propuesta de Tratamiento de Agua</h1>
-                <p style="margin:5px 0 0 0;">Hydrous Management Group</p>
-            </div>
-            
-            <div class="disclaimer">
-                <p><strong>Disclaimer:</strong> Esta propuesta fue generada con base en la información proporcionada y estándares de la industria. Se recomienda validar todos los detalles con Hydrous Management Group.</p>
-            </div>
-            
-            {html_content}
-            
-            <div class="footer">
-                Documento generado por Hydrous AI | Para consultas: info@hydrous.com | Página <pdf:pagenumber> de <pdf:pagecount>
-            </div>
-        </body>
-        </html>
-        """
-
-    async def generate_pdf_from_text(
-        self, conversation_id: str, proposal_text: str
-    ) -> Optional[str]:
-        """Genera un PDF a partir del texto de la propuesta ya generado."""
-        if not proposal_text:
-            logger.error(
-                f"Intento de generar PDF sin texto de propuesta para {conversation_id}"
-            )
-            return None
-
-        # Convertir el texto (posiblemente markdown) a HTML
+        clean_text = proposal_text.split("[PROPOSAL_COMPLETE:")[0].strip()
+        # Convertir Markdown a HTML (con extensión de tablas)
+        html_content = markdown.markdown(
+            clean_text, extensions=["markdown.extensions.tables"]
+        )
+        # Envolver en plantilla Jinja (o HTML básico)
         try:
-            html_content = self._format_proposal_text_to_html(proposal_text)
-        except Exception as fmt_err:
-            logger.error(
-                f"Error formateando propuesta a HTML para {conversation_id}: {fmt_err}",
-                exc_info=True,
-            )
-            return None  # No se puede continuar si falla el formateo
-
-        # Definir ruta de salida única para evitar colisiones si hay concurrencia
-        # Podríamos usar uuid o timestamp
-        import uuid
-
-        unique_id = str(uuid.uuid4())[:8]
-        pdf_filename = f"propuesta_{conversation_id}_{unique_id}.pdf"
-        output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
-
-        # Convertir HTML a PDF
-        success = self._html_to_pdf(html_content, output_path)
-
-        if success:
-            # Opcional: Limpiar PDFs antiguos para esta conversation_id?
-            return output_path
-        else:
-            logger.error(f"Falló la generación de PDF para {conversation_id}")
-            return None
+            template = self.jinja_env.get_template("proposal_base.html")
+            return template.render(content=html_content)
+        except Exception as e:
+            logger.error(f"Error renderizando plantilla: {e}")
+            # Fallback simple
+            return f"<html><body>{html_content}</body></html>"
 
 
 # Instancia global

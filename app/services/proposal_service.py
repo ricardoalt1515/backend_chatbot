@@ -1,5 +1,6 @@
 # app/services/proposal_service.py
 import logging
+import markdown
 import os
 import re
 from typing import Dict, Any, Optional
