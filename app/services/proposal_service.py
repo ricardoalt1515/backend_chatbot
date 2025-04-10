@@ -2,6 +2,7 @@
 import logging
 import markdown
 import os
+import json
 import re
 from typing import Dict, Any, Optional
 
@@ -385,76 +386,85 @@ class ProposalService:
         if not conversation or not conversation.metadata:
             return "Error: Datos de conversación incompletos."
 
-        # Extraer resúmenes de respuestas
-        summaries = conversation.metadata.get("response_summaries", {})
-        if not summaries:
-            logger.error(
-                "No se encontraron resúmenes de respuestas para generar propuesta"
-            )
-            return "Error: Información insuficiente para generar propuesta."
+        # 1. EXTRAER TODA LA INFORMACIÓN DISPONIBLE
+        # Metadata estructurada
+        metadata = conversation.metadata
+        sector = metadata.get("selected_sector", "No especificado")
+        subsector = metadata.get("selected_subsector", "No especificado")
+        collected_data = metadata.get("collected_data", {})
+        summaries = metadata.get("response_summaries", {})
 
-        # Crear un texto organizado con las preguntas y respuestas
-        organized_data = ""
-        for question_id, data in summaries.items():
-            question = data.get("question", "")
-            answer = data.get("answer", "")
-            if question and answer:
-                organized_data += f"- Pregunta: {question}\n"
-                organized_data += f"  Respuesta: {answer}\n\n"
+        # Historial completo de conversación (esto es clave)
+        full_conversation_history = ""
+        if conversation.messages:
+            for msg in conversation.messages:
+                if msg.role == "user":
+                    full_conversation_history += f"USUARIO: {msg.content}\n\n"
+                elif msg.role == "assistant":
+                    full_conversation_history += f"ASISTENTE: {msg.content}\n\n"
 
-        # Extraer datos clave más importantes
-        sector = conversation.metadata.get("selected_sector", "No especificado")
-        subsector = conversation.metadata.get("selected_subsector", "No especificado")
-
-        # Cargar el contenido de la plantilla Format Proposal
+        # 2. CARGAR LA PLANTILLA DE PROPUESTA COMO REFERENCIA
+        template_path = os.path.join(
+            os.path.dirname(__file__), "../prompts/Format Proposal.txt"
+        )
+        proposal_template = ""
         try:
-            template_path = os.path.join(
-                os.path.dirname(__file__), "../prompts/Format Proposal.txt"
-            )
             with open(template_path, "r", encoding="utf-8") as f:
-                format_proposal_template = f.read()
+                proposal_template = f.read()
         except Exception as e:
-            logger.error(
-                f"Error cargando plantilla Format Proposal: {e}", exc_info=True
-            )
-            format_proposal_template = "Error: No se pudo cargar la plantilla."
+            logger.error(f"Error leyendo plantilla de propuesta: {e}")
+            proposal_template = "Error al cargar plantilla"
 
-        # Prompt directo que le pide a la IA llenar la plantilla con los datos del cliente
+        # 3. CREAR UN PROMPT DETALLADO Y ESTRUCTURADO
         prompt = f"""
-# INSTRUCCIÓN: CREAR PROPUESTA DE TRATAMIENTO DE AGUA
+# INSTRUCCIÓN: CREAR PROPUESTA DE TRATAMIENTO DE AGUA DETALLADA Y COMPLETA
 
-    Eres un ingeniero especialista en tratamiento de agua. Necesito que generes una propuesta técnica completa para el cliente, 
-    siguiendo EXACTAMENTE la estructura de la plantilla que te proporciono a continuación.
+    Eres un ingeniero experto en soluciones de tratamiento de agua para Hydrous Management Group. Necesito que generes una propuesta técnica detallada, profesional y completa basada en la conversación con un cliente.
 
-## INFORMACIÓN DEL CLIENTE:
+## INFORMACIÓN DEL CLIENTE
     - Sector: {sector}
     - Subsector: {subsector}
 
-## PREGUNTAS Y RESPUESTAS DEL CLIENTE:
-    {organized_data}
+## DATOS RECOPILADOS DEL CUESTIONARIO
+    {json.dumps(collected_data, indent=2, ensure_ascii=False)}
 
-## PLANTILLA A SEGUIR (USAR ESTA ESTRUCTURA EXACTA):
-    {format_proposal_template}
+## HISTORIAL COMPLETO DE LA CONVERSACIÓN
+    {full_conversation_history}
 
-## INSTRUCCIONES IMPORTANTES:
-    1. Basándote en la información del cliente, rellena TODOS los espacios de la plantilla.
-    2. Donde falte información específica, utiliza valores típicos de la industria para ese sector/subsector.
-    3. NO incluyas placeholders como [XX,XXX] en la propuesta final.
-    4. Proporciona estimaciones realistas de CAPEX, OPEX y ROI basadas en los datos del cliente.
-    5. Incluye todas las secciones de la plantilla.
-    6. Asegúrate de que las tablas se vean bien formateadas.
-    7. Formula conclusiones y recomendaciones específicas para el cliente.
+## PLANTILLA A SEGUIR (ESTRUCTURA BÁSICA)
+    La propuesta debe seguir esta estructura, pero completándola totalmente con datos reales:
+    {proposal_template}
 
-    Genera ahora la propuesta completa siguiendo exactamente la estructura de la plantilla proporcionada.
+## INSTRUCCIONES ESPECÍFICAS:
+    1. COMPLETA TODOS LOS CAMPOS. No dejes placeholders como "[XX,XXX]" o "[$X,XXX]".
+    2. Utiliza DATOS REALES del cliente extraídos de la conversación.
+    3. Si algún dato específico no fue proporcionado, usa valores típicos para el sector {sector}, subsector {subsector}, pero INDICA CLARAMENTE que son valores estimados estándar.
+    4. Incluye información técnica detallada sobre:
+    - Tecnologías recomendadas (con ventajas/desventajas)
+    - Dimensionamiento específico (tanques, equipos, capacidades)
+    - Estimaciones de costos realistas (CAPEX y OPEX)
+    - Análisis de ROI con números concretos
+    5. Añade secciones de valor agregado:
+    - Cronograma estimado de implementación
+    - Opciones de financiamiento (si aplicable)
+    - Recomendaciones de mantenimiento
+    6. Formato profesional: usa tablas para presentar datos comparativos y técnicos.
+
+## IMPORTANTE:
+    - SÉ ESPECÍFICO con marcas, modelos, dimensiones y costos.
+    - NO USES PLACEHOLDERS genéricos.
+    - LA PROPUESTA DEBE SER AUTÓNOMA y completa, lista para presentar.
+
+    GENERA LA PROPUESTA COMPLETA AHORA.
     """
 
+        # 4. LLAMAR A LA IA PARA GENERAR LA PROPUESTA
         from app.services.ai_service import ai_service
 
         try:
-            # Llamar a la IA con un prompt simplificado
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=3500, temperature=0.3
+                messages, max_tokens=4000, temperature=0.3
             )
 
             # Añadir marcador para procesamiento posterior
