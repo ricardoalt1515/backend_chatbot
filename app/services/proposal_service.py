@@ -383,9 +383,6 @@ class ProposalService:
     async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Genera propuesta completa usando directamente el contexto de la conversación."""
 
-        if not conversation or not conversation.metadata:
-            return "Error: Datos de conversación incompletos."
-
         # Extraer la conversación completa como contexto
         conversation_text = ""
         if conversation.messages:
@@ -395,12 +392,7 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Extraer metadata básica
-        metadata = conversation.metadata or {}
-        sector = metadata.get("selected_sector", "No especificado")
-        subsector = metadata.get("selected_subsector", "No especificado")
-
-        # Cargar plantilla
+        # Cargar plantilla como referencia de formato
         template_path = os.path.join(
             os.path.dirname(__file__), "../prompts/Format Proposal.txt"
         )
@@ -412,39 +404,38 @@ class ProposalService:
             logger.error(f"Error al cargar plantilla: {e}")
             template_content = "Error al cargar plantilla"
 
-        # Crear prompt simplificado pero efectivo
+        # Prompt simple y directo
         prompt = f"""
-# INSTRUCCIÓN: GENERAR PROPUESTA COMPLETA DE TRATAMIENTO DE AGUA
+# INSTRUCCIÓN: GENERA UNA PROPUESTA COMPLETA DE TRATAMIENTO DE AGUA
 
-    Has analizado las necesidades de un cliente del sector {sector}, subsector {subsector}.
+    Has tenido una conversación con un cliente potencial sobre sus necesidades de tratamiento de agua.
     A continuación tienes el historial completo de la conversación:
 
     ---INICIO DE LA CONVERSACIÓN---
     {conversation_text}
     ---FIN DE LA CONVERSACIÓN---
 
-    Tu tarea es generar una propuesta técnica y económica COMPLETA para este cliente siguiendo estas instrucciones:
+    Ahora, crea una propuesta técnica COMPLETA para este cliente basada en toda la información proporcionada.
 
-    1. EXTRAE toda la información relevante del contexto (datos del cliente, parámetros técnicos, objetivos, etc.)
-    2. NO USES PLACEHOLDERS. Genera datos realistas para cualquier información faltante.
-    3. Proporciona valores específicos para todos los costos, dimensiones y especificaciones.
-    4. Incluye un análisis de ROI con cifras concretas.
-    5. Utiliza la siguiente plantilla como guía de estructura y formato:
+    IMPORTANTE:
+    1. NO uses placeholders como [Cliente], [XX,XXX], etc. Usa la información real de la conversación.
+    2. Genera valores específicos para cualquier dato que necesites y no tengas.
+    3. Completa TODAS las tablas con datos realistas - sin celdas vacías.
+
+    Utiliza esta plantilla como referencia para la estructura:
 
     ---PLANTILLA DE REFERENCIA---
     {template_content}
     ---FIN DE PLANTILLA---
-
-    Esta propuesta será convertida a PDF y entregada al cliente como documento oficial de Hydrous Management Group.
     """
 
-        # Llamar a la IA con una temperatura moderada
+        # Llamar a la IA
         from app.services.ai_service import ai_service
 
         try:
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=6000, temperature=0.3
+                messages, max_tokens=6000, temperature=0.4
             )
 
             # Añadir marcador para procesamiento posterior
