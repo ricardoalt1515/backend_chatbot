@@ -387,101 +387,59 @@ class ProposalService:
         sector = metadata.get("selected_sector", "No especificado")
         subsector = metadata.get("selected_subsector", "No especificado")
 
-        # Extraer datos específicos para simplificar el prompt
-        client_name = collected_data.get("INIT_0", "Cliente")  # Nombre
-        location = collected_data.get("INIT_1", "No especificada")  # Ubicación
-        water_cost = collected_data.get("INIT_2", "No especificado")  # Costo de agua
-        water_consumption = collected_data.get(
-            "INIT_3", "No especificado"
-        )  # Consumo de agua
-        wastewater = collected_data.get("INIT_4", "No especificado")  # Aguas residuales
-        people = collected_data.get("INIT_5", "No especificado")  # Personas
+        # Crear un resumen más conciso de datos
 
-        # Crear un resumen estructurado de los datos críticos
-        data_summary = f"""
-# DATOS CRÍTICOS DEL CLIENTE Y PROYECTO
-    - Nombre: {client_name}
-    - Ubicación: {location}
-    - Sector: {sector}
-    - Subsector: {subsector}
-    - Costo del agua: {water_cost}
-    - Consumo de agua: {water_consumption}
-    - Generación de aguas residuales: {wastewater}
-    - Número de personas: {people}
-    """
+        data_summary = "DATOS DEL CLIENTE:\n"
+        key_fields = {
+            "INIT_0": "Nombre",
+            "INIT_1": "Ubicación",
+            "INIT_2": "Costo agua",
+            "INIT_3": "Consumo agua",
+            "INIT_4": "Aguas residuales",
+            "INIT_5": "Número personas",
+        }
 
-        # Incluir todos los datos recopilados para referencia
-        all_data = "\n\n# DATOS ADICIONALES RECOPILADOS\n"
-        for key, value in collected_data.items():
-            question = questionnaire_service.get_question_details(key)
-            question_text = question.get("text", key) if question else key
-            all_data += f"- {question_text}: {value}\n"
+        for key, label in key_fields.items():
+            value = collected_data.get(key, "No proporcionado")
+            data_summary += f"- {label}: {value}\n"
 
-        # Crear prompt detallado y EXTREMADAMENTE específico
+        data_summary += f"- Sector: {sector}\n- Subsector: {subsector}\n"
+
+        # Prompt más conciso pero específico
         prompt = f"""
-# INSTRUCCIÓN: CREAR PROPUESTA TÉCNICA-ECONÓMICA DE TRATAMIENTO DE AGUA COMPLETA
+    INSTRUCCIÓN: Genera una propuesta técnica de tratamiento de agua COMPLETA y PERSONALIZADA.
 
-    Como experto ingeniero en tratamiento de agua, crea una propuesta técnica y económica COMPLETA, DETALLADA y PERSONALIZADA.
-    Esta propuesta DEBE incluir TODOS los elementos solicitados, con cálculos exactos, dimensionamiento preciso y estimaciones económicas realistas.
-
-## DATOS DEL CLIENTE:
     {data_summary}
 
-## DATOS ADICIONALES:
-    {all_data}
+    REQUISITOS CRÍTICOS:
+    1. NO usar placeholders [XX,XXX]. Usar valores calculados específicos.
+    2. Dimensionar sistema para los volúmenes indicados.
+    3. Incluir costos específicos (CAPEX y OPEX).
+    4. Calcular ROI basado en ahorro de agua.
 
-## INSTRUCCIONES CRÍTICAS:
-    1. **NO INCLUIR PLACEHOLDERS** - Reemplaza TODOS los campos como [XX,XXX], [Dimensiones], etc., con valores reales calculados. TODO valor debe ser específico para este cliente.
-
-    2. **USAR VALORES ESPECÍFICOS DEL CLIENTE** - Usa explícitamente todos los datos proporcionados sobre consumo, costo y volumen.
-
-    3. **CALCULAR VALORES NO PROPORCIONADOS** - Si faltan datos, calcula valores típicos para este sector/subsector específico.
-
-    4. **CREAR DIMENSIONAMIENTO DETALLADO** - Calcula y especifica capacidades, dimensiones y especificaciones técnicas exactas.
-
-    5. **REALIZAR ANÁLISIS FINANCIERO COMPLETO**:
-    - CAPEX detallado con costos por componente
-    - OPEX mensual completo (químicos, energía, mano de obra)
-    - ROI específico con tiempo de recuperación de inversión basado en ahorro de agua
-    - Ahorro anual proyectado basado en el costo del agua proporcionado
-    
-    6. **INCLUIR DISEÑO TÉCNICO COMPLETO** - No sólo listar componentes, sino explicar cómo se conectan y por qué se seleccionaron.
-
-    7. **AÑADIR RESUMEN EJECUTIVO** - Al inicio, presenta un resumen conciso de los beneficios clave.
-
-## ESTRUCTURA OBLIGATORIA:
-    1. Introducción a Hydrous Management Group
-    2. Resumen Ejecutivo (beneficios clave)
-    3. Información del Proyecto (todos los datos del cliente)
-    4. Objetivos del Proyecto (adaptados a lo proporcionado)
-    5. Solución Técnica Propuesta (detallada, con dimensiones específicas)
-    6. Equipamiento y Materiales (marcas, modelos, especificaciones)
-    7. Análisis Financiero (CAPEX, OPEX, ROI - todos con cifras exactas)
-    8. Cronograma de Implementación
-    9. Conclusiones y Recomendaciones
-
-    IMPORTANTE: Esta propuesta será entregada como PDF oficial y no debe contener ningún placeholder o información genérica.
+    ESTRUCTURA:
+    1. Introducción Hydrous
+    2. Resumen Ejecutivo
+    3. Datos del Proyecto
+    4. Solución Técnica con equipamiento específico
+    5. Análisis Financiero
+    6. Conclusiones
     """
 
         from app.services.ai_service import ai_service
 
         try:
-            # Usar un modelo potente con suficiente contexto y más tokens para generar contenido completo
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages,
-                max_tokens=4000,  # Aumentar tokens para respuesta más completa
-                temperature=0.2,  # Reducir temperatura para respuestas más deterministas
+                messages, max_tokens=2000, temperature=0.1
             )
 
-            # Verificar calidad de la respuesta
-            if not proposal_text or len(proposal_text) < 1000:
+            if not proposal_text or len(proposal_text) < 500:
                 logger.error(
-                    f"Respuesta LLM demasiado corta: {len(proposal_text)} caracteres"
+                    f"Respuesta demasiado corta: {len(proposal_text)} caracteres"
                 )
                 return "Error: Propuesta generada incompleta. Por favor, intente nuevamente."
 
-            # Añadir marcador para procesamiento posterior
             proposal_text = (
                 proposal_text.strip()
                 + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
@@ -489,8 +447,9 @@ class ProposalService:
             return proposal_text
 
         except Exception as e:
-            logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
-            return f"Error: Falló la generación de propuesta. Detalles: {str(e)[:100]}"
+            logger.error(f"Error generando propuesta: {e}", exc_info=True)
+            # Usar una fallback solution en caso de error
+            return self._generate_fallback_proposal(conversation)
 
 
 # Instancia global
