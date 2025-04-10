@@ -217,6 +217,30 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             # Añadir mensaje del usuario al historial en memoria AHORA
             conversation.messages.append(user_message_obj)
 
+            # Guardar un resumen de la respuesta del usuario
+            if conversation.metadata.get("current_question_id"):
+                question_id = conversation.metadata.get("current_question_id")
+                summary = {}
+
+                # Si ya existe un resumen, usarlo
+                if conversation.metadata.get("response_summaries") is None:
+                    conversation.metadata["response_summaries"] = {}
+
+                # Guardar esta respuesta en el resumen
+                conversation.metadata["response_summaries"][question_id] = {
+                    "question": conversation.metadata.get(
+                        "current_question_asked_summary", ""
+                    ),
+                    "answer": user_input.strip(),
+                }
+
+                logger.info(
+                    f"Guardada respuesta para {question_id}: '{user_input.strip()}'"
+                )
+
+                # Guardar la conversación actualizada
+                await storage_service.save_conversation(conversation)
+
             # Determinar si fue la última respuesta ANTES de llamar a IA
             last_question_id = conversation.metadata.get("current_question_id")
             is_final_answer = _is_last_question(last_question_id, conversation.metadata)

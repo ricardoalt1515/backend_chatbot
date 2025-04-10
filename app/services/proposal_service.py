@@ -382,124 +382,72 @@ class ProposalService:
     async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Genera propuesta completa y personalizada usando LLM."""
 
-        # Obtener datos recopilados
+        # Verificar si existe el resumen de respuestas
 
-        metadata = conversation.metadata
-        collected_data = metadata.get("collected_data", {})
-        sector = metadata.get("selected_sector", "No especificado")
-        subsector = metadata.get("selected_subsector", "No especificado")
+        if not conversation or not conversation.metadata:
+            return "Error: Datos de conversación incompletos."
 
-        # Extraer explícitamente los datos más importantes
-        client_name = collected_data.get("INIT_0", "")
-        location = collected_data.get("INIT_1", "")
-        water_cost = collected_data.get("INIT_2", "")
-        water_consumption = collected_data.get("INIT_3", "")
-        wastewater = collected_data.get("INIT_4", "")
-        people_count = collected_data.get("INIT_5", "")
-        main_objective = collected_data.get("INIT_11", "")
-        reuse_objectives = collected_data.get("INIT_12", "")
-        discharge_location = collected_data.get("INIT_13", "")
-        budget = collected_data.get("INIT_16", "")
-        project_timeline = collected_data.get("INIT_17", "")
+        # Extraer resúmenes
+        summaries = conversation.metadata.get("response_summaries", {})
+        if not summaries:
+            logger.error(
+                "No se encontraron resúmenes de respuestas para generar propuesta"
+            )
+            return "Error: Información insuficiente para generar propuesta."
 
-        # Crear un resumen estructurado
-        critical_data = f"""
-    DATOS CRÍTICOS (USAR ESTOS VALORES EXACTOS EN LA PROPUESTA):
+        # Crear un texto organizado con las preguntas y respuestas
+        organized_data = ""
+        for question_id, data in summaries.items():
+            question = data.get("question", "")
+            answer = data.get("answer", "")
+            if question and answer:
+                organized_data += f"PREGUNTA: {question}\n"
+                organized_data += f"RESPUESTA: {answer}\n\n"
 
-    1. Nombre del cliente: {client_name}
-    2. Ubicación: {location}
-    3. Sector: {sector}
-    4. Subsector: {subsector}
-    5. Costo del agua: {water_cost}
-    6. Consumo de agua: {water_consumption}
-    7. Generación de aguas residuales: {wastewater}
-    8. Número de personas atendidas: {people_count}
-    9. Objetivo principal: {main_objective}
-    10. Objetivos de reúso: {reuse_objectives}
-    11. Punto de descarga actual: {discharge_location}
-    12. Presupuesto estimado: {budget}
-    13. Tiempo de implementación: {project_timeline}
-    """
+        # Extraer datos clave más importantes
+        sector = conversation.metadata.get("selected_sector", "No especificado")
+        subsector = conversation.metadata.get("selected_subsector", "No especificado")
 
-        # Crear prompt mejorado con ejemplos concretos
+        # Prompt simple y directo
         prompt = f"""
-# INSTRUCCIÓN: CREAR PROPUESTA PROFESIONAL COMPLETA DE TRATAMIENTO DE AGUA
+# INSTRUCCIÓN: CREAR PROPUESTA DE TRATAMIENTO DE AGUA
 
-    Tu tarea es crear una propuesta PROFESIONAL, COMPLETA y TÉCNICAMENTE PRECISA para un sistema de tratamiento de agua.
-    Esta propuesta será convertida a PDF oficial y DEBE usar datos reales, NO PLACEHOLDERS.
+    Eres un ingeniero especialista en tratamiento de agua. Necesito que generes una propuesta técnica completa y profesional basada en las respuestas de un cliente.
 
-## DATOS DEL CLIENTE:
-    {critical_data}
+## RESUMEN DEL CLIENTE:
+    - Sector: {sector}
+    - Subsector: {subsector}
 
-## REQUISITOS CRÍTICOS:
-    1. NO INCLUYAS NINGÚN PLACEHOLDER como [XX,XXX] o [X m x Y m]. Reemplázalos TODOS con valores reales calculados.
+## TODAS LAS PREGUNTAS Y RESPUESTAS DEL CLIENTE:
+    {organized_data}
 
-    2. CALCULA y PROPORCIONA valores reales para todas las especificaciones técnicas:
-    - Dimensiones específicas de equipos (metros, volúmenes)
-    - Costos exactos en la moneda adecuada (MXN o USD)
-    - Capacidades de tratamiento precisas (m³/día, m³/hora)
-    - Análisis financiero completo con ROI calculado
+## INSTRUCCIONES:
+    1. Crea una propuesta completa con los siguientes elementos:
+    - Introducción a Hydrous Management Group
+    - Datos del Proyecto (usa exactamente lo que respondió el cliente)
+    - Objetivos del Proyecto (basados en sus respuestas)
+    - Solución Técnica Propuesta (detallada y dimensionada)
+    - Análisis de Costos (específico y sin placeholders)
+    - Retorno de Inversión (calculado con sus datos)
+    - Conclusiones
 
-    3. CREA TABLAS BIEN ESTRUCTURADAS para presentar datos técnicos y financieros.
+    2. IMPORTANTE:
+    - NO uses placeholders como [XX,XXX] o [Brand X]
+    - Usa EXACTAMENTE los datos que proporcionó el cliente
+    - Calcula valores reales para costos, dimensiones y capacidades
+    - Organiza los datos en tablas claras
+    - Sé específico y profesional
 
-## EJEMPLO DE TABLA DE COSTOS (USA ESTE FORMATO):
-    | Componente | Capacidad | Costo (MXN) | Notas |
-    |------------|-----------|-------------|-------|
-    | Sistema DAF | 120 m³/día | 350,000 | Incluye flotador y dosificación |
-    | Reactor MBBR | 90 m³/día | 520,000 | Con medios biofilm y sopladores |
-    | Filtración | 80 m³/día | 180,000 | Multimedia y carbón activado |
-    | TOTAL CAPEX | - | 1,050,000 | Llave en mano |
-
-## SECCIONES REQUERIDAS:
-    1. Introducción a Hydrous Management Group
-    2. Datos del Proyecto (usa ESPECÍFICAMENTE los datos proporcionados)
-    3. Objetivos (basados exactamente en lo que indicó el cliente)
-    4. Solución Técnica (con dimensionamiento específico)
-    5. Equipamiento y Presupuesto (con valores exactos)
-    6. Análisis Financiero (con ROI calculado)
-    7. Conclusiones y Recomendaciones
-
-## IMPORTANTE:
-    - Si el cliente proporcionó un presupuesto, ajusta tu propuesta a ese rango
-    - Calcula el retorno de inversión usando su costo de agua actual
-    - Calcula ahorros potenciales realistas (30-40% del consumo actual)
-    - No uses marcadores de formato como ###, usa formato HTML estándar
-
-## RECUERDA:
-    Esta propuesta debe ser PROFESIONAL, ESPECÍFICA y SIN PLACEHOLDERS.
+    GENERA LA PROPUESTA COMPLETA AHORA:
     """
 
         from app.services.ai_service import ai_service
 
         try:
-            # Usar menos tokens pero parámetros más precisos
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages,
-                max_tokens=2500,
-                temperature=0.3,  # Menor temperatura para respuestas más precisas
+                messages, max_tokens=3000, temperature=0.4
             )
-
-            # Verificar si hay placeholders en la respuesta
-            if "[" in proposal_text and "]" in proposal_text:
-                # Intentar un segundo paso para reemplazar placeholders
-                fixing_prompt = f"""
-    La siguiente propuesta aún contiene placeholders [XX,XXX] que deben ser reemplazados por valores reales.
-    Por favor, revisa el texto y reemplaza TODOS los placeholders por valores numéricos específicos y realistas.
-
-    DATOS DEL CLIENTE:
-    {critical_data}
-
-    PROPUESTA A CORREGIR:
-    {proposal_text}
-
-    INSTRUCCIÓN: Devuelve la propuesta completa con TODOS los placeholders reemplazados por valores reales.
-    """
-
-                messages = [{"role": "user", "content": fixing_prompt}]
-                proposal_text = await ai_service._call_llm_api(
-                    messages, max_tokens=2500, temperature=0.2
-                )
 
             # Añadir marcador para procesamiento posterior
             proposal_text = (
@@ -510,7 +458,7 @@ class ProposalService:
 
         except Exception as e:
             logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
-            return f"Error: Falló la generación de propuesta. Detalles: {str(e)[:100]}"
+            return f"Error: Falló la generación de propuesta. {str(e)[:100]}"
 
 
 # Instancia global
