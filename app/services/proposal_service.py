@@ -381,160 +381,135 @@ class ProposalService:
     async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Genera propuesta completa y personalizada usando LLM."""
 
-        # Obtener datos básicos
+        # Obtener datos recopilados
 
         metadata = conversation.metadata
         collected_data = metadata.get("collected_data", {})
         sector = metadata.get("selected_sector", "No especificado")
         subsector = metadata.get("selected_subsector", "No especificado")
 
-        # Extraer datos clave
-        client_name = collected_data.get("INIT_0", "Cliente")
-        location = collected_data.get("INIT_1", "No especificada")
-        water_cost = collected_data.get("INIT_2", "No especificado")
-        water_consumption = collected_data.get("INIT_3", "No especificado")
-        wastewater = collected_data.get("INIT_4", "No especificado")
-        people = collected_data.get("INIT_5", "No especificado")
+        # Extraer explícitamente los datos más importantes
+        client_name = collected_data.get("INIT_0", "")
+        location = collected_data.get("INIT_1", "")
+        water_cost = collected_data.get("INIT_2", "")
+        water_consumption = collected_data.get("INIT_3", "")
+        wastewater = collected_data.get("INIT_4", "")
+        people_count = collected_data.get("INIT_5", "")
+        main_objective = collected_data.get("INIT_11", "")
+        reuse_objectives = collected_data.get("INIT_12", "")
+        discharge_location = collected_data.get("INIT_13", "")
+        budget = collected_data.get("INIT_16", "")
+        project_timeline = collected_data.get("INIT_17", "")
 
-        # Preparar datos básicos que se usarán en todas las secciones
-        client_data = f"""
-    Cliente: {client_name}
-    Ubicación: {location}
-    Sector: {sector}
-    Subsector: {subsector}
-    Costo del agua: {water_cost}
-    Consumo de agua: {water_consumption}
-    Aguas residuales: {wastewater}
-    Número de personas: {people}
+        # Crear un resumen estructurado
+        critical_data = f"""
+    DATOS CRÍTICOS (USAR ESTOS VALORES EXACTOS EN LA PROPUESTA):
+
+    1. Nombre del cliente: {client_name}
+    2. Ubicación: {location}
+    3. Sector: {sector}
+    4. Subsector: {subsector}
+    5. Costo del agua: {water_cost}
+    6. Consumo de agua: {water_consumption}
+    7. Generación de aguas residuales: {wastewater}
+    8. Número de personas atendidas: {people_count}
+    9. Objetivo principal: {main_objective}
+    10. Objetivos de reúso: {reuse_objectives}
+    11. Punto de descarga actual: {discharge_location}
+    12. Presupuesto estimado: {budget}
+    13. Tiempo de implementación: {project_timeline}
+    """
+
+        # Crear prompt mejorado con ejemplos concretos
+        prompt = f"""
+# INSTRUCCIÓN: CREAR PROPUESTA PROFESIONAL COMPLETA DE TRATAMIENTO DE AGUA
+
+    Tu tarea es crear una propuesta PROFESIONAL, COMPLETA y TÉCNICAMENTE PRECISA para un sistema de tratamiento de agua.
+    Esta propuesta será convertida a PDF oficial y DEBE usar datos reales, NO PLACEHOLDERS.
+
+## DATOS DEL CLIENTE:
+    {critical_data}
+
+## REQUISITOS CRÍTICOS:
+    1. NO INCLUYAS NINGÚN PLACEHOLDER como [XX,XXX] o [X m x Y m]. Reemplázalos TODOS con valores reales calculados.
+
+    2. CALCULA y PROPORCIONA valores reales para todas las especificaciones técnicas:
+    - Dimensiones específicas de equipos (metros, volúmenes)
+    - Costos exactos en la moneda adecuada (MXN o USD)
+    - Capacidades de tratamiento precisas (m³/día, m³/hora)
+    - Análisis financiero completo con ROI calculado
+
+    3. CREA TABLAS BIEN ESTRUCTURADAS para presentar datos técnicos y financieros.
+
+## EJEMPLO DE TABLA DE COSTOS (USA ESTE FORMATO):
+    | Componente | Capacidad | Costo (MXN) | Notas |
+    |------------|-----------|-------------|-------|
+    | Sistema DAF | 120 m³/día | 350,000 | Incluye flotador y dosificación |
+    | Reactor MBBR | 90 m³/día | 520,000 | Con medios biofilm y sopladores |
+    | Filtración | 80 m³/día | 180,000 | Multimedia y carbón activado |
+    | TOTAL CAPEX | - | 1,050,000 | Llave en mano |
+
+## SECCIONES REQUERIDAS:
+    1. Introducción a Hydrous Management Group
+    2. Datos del Proyecto (usa ESPECÍFICAMENTE los datos proporcionados)
+    3. Objetivos (basados exactamente en lo que indicó el cliente)
+    4. Solución Técnica (con dimensionamiento específico)
+    5. Equipamiento y Presupuesto (con valores exactos)
+    6. Análisis Financiero (con ROI calculado)
+    7. Conclusiones y Recomendaciones
+
+## IMPORTANTE:
+    - Si el cliente proporcionó un presupuesto, ajusta tu propuesta a ese rango
+    - Calcula el retorno de inversión usando su costo de agua actual
+    - Calcula ahorros potenciales realistas (30-40% del consumo actual)
+    - No uses marcadores de formato como ###, usa formato HTML estándar
+
+## RECUERDA:
+    Esta propuesta debe ser PROFESIONAL, ESPECÍFICA y SIN PLACEHOLDERS.
     """
 
         from app.services.ai_service import ai_service
 
-        # Función auxiliar para llamadas a la API con reintentos
-        async def call_api_with_retry(prompt, max_retries=2):
-            retries = 0
-            while retries <= max_retries:
-                try:
-                    messages = [{"role": "user", "content": prompt}]
-                    return await ai_service._call_llm_api(
-                        messages,
-                        max_tokens=1800,  # Reducido para evitar timeouts
-                        temperature=0.3,
-                    )
-                except Exception as e:
-                    retries += 1
-                    logger.error(f"Intento {retries}: Error llamando a API: {e}")
-                    if retries > max_retries:
-                        return f"Error generando esta sección: {str(e)[:100]}"
-                    # Esperar antes de reintentar (espera exponencial)
-                    import asyncio
+        try:
+            # Usar menos tokens pero parámetros más precisos
+            messages = [{"role": "user", "content": prompt}]
+            proposal_text = await ai_service._call_llm_api(
+                messages,
+                max_tokens=2500,
+                temperature=0.3,  # Menor temperatura para respuestas más precisas
+            )
 
-                    await asyncio.sleep(2 * retries)
+            # Verificar si hay placeholders en la respuesta
+            if "[" in proposal_text and "]" in proposal_text:
+                # Intentar un segundo paso para reemplazar placeholders
+                fixing_prompt = f"""
+    La siguiente propuesta aún contiene placeholders [XX,XXX] que deben ser reemplazados por valores reales.
+    Por favor, revisa el texto y reemplaza TODOS los placeholders por valores numéricos específicos y realistas.
 
-        # 1. Generar introducción y resumen ejecutivo
-        intro_prompt = f"""
-    Como experto en tratamiento de agua, genera SOLO la introducción y resumen ejecutivo para una propuesta técnica.
-    Datos básicos:
-    {client_data}
+    DATOS DEL CLIENTE:
+    {critical_data}
 
-    Genera:
-    1. Introducción breve a Hydrous Management Group
-    2. Resumen ejecutivo (max 200 palabras) que destaque:
-    - Beneficios principales
-    - Ahorro estimado de agua y costos
-    - ROI aproximado
-    - Tecnologías principales recomendadas
+    PROPUESTA A CORREGIR:
+    {proposal_text}
 
-    IMPORTANTE: Sé específico, no uses placeholders, calcula valores reales basados en los datos proporcionados.
+    INSTRUCCIÓN: Devuelve la propuesta completa con TODOS los placeholders reemplazados por valores reales.
     """
 
-        intro_section = await call_api_with_retry(intro_prompt)
+                messages = [{"role": "user", "content": fixing_prompt}]
+                proposal_text = await ai_service._call_llm_api(
+                    messages, max_tokens=2500, temperature=0.2
+                )
 
-        # 2. Generar solución técnica
-        tech_prompt = f"""
-    Como ingeniero especialista en tratamiento de agua, diseña una solución técnica detallada para:
-    {client_data}
+            # Añadir marcador para procesamiento posterior
+            proposal_text = (
+                proposal_text.strip()
+                + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
+            )
+            return proposal_text
 
-    La solución debe:
-    1. Especificar tecnologías exactas recomendadas para este caso específico
-    2. Incluir dimensionamiento preciso (capacidades, volúmenes, tiempos de retención)
-    3. Explicar el proceso de tratamiento paso a paso
-    4. Mencionar equipos específicos con capacidades
-
-    IMPORTANTE: Incluye valores numéricos reales (no placeholders). Basa tus cálculos en el consumo y generación de aguas residuales indicados.
-    """
-
-        tech_section = await call_api_with_retry(tech_prompt)
-
-        # 3. Generar análisis financiero
-        financial_prompt = f"""
-    Como analista financiero especializado en proyectos de agua, genera un análisis financiero completo para:
-    {client_data}
-
-    El análisis debe incluir:
-    1. CAPEX detallado con costos por equipo/componente
-    2. OPEX mensual (químicos, energía, personal, mantenimiento)
-    3. Cálculo del ROI específico basado en ahorro de agua
-    4. Ahorro anual proyectado
-
-    IMPORTANTE: 
-    - Usa el costo del agua proporcionado para calcular ahorros
-    - Proporciona cifras exactas (no placeholders)
-    - Incluye una tabla clara con el desglose de costos
-    """
-
-        financial_section = await call_api_with_retry(financial_prompt)
-
-        # 4. Generar conclusiones y recomendaciones
-        conclusion_prompt = f"""
-    Como consultor en soluciones de agua, genera conclusiones y recomendaciones finales para:
-    {client_data}
-
-    Incluye:
-    1. Resumen de los principales beneficios
-    2. Cronograma recomendado de implementación
-    3. Próximos pasos sugeridos
-    4. Consideraciones adicionales importantes
-
-    Sé específico y conciso.
-    """
-
-        conclusion_section = await call_api_with_retry(conclusion_prompt)
-
-        # Combinar todas las secciones
-        full_proposal = f"""
-# Propuesta de Tratamiento y Reúso de Agua
-
-## Información del Proyecto
-    - **Cliente:** {client_name}
-    - **Ubicación:** {location}
-    - **Sector:** {sector}
-    - **Subsector:** {subsector}
-    - **Costo actual del agua:** {water_cost}
-    - **Consumo actual:** {water_consumption}
-    - **Aguas residuales generadas:** {wastewater}
-    - **Usuarios aproximados:** {people}
-
-    {intro_section}
-
-## Solución Técnica Propuesta
-    {tech_section}
-
-## Análisis Financiero
-    {financial_section}
-
-## Conclusiones y Recomendaciones
-    {conclusion_section}
-
-    ---
-    Para consultas adicionales, contacte a Hydrous Management Group: info@hydrous.com
-    """
-
-        # Añadir marcador para procesamiento posterior
-        full_proposal = (
-            full_proposal.strip() + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
-        )
-        return full_proposal
+        except Exception as e:
+            logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
+            return f"Error: Falló la generación de propuesta. Detalles: {str(e)[:100]}"
 
 
 # Instancia global
