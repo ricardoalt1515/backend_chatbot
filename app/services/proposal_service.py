@@ -381,141 +381,66 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """Enfoque FREE-FORM con manejo de errores mejorado."""
+        """Enfoque simplificado: la IA genera todo el contenido de la propuesta."""
 
-        # Extraer la conversación (limitada para reducir tamaño)
+        # Extraer la conversación completa
         conversation_text = ""
         if conversation.messages:
-            # Tomar solo los últimos 20 mensajes para reducir tamaño
-            limit_messages = (
-                conversation.messages[-20:]
-                if len(conversation.messages) > 20
-                else conversation.messages
-            )
-            for msg in limit_messages:
+            for msg in conversation.messages:
                 role = getattr(msg, "role", "unknown")
                 content = getattr(msg, "content", "")
                 if content and role in ["user", "assistant"]:
-                    # Limitar longitud de cada mensaje para reducir tamaño
-                    if len(content) > 500:
-                        content = content[:500] + "... [mensaje truncado]"
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Obtener datos básicos para contexto
-        metadata = conversation.metadata or {}
-        sector = metadata.get("selected_sector", "")
-        subsector = metadata.get("selected_subsector", "")
-
-        # Prompt más compacto
+        # Prompt directo y sencillo
         prompt = f"""
-# CREAR PROPUESTA DE TRATAMIENTO DE AGUA
+# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
 
-    CONTEXTO: Cliente del sector {sector}/{subsector}. Conversación reciente:
+    Has mantenido una conversación con un cliente sobre sus necesidades de tratamiento de agua. 
+    A continuación está el historial completo:
+
     {conversation_text}
 
-    INSTRUCCIONES:
-    1. Crea una propuesta profesional con:
-    - Introducción a Hydrous Management Group
-    - Análisis del proyecto y necesidades
-    - Solución técnica recomendada
-    - Equipamiento con especificaciones
-    - Presupuesto (CAPEX y OPEX)
-    - ROI y beneficios
+    Crea una propuesta profesional COMPLETA que incluya:
 
-    2. REQUISITOS:
-    - Usa datos específicos del cliente
-    - Inventa datos realistas donde falte información
-    - NO uses placeholders como "[Nombre]" o "[A definir]"
-    - Usa valores numéricos concretos
-    - Formato profesional con tablas markdown
+    1. Introducción a Hydrous Management Group
+    2. Antecedentes del proyecto (con datos específicos del cliente)
+    3. Objetivos del proyecto
+    4. Características del agua y parámetros de diseño
+    5. Solución propuesta con tecnologías recomendadas
+    6. Equipamiento sugerido con capacidades y dimensiones
+    7. Costos detallados (CAPEX y OPEX)
+    8. Análisis de retorno de inversión
+    9. Resumen de puntos clave
 
-    Este documento será entregado como PDF oficial.
+    IMPORTANTE:
+    - Usa únicamente la información proporcionada en la conversación
+    - Genera números específicos para costos, dimensiones, etc.
+    - Usa formato markdown para que se vea profesional
+    - NO uses placeholders tipo [DATOS] ni textos genéricos
+    - El documento debe ser COMPLETO y listo para entregar al cliente
+
+    Este documento se convertirá directamente en un PDF oficial para el cliente.
     """
 
-        # Implementar multi-intento con tamaños reducidos
+        # Llamar a la IA con temperatura moderada
         from app.services.ai_service import ai_service
 
-        max_attempts = 3
-        attempt = 0
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            proposal_text = await ai_service._call_llm_api(
+                messages, max_tokens=6000, temperature=0.4
+            )
 
-        while attempt < max_attempts:
-            attempt += 1
-            try:
-                messages = [{"role": "user", "content": prompt}]
-
-                # Reducir parámetros en cada intento
-                max_tokens = 6000 if attempt == 1 else 4500 if attempt == 2 else 3000
-
-                proposal_text = await ai_service._call_llm_api(
-                    messages,
-                    max_tokens=max_tokens,
-                    temperature=0.4 if attempt == 1 else 0.3,
-                )
-
-                # Si llegamos aquí, tuvimos éxito
-                proposal_text = (
-                    proposal_text.strip()
-                    + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
-                )
-                return proposal_text
-
-            except Exception as e:
-                logger.error(f"Error en intento {attempt}: {e}", exc_info=True)
-
-                # Reducir aún más el contexto si fallamos
-                if "conversation_text" in prompt and len(conversation_text) > 1000:
-                    # Reducir drásticamente
-                    conversation_text = (
-                        conversation_text[:1000] + "... [truncado por limitaciones]"
-                    )
-                    prompt = prompt.replace(
-                        "CONTEXTO: Cliente", f"CONTEXTO (reducido): Cliente"
-                    )
-
-                # Si es el último intento, crear una versión básica para no fallar completamente
-                if attempt == max_attempts:
-                    return self._generate_fallback_proposal(sector, subsector)
-
-        # Nunca deberíamos llegar aquí, pero por si acaso
-        return self._generate_fallback_proposal(sector, subsector)
-
-    def _generate_fallback_proposal(self, sector="General", subsector=""):
-        """Genera una propuesta básica en caso de fallo total."""
-        return f"""# Propuesta de Tratamiento de Agua - Hydrous Management Group
-
-## 1. Introducción
-
-    Hydrous Management Group se especializa en soluciones personalizadas de tratamiento de agua para clientes industriales y comerciales. Nuestro enfoque integra tecnologías avanzadas con diseño optimizado para lograr cumplimiento normativo, reducción de costos y reúso sustentable.
-
-## 2. Análisis Preliminar
-
-    Para una empresa del sector **{sector}** (subsector **{subsector}**), recomendamos realizar un análisis detallado de parámetros de agua y requerimientos específicos.
-
-## 3. Solución Propuesta
-
-    Recomendamos un sistema de tratamiento que incluye:
-
-    | Etapa | Tecnología | Beneficio |
-    |-------|------------|-----------|
-    | Pre-tratamiento | Filtración y separación | Remoción de sólidos |
-    | Tratamiento biológico | Reactor aerobio | Reducción DBO/DQO |
-    | Pulido final | Filtración multimedia | Clarificación |
-    | Desinfección | UV o cloración | Eliminación de patógenos |
-
-## 4. Presupuesto Estimado
-
-    | Concepto | Costo Estimado (USD) |
-    |----------|----------------------|
-    | Equipamiento | $120,000 |
-    | Instalación | $45,000 |
-    | Automatización | $35,000 |
-    | **Total CAPEX** | **$200,000** |
-
-## 5. Contacto
-
-    Para recibir una propuesta detallada, por favor contáctenos en info@hydrous.com.
-
-    [PROPOSAL_COMPLETE: Propuesta lista para PDF]"""
+            # Añadir marcador para procesamiento posterior
+            proposal_text = (
+                proposal_text.strip()
+                + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
+            )
+            return proposal_text
+        except Exception as e:
+            logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
+            return f"Error: Falló la generación de propuesta. {str(e)[:100]}"
 
 
 # Instancia global
