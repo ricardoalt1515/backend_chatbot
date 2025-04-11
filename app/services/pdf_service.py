@@ -162,17 +162,40 @@ class PDFService:
 
         import markdown
 
-        # Quitar marcador final
+        # Eliminar marcador final y cualquier texto previo a la propuesta real
         proposal_text = proposal_text.replace(
             "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
         ).strip()
 
-        # Conversión directa de markdown a HTML usando la biblioteca markdown
+        # Intentar identificar y eliminar cualquier texto conversacional previo
+        if "Con esto, hemos completado todas las preguntas" in proposal_text:
+            parts = proposal_text.split(
+                "Con esto, hemos completado todas las preguntas"
+            )
+            if len(parts) > 1:
+                # Tomar solo la parte después de ese texto
+                proposal_text = parts[1]
+
+        # Guardar para debug
+        debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        with open(
+            os.path.join(debug_dir, "proposal_pre_html.txt"), "w", encoding="utf-8"
+        ) as f:
+            f.write(proposal_text)
+
+        # Conversión simple de markdown a HTML
         html_content = markdown.markdown(
             proposal_text, extensions=["tables", "fenced_code", "nl2br"]
         )
 
-        # Añadir estructura HTML y estilos básicos
+        # Guardar HTML para debug
+        with open(
+            os.path.join(debug_dir, "proposal_html.html"), "w", encoding="utf-8"
+        ) as f:
+            f.write(html_content)
+
+        # Crear documento HTML completo con estilos
         complete_html = f"""
         <!DOCTYPE html>
         <html>
@@ -182,13 +205,13 @@ class PDFService:
             <style>
                 @page {{ size: A4; margin: 2cm; }}
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                h1 {{ font-size: 20pt; color: #0056b3; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }}
+                h1 {{ font-size: 20pt; color: #0056b3; border-bottom: 2px solid #0056b3; }}
                 h2 {{ font-size: 16pt; color: #0056b3; border-bottom: 1px solid #ccc; }}
                 h3 {{ font-size: 14pt; color: #0056b3; }}
                 table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
                 th, td {{ border: 1px solid #ddd; padding: 8px; }}
                 th {{ background-color: #f2f2f2; }}
-                .footer {{ position: fixed; bottom: 1cm; left: 2cm; right: 2cm; text-align: center; font-size: 9pt; color: #777; }}
+                .footer {{ position: fixed; bottom: 1cm; left: 2cm; right: 2cm; text-align: center; }}
             </style>
         </head>
         <body>

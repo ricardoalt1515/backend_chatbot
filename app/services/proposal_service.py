@@ -392,47 +392,70 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Prompt con instrucciones claras pero sin plantilla
+        # Prompt completo sin referencia a ninguna plantilla
         prompt = f"""
 # GENERA UNA PROPUESTA PROFESIONAL COMPLETA DE TRATAMIENTO DE AGUA
 
-    Has mantenido una conversación detallada con un cliente sobre sus necesidades de tratamiento de agua.
-    Debes crear un documento de propuesta profesional COMPLETO basado en esta conversación.
+    Has mantenido una conversación con un cliente sobre sus necesidades de tratamiento de agua.
+    A continuación está el historial completo:
 
-## CONVERSACIÓN CON EL CLIENTE:
     {conversation_text}
 
-## INSTRUCCIONES:
-    1. Crea una propuesta completa con la siguiente estructura (pero NO uses estos títulos exactos - redáctalos profesionalmente):
-    - Introducción a Hydrous Management Group
-    - Antecedentes del proyecto (con información específica del cliente)
-    - Objetivo del proyecto (basado en lo que el cliente mencionó)
-    - Parámetros de diseño (con valores específicos basados en sector/necesidades)
-    - Tecnología propuesta y alternativas
-    - Equipo recomendado con dimensiones y capacidades específicas
-    - Costos detallados (CAPEX y OPEX) con valores concretos
-    - Análisis de retorno de inversión con cifras específicas
-    - Resumen de preguntas y respuestas clave
+    Crea una propuesta profesional COMPLETA que incluya:
 
-    2. REGLAS IMPORTANTES:
-    - UTILIZA SOLO INFORMACIÓN REAL de la conversación
-    - Si falta algún dato específico, INVENTA valores realistas basados en el sector del cliente
-    - USA NÚMEROS CONCRETOS para todos los costos, dimensiones, parámetros, etc.
-    - NO uses placeholders como [Nombre] o [Valor] - todo debe ser texto final y completo
-    - Utiliza formato markdown para que el documento se vea profesional
-    - Incluye tablas en formato markdown para presentar datos técnicos y costos
+    1. Un título claro
+    2. Introducción a Hydrous Management Group (breve descripción de la empresa)
+    3. Antecedentes del proyecto con TODOS LOS DATOS ESPECÍFICOS del cliente
+    - Nombre exacto del cliente
+    - Ubicación exacta
+    - Industria y subsector
+    - Detalles de consumo de agua y generación de aguas residuales
+    4. Objetivos claros del proyecto
+    5. Parámetros técnicos y de diseño con VALORES NUMÉRICOS ESPECÍFICOS
+    6. Descripción de la solución propuesta con tecnologías específicas
+    7. Lista de equipos recomendados con marcas, modelos y capacidades
+    8. Presupuesto detallado con costos ESPECÍFICOS (no rangos)
+    9. Análisis del retorno de inversión con plazos y ahorros calculados
+    10. Un resumen de la propuesta
 
-    Este documento se convertirá directamente en PDF y se entregará al cliente como propuesta oficial.
+    REGLAS OBLIGATORIAS:
+    - NO utilices la frase "[Nombre de la Empresa]" o cualquier placeholder
+    - TODO el contenido debe ser específico y concreto
+    - Incluye NÚMEROS REALES para todos los valores (no escribas "X m³/día")
+    - Usa formato markdown para que se vea profesional
+    - Escribe el documento como si fueras un ingeniero experto preparando una propuesta real
+
+    Este documento se convertirá en un PDF oficial, sin revisión humana.
     """
 
-        # Llamar a la IA con temperatura moderada
+        # Llamar a la IA con temperatura un poco más alta para creatividad
         from app.services.ai_service import ai_service
 
         try:
             messages = [{"role": "user", "content": prompt}]
+
+            # Guardar prompt para debug
+            debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(
+                os.path.join(debug_dir, f"prompt_{conversation.id}.txt"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(prompt)
+
+            # Llamar a la IA con más tokens y temperatura moderada
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=6000, temperature=0.4
+                messages, max_tokens=7000, temperature=0.5
             )
+
+            # Guardar respuesta para debug
+            with open(
+                os.path.join(debug_dir, f"ai_response_{conversation.id}.txt"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(proposal_text)
 
             # Añadir marcador para procesamiento posterior
             proposal_text = (
