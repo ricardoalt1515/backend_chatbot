@@ -4,6 +4,7 @@ import os
 import markdown
 from xhtml2pdf import pisa  # type: ignore
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from datetime import datetime
 
 # --- AÑADIR ESTA IMPORTACIÓN ---
 from typing import Optional
@@ -203,7 +204,7 @@ class PDFService:
         <body>
             {html_content}
             <div class="footer">
-                Propuesta generada por Hydrous Management Group • {datetime.now().strftime('%d/%m/%Y')}
+                Propuesta generada por Hydrous Management Group
             </div>
         </body>
         </html>
