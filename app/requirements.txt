@@ -17,6 +17,7 @@ WeasyPrint==60.1
 xhtml2pdf
 Jinja2
 Markdown
+reportlab
 
 # Utilidades
 httpx==0.26.0
