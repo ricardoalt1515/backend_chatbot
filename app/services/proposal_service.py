@@ -392,35 +392,37 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Prompt directo y sencillo
+        # Prompt con instrucciones claras pero sin plantilla
         prompt = f"""
-# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
+# GENERA UNA PROPUESTA PROFESIONAL COMPLETA DE TRATAMIENTO DE AGUA
 
-    Has mantenido una conversación con un cliente sobre sus necesidades de tratamiento de agua. 
-    A continuación está el historial completo:
+    Has mantenido una conversación detallada con un cliente sobre sus necesidades de tratamiento de agua.
+    Debes crear un documento de propuesta profesional COMPLETO basado en esta conversación.
 
+## CONVERSACIÓN CON EL CLIENTE:
     {conversation_text}
 
-    Crea una propuesta profesional COMPLETA que incluya:
+## INSTRUCCIONES:
+    1. Crea una propuesta completa con la siguiente estructura (pero NO uses estos títulos exactos - redáctalos profesionalmente):
+    - Introducción a Hydrous Management Group
+    - Antecedentes del proyecto (con información específica del cliente)
+    - Objetivo del proyecto (basado en lo que el cliente mencionó)
+    - Parámetros de diseño (con valores específicos basados en sector/necesidades)
+    - Tecnología propuesta y alternativas
+    - Equipo recomendado con dimensiones y capacidades específicas
+    - Costos detallados (CAPEX y OPEX) con valores concretos
+    - Análisis de retorno de inversión con cifras específicas
+    - Resumen de preguntas y respuestas clave
 
-    1. Introducción a Hydrous Management Group
-    2. Antecedentes del proyecto (con datos específicos del cliente)
-    3. Objetivos del proyecto
-    4. Características del agua y parámetros de diseño
-    5. Solución propuesta con tecnologías recomendadas
-    6. Equipamiento sugerido con capacidades y dimensiones
-    7. Costos detallados (CAPEX y OPEX)
-    8. Análisis de retorno de inversión
-    9. Resumen de puntos clave
+    2. REGLAS IMPORTANTES:
+    - UTILIZA SOLO INFORMACIÓN REAL de la conversación
+    - Si falta algún dato específico, INVENTA valores realistas basados en el sector del cliente
+    - USA NÚMEROS CONCRETOS para todos los costos, dimensiones, parámetros, etc.
+    - NO uses placeholders como [Nombre] o [Valor] - todo debe ser texto final y completo
+    - Utiliza formato markdown para que el documento se vea profesional
+    - Incluye tablas en formato markdown para presentar datos técnicos y costos
 
-    IMPORTANTE:
-    - Usa únicamente la información proporcionada en la conversación
-    - Genera números específicos para costos, dimensiones, etc.
-    - Usa formato markdown para que se vea profesional
-    - NO uses placeholders tipo [DATOS] ni textos genéricos
-    - El documento debe ser COMPLETO y listo para entregar al cliente
-
-    Este documento se convertirá directamente en un PDF oficial para el cliente.
+    Este documento se convertirá directamente en PDF y se entregará al cliente como propuesta oficial.
     """
 
         # Llamar a la IA con temperatura moderada

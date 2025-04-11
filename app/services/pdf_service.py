@@ -160,138 +160,47 @@ class PDFService:
     def _format_proposal_text_to_html(self, proposal_text: str) -> str:
         """Mejora la conversión de texto/markdown a HTML, especialmente para tablas."""
 
-        import re
+        import markdown
 
         # Quitar marcador final
-        html_content = proposal_text.replace(
+        proposal_text = proposal_text.replace(
             "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
         ).strip()
 
-        # PASO 0: Sustituir placeholders específicos con "No especificado"
-        pattern = r"\[([\w\s\.\-\_\$]+)\]"
-        html_content = re.sub(pattern, "No especificado", html_content)
-
-        # PASO 1: Mejorar procesamiento de tablas - patrón más flexible
-        table_pattern = r"(\|[^\n]+\|\n)((?:\|[^\n]+\|\n)+)"
-
-        def convert_table(match):
-            header_row = match.group(1).strip()
-            body_rows = match.group(2).strip().split("\n")
-
-            # Crear tabla HTML
-            html_table = '<table class="proposal-table" border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%;">\n'
-
-            # Procesar encabezado
-            header_cells = [cell.strip() for cell in header_row.split("|")[1:-1]]
-            html_table += "  <thead>\n    <tr>\n"
-            for cell in header_cells:
-                html_table += f'      <th style="background-color: #f2f2f2; font-weight: bold;">{cell}</th>\n'
-            html_table += "    </tr>\n  </thead>\n  <tbody>\n"
-
-            # Procesar filas del cuerpo
-            for row in body_rows:
-                if not row.strip():
-                    continue
-                cells = [cell.strip() for cell in row.split("|")[1:-1]]
-                html_table += "    <tr>\n"
-                for cell in cells:
-                    # Reemplazar cualquier placeholder restante
-                    cell = re.sub(r"\[([\w\s\.\-\_\$]+)\]", "No especificado", cell)
-                    html_table += f"      <td>{cell}</td>\n"
-                html_table += "    </tr>\n"
-
-            html_table += "  </tbody>\n</table>"
-            return html_table
-
-        # Reemplazar tablas
-        html_content = re.sub(table_pattern, convert_table, html_content)
-
-        # PASO 2: Procesar encabezados
-        html_content = re.sub(
-            r"^# (.*?)$", r"<h1>\1</h1>", html_content, flags=re.MULTILINE
-        )
-        html_content = re.sub(
-            r"^## (.*?)$", r"<h2>\1</h2>", html_content, flags=re.MULTILINE
-        )
-        html_content = re.sub(
-            r"^### (.*?)$", r"<h3>\1</h3>", html_content, flags=re.MULTILINE
+        # Conversión directa de markdown a HTML usando la biblioteca markdown
+        html_content = markdown.markdown(
+            proposal_text, extensions=["tables", "fenced_code", "nl2br"]
         )
 
-        # PASO 3: Procesar formato básico
-        html_content = re.sub(
-            r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html_content
-        )  # Negritas
-        html_content = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html_content)  # Itálicas
-        html_content = re.sub(r"`(.*?)`", r"<code>\1</code>", html_content)  # Código
+        # Añadir estructura HTML y estilos básicos
+        complete_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Propuesta Hydrous</title>
+            <style>
+                @page {{ size: A4; margin: 2cm; }}
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                h1 {{ font-size: 20pt; color: #0056b3; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }}
+                h2 {{ font-size: 16pt; color: #0056b3; border-bottom: 1px solid #ccc; }}
+                h3 {{ font-size: 14pt; color: #0056b3; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; }}
+                th {{ background-color: #f2f2f2; }}
+                .footer {{ position: fixed; bottom: 1cm; left: 2cm; right: 2cm; text-align: center; font-size: 9pt; color: #777; }}
+            </style>
+        </head>
+        <body>
+            {html_content}
+            <div class="footer">
+                Documento generado por Hydrous Management Group | Página <pdf:pagenumber> de <pdf:pagecount>
+            </div>
+        </body>
+        </html>
+        """
 
-        # PASO 4: Procesar listas
-        lines = html_content.split("\n")
-        in_ul = False
-        processed_lines = []
-
-        for line in lines:
-            stripped_line = line.strip()
-
-            # Si ya procesamos como tabla o encabezado, añadir directamente
-            if stripped_line.startswith("<table") or stripped_line.startswith("<h"):
-                if in_ul:
-                    processed_lines.append("</ul>")
-                    in_ul = False
-                processed_lines.append(line)
-                continue
-
-            # Detectar elementos de lista
-            is_li = stripped_line.startswith("* ") or stripped_line.startswith("- ")
-
-            if is_li and not in_ul:
-                processed_lines.append("<ul>")
-                in_ul = True
-            elif not is_li and in_ul:
-                processed_lines.append("</ul>")
-                in_ul = False
-
-            if is_li:
-                item_content = re.sub(r"^[\*\-]\s+", "", stripped_line)
-                processed_lines.append(f"<li>{item_content}</li>")
-            elif stripped_line and not stripped_line.startswith("<"):
-                processed_lines.append(f"<p>{line}</p>")
-            elif stripped_line:
-                processed_lines.append(line)
-
-        if in_ul:
-            processed_lines.append("</ul>")
-
-        html_content = "\n".join(processed_lines)
-
-        # PASO 5: Envolver en plantilla con estilos mejorados
-        try:
-            template = self.jinja_env.get_template("proposal_base.html")
-            return template.render(content=html_content)
-        except Exception as e:
-            logger.error(f"Error renderizando plantilla HTML: {e}", exc_info=True)
-            # Fallback a HTML básico si falla
-            return f"""
-            <html>
-            <head>
-                <title>Propuesta Hydrous</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
-                    table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
-                    th, td {{ padding: 8px; border: 1px solid #ddd; }}
-                    th {{ background-color: #f2f2f2; }}
-                    h1, h2, h3 {{ color: #0056b3; }}
-                    h1 {{ border-bottom: 2px solid #0056b3; padding-bottom: 5px; }}
-                    .footer {{ text-align: center; font-size: 0.8em; color: #777; margin-top: 20px; }}
-                </style>
-            </head>
-            <body>
-                {html_content}
-                <div class="footer">
-                    Documento generado por Hydrous AI. Las estimaciones son preliminares.
-                </div>
-            </body>
-            </html>
-            """
+        return complete_html
 
     async def generate_pdf_from_text(
         self, conversation_id: str, proposal_text: str
