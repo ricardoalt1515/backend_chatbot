@@ -15,7 +15,7 @@ from app.models.message import Message, MessageCreate
 # Servicios
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service  # IA para conversación
-from app.services.new_proposal_service import new_proposal_service
+from app.services.new_proposal_service import NewProposalService
 from app.services.pdf_service import pdf_service  # Para generar PDF
 from app.services.proposal_service import (
     proposal_service,
