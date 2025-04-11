@@ -383,7 +383,7 @@ class ProposalService:
     async def generate_proposal_text(self, conversation: Conversation) -> str:
         """Enfoque simplificado: la IA genera todo el contenido de la propuesta."""
 
-        # Extraer la conversación completa
+        # Extraer la conversación
         conversation_text = ""
         if conversation.messages:
             for msg in conversation.messages:
@@ -392,47 +392,54 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Prompt directo y sencillo
+        # Obtener datos básicos para contexto
+        metadata = conversation.metadata or {}
+        sector = metadata.get("selected_sector", "")
+        subsector = metadata.get("selected_subsector", "")
+
+        # Prompt completamente libre
         prompt = f"""
-# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
+# CREAR UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
 
-    Has mantenido una conversación con un cliente sobre sus necesidades de tratamiento de agua. 
-    A continuación está el historial completo:
+    Has mantenido una conversación detallada con un cliente sobre sus necesidades de agua. Ahora debes crear una propuesta completa y 
+    profesional SIN UTILIZAR NINGUNA PLANTILLA PREEXISTENTE.
 
+## CONTEXTO DE LA CONVERSACIÓN
     {conversation_text}
 
-    Crea una propuesta profesional COMPLETA que incluya:
+## INSTRUCCIONES CLARAS
 
-    1. Introducción a Hydrous Management Group
-    2. Antecedentes del proyecto (con datos específicos del cliente)
-    3. Objetivos del proyecto
-    4. Características del agua y parámetros de diseño
-    5. Solución propuesta con tecnologías recomendadas
-    6. Equipamiento sugerido con capacidades y dimensiones
-    7. Costos detallados (CAPEX y OPEX)
-    8. Análisis de retorno de inversión
-    9. Resumen de puntos clave
+    1. Crea una propuesta COMPLETAMENTE NUEVA con estas secciones:
+    - Portada y disclaimer profesional
+    - Introducción a Hydrous Management Group
+    - Análisis detallado del proyecto y necesidades del cliente
+    - Descripción técnica de la solución propuesta
+    - Equipamiento recomendado con especificaciones técnicas concretas
+    - Presupuesto detallado (CAPEX y OPEX)
+    - Análisis de ROI y beneficios
+    - Conclusiones y próximos pasos
 
-    IMPORTANTE:
-    - Usa únicamente la información proporcionada en la conversación
-    - Genera números específicos para costos, dimensiones, etc.
-    - Usa formato markdown para que se vea profesional
-    - NO uses placeholders tipo [DATOS] ni textos genéricos
-    - El documento debe ser COMPLETO y listo para entregar al cliente
+    2. OBLIGATORIO:
+    - Utiliza TODA la información específica del cliente de la conversación
+    - Para cualquier información faltante, INVENTA datos específicos y realistas
+    - Incluye VALORES NUMÉRICOS CONCRETOS para todos los costos, dimensiones, etc.
+    - NO utilices ningún placeholder o texto genérico como "[Nombre]" o "[A definir]"
+    - Utiliza tablas en formato markdown para presentar datos técnicos y costos
+    - Crea contenido totalmente nuevo, no copies/pegues textos de plantillas
 
-    Este documento se convertirá directamente en un PDF oficial para el cliente.
+    Este documento se convertirá en un PDF oficial para el cliente. Debe ser profesional, detallado y libre de placeholders.
     """
 
-        # Llamar a la IA con temperatura moderada
-        from app.services.ai_service import ai_service
-
+        # Aumentar tokens y temperatura ligeramente para fomentar creatividad
         try:
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=6000, temperature=0.3
+                messages,
+                max_tokens=7000,  # Aumentado
+                temperature=0.4,  # Ligeramente más alto para creatividad
             )
 
-            # Añadir marcador para procesamiento posterior
+            # Añadir marcador
             proposal_text = (
                 proposal_text.strip()
                 + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
