@@ -263,6 +263,178 @@ class PDFService:
             logger.error(f"Falló la generación de PDF para {conversation_id}")
             return None
 
+    async def generate_direct_pdf(
+        self, conversation_id: str, proposal_text: str
+    ) -> Optional[str]:
+        """
+        Genera un PDF directamente usando ReportLab, sin conversión a HTML.
+        Esta es una alternativa directa cuando el proceso normal falla.
+        """
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import (
+                SimpleDocTemplate,
+                Paragraph,
+                Spacer,
+                Table,
+                TableStyle,
+            )
+            from reportlab.lib.units import cm
+            import re
+
+            # Eliminar marcador y cualquier texto previo a la propuesta
+            proposal_text = proposal_text.replace(
+                "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
+            )
+            if "Con esto, hemos completado todas las preguntas" in proposal_text:
+                proposal_text = proposal_text.split(
+                    "Con esto, hemos completado todas las preguntas"
+                )[1]
+
+            # Guardar texto limpio para depuración
+            debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(
+                os.path.join(debug_dir, f"direct_pdf_text_{conversation_id}.txt"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(proposal_text)
+
+            # Crear PDF usando ReportLab
+            pdf_filename = f"propuesta_{conversation_id}.pdf"
+            output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+
+            # Configurar documento
+            doc = SimpleDocTemplate(
+                output_path,
+                pagesize=A4,
+                rightMargin=2 * cm,
+                leftMargin=2 * cm,
+                topMargin=2 * cm,
+                bottomMargin=2 * cm,
+            )
+
+            # Estilos
+            styles = getSampleStyleSheet()
+            styles.add(
+                ParagraphStyle(
+                    name="Title",
+                    parent=styles["Heading1"],
+                    fontSize=18,
+                    spaceAfter=12,
+                    textColor=colors.HexColor("#0056b3"),
+                )
+            )
+            styles.add(
+                ParagraphStyle(
+                    name="Heading2",
+                    parent=styles["Heading2"],
+                    fontSize=14,
+                    spaceAfter=8,
+                    textColor=colors.HexColor("#0056b3"),
+                )
+            )
+            styles.add(
+                ParagraphStyle(
+                    name="Normal", parent=styles["Normal"], fontSize=10, spaceAfter=6
+                )
+            )
+
+            # Procesar texto en elementos para PDF
+            elements = []
+
+            # Separar por líneas y procesar
+            lines = proposal_text.split("\n")
+            in_table = False
+            table_data = []
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Verificar si es un encabezado
+                if line.startswith("# "):
+                    elements.append(Paragraph(line[2:], styles["Title"]))
+                elif line.startswith("## "):
+                    elements.append(Paragraph(line[3:], styles["Heading2"]))
+                elif line.startswith("### "):
+                    elements.append(Paragraph(line[4:], styles["Heading2"]))
+                # Verificar si es una línea de tabla
+                elif line.startswith("|") and line.endswith("|"):
+                    if not in_table:
+                        in_table = True
+                        table_data = []
+                    cells = [cell.strip() for cell in line.split("|")[1:-1]]
+                    table_data.append(cells)
+                # Si termina la tabla
+                elif in_table and not line.startswith("|"):
+                    if table_data:
+                        # Crear tabla
+                        table = Table(table_data)
+                        table.setStyle(
+                            TableStyle(
+                                [
+                                    (
+                                        "BACKGROUND",
+                                        (0, 0),
+                                        (-1, 0),
+                                        colors.HexColor("#f2f2f2"),
+                                    ),
+                                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+                                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                                    ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+                                    ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                    ("PADDING", (0, 0), (-1, -1), 6),
+                                ]
+                            )
+                        )
+                        elements.append(table)
+                        elements.append(Spacer(1, 0.5 * cm))
+                    in_table = False
+                    # Procesar esta línea normalmente
+                    elements.append(Paragraph(line, styles["Normal"]))
+                # Si es texto normal y no estamos en una tabla
+                elif not in_table:
+                    elements.append(Paragraph(line, styles["Normal"]))
+
+            # Si terminamos en una tabla
+            if in_table and table_data:
+                table = Table(table_data)
+                table.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+                            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                            ("FONTSIZE", (0, 0), (-1, 0), 10),
+                            ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+                            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                            ("PADDING", (0, 0), (-1, -1), 6),
+                        ]
+                    )
+                )
+                elements.append(table)
+
+            # Construir PDF
+            doc.build(elements)
+            logger.info(f"PDF generado directamente con ReportLab: {output_path}")
+
+            return output_path
+        except Exception as e:
+            logger.error(f"Error generando PDF directo: {e}", exc_info=True)
+            return None
+
 
 # Instancia global
 pdf_service = PDFService()

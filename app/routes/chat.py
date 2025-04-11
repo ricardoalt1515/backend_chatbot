@@ -249,15 +249,25 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             )
 
             if is_final_answer:
+                # Generar propuesta
                 proposal_text = await proposal_service.generate_proposal_text(
                     conversation
                 )
                 conversation.metadata["proposal_text"] = proposal_text
 
                 # Generar PDF
-                pdf_path = await pdf_service.generate_pdf_from_text(
+                pdf_path = await pdf_service.generate_direct_pdf(
                     conversation_id, proposal_text
                 )
+
+                if not pdf_path:
+                    # Fallback al metodo antiguo si el nuevo falla
+                    pdf_path = await pdf_service.generate_pdf_from_text(
+                        conversation_id, proposal_text
+                    )
+
+                conversation.metadata["pdf_path"] = pdf_path
+                conversation.metadata["has_proposal"] = True
                 # --- Cuestionario Terminado: Generar Propuesta y PDF (Backend) ---
                 logger.info(
                     f"Última respuesta ({last_question_id}) recibida. Generando Propuesta+PDF (Backend)."
