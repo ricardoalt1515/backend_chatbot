@@ -353,23 +353,82 @@ Para más información, contacte a Hydrous Management Group.
         if not data:
             return Spacer(1, 0.2 * cm)
 
-        table = Table(data, repeatRows=1)
+        # Ajustar ancho de columnas basado en contenido
+        col_widths = self._calculate_column_widths(data)
+
+        table = Table(data, repeatRows=1, colWidths=col_widths)
+
+        # Estilo mejorado con gradientes y mejor formato
         table_style = TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0056b3")),
+                # Encabezados con gradiente azul
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0056b3")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 11),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                ("TOPPADDING", (0, 0), (-1, 0), 8),
+                # Filas con colores alternados
                 ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+                ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#f7f7f7")),
+                ("BACKGROUND", (0, 4), (-1, 4), colors.HexColor("#f7f7f7")),
+                ("BACKGROUND", (0, 6), (-1, 6), colors.HexColor("#f7f7f7")),
+                # Bordes y alineación
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 6),
+                ("PADDING", (0, 0), (-1, -1), 8),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                # Valores numéricos alineados a derecha
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
             ]
         )
         table.setStyle(table_style)
         return table
+
+    def _calculate_column_widths(self, data):
+        """Calcula anchos optimos de columna basado en contenido"""
+        if not data or len(data) == 0:
+            return None
+
+        # Ancho disponible (pagina A4 menos margenes)
+        available_width = A4[0] - 4 * cm
+
+        # Obtener número de columnas
+        num_cols = len(data[0])
+
+        # Determinar el ancho máximo de texto en cada columna
+        max_widths = [0] * num_cols
+        for row in data:
+            for i, cell in enumerate(row):
+                if i < num_cols:  # Protección contra filas irregulares
+                    cell_text = str(cell)
+                    # Estimar ancho aproximado basado en longitud del texto
+                    text_width = (
+                        len(cell_text) * 7
+                    )  # ~7 puntos por carácter como estimación
+                    max_widths[i] = max(max_widths[i], text_width)
+
+        # Normalizar anchos de columna para que sumen el ancho disponible
+        total_content_width = sum(max_widths)
+        if total_content_width == 0:
+            # Si no hay contenido, columnas iguales
+            return [available_width / num_cols] * num_cols
+
+        # Calcular anchos proporcionales con mínimos y máximos
+        col_widths = []
+        for width in max_widths:
+            # Al menos 100pt, máximo 60% del ancho disponible
+            norm_width = max(
+                100,
+                min(
+                    width * available_width / total_content_width, available_width * 0.6
+                ),
+            )
+            col_widths.append(norm_width)
+
+        # Ajustar para que sumen el ancho disponible
+        adjustment_factor = available_width / sum(col_widths)
+        return [width * adjustment_factor for width in col_widths]
 
     def _add_page_number(self, canvas, doc):
         """Añade número de página al pie de página."""
