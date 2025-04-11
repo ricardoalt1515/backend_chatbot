@@ -272,14 +272,11 @@ class PDFService:
 
             # Estilos
             styles = getSampleStyleSheet()
-            styles.add(
-                ParagraphStyle(
-                    name="Heading1",
-                    parent=styles["Heading1"],
-                    fontSize=16,
-                    textColor=colors.blue,
-                )
-            )
+
+            # CORREGIDO: Modificar estilos existentes en lugar de añadirlos
+            title_style = styles["Heading1"]
+            title_style.fontSize = 16
+            title_style.textColor = colors.blue
 
             # Procesar el texto línea por línea
             elements = []
@@ -289,7 +286,7 @@ class PDFService:
                     continue
 
                 if line.startswith("# "):
-                    elements.append(Paragraph(line[2:], styles["Heading1"]))
+                    elements.append(Paragraph(line[2:], title_style))
                 elif line.startswith("## "):
                     elements.append(Paragraph(line[3:], styles["Heading2"]))
                 elif line.startswith("- "):
