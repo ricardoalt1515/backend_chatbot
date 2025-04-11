@@ -381,9 +381,9 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """Genera propuesta completa dejando que la IA gestione libremente el contenido."""
+        """Enfoque simplificado: la IA genera todo el contenido de la propuesta."""
 
-        # Extraer contexto de la conversación
+        # Extraer la conversación completa
         conversation_text = ""
         if conversation.messages:
             for msg in conversation.messages:
@@ -392,51 +392,44 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        metadata = conversation.metadata or {}
-        sector = metadata.get("selected_sector", "No especificado")
-        subsector = metadata.get("selected_subsector", "No especificado")
-
-        # Prompt simple que permite creatividad pero con estructura base
+        # Prompt directo y sencillo
         prompt = f"""
-# INSTRUCCIÓN: CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
+# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA
 
-    Has tenido una conversación con un cliente del sector {sector}, subsector {subsector}, sobre sus necesidades de tratamiento de agua:
+    Has mantenido una conversación con un cliente sobre sus necesidades de tratamiento de agua. 
+    A continuación está el historial completo:
 
-    ---INICIO DE LA CONVERSACIÓN---
     {conversation_text}
-    ---FIN DE LA CONVERSACIÓN---
 
-    Crea una propuesta técnica y económica COMPLETA para este cliente.
+    Crea una propuesta profesional COMPLETA que incluya:
 
-## REQUISITOS:
-    1. La propuesta debe ser PROFESIONAL y estar lista para entregar como PDF oficial.
-    2. Usa TODA la información específica del cliente que obtuviste en la conversación.
-    3. Proporciona valores concretos para todos los costos, dimensiones y parámetros técnicos.
-    4. Incluye estas secciones:
-    - Introducción a Hydrous Management Group
-    - Antecedentes del Proyecto (con datos del cliente)
-    - Objetivo del Proyecto
-    - Diseño del Proceso de Tratamiento
-    - Equipos Sugeridos y Dimensionamiento
-    - Costos Estimados (CAPEX y OPEX con cifras específicas)
-    - Análisis del Retorno de Inversión
-    - Conclusiones
+    1. Introducción a Hydrous Management Group
+    2. Antecedentes del proyecto (con datos específicos del cliente)
+    3. Objetivos del proyecto
+    4. Características del agua y parámetros de diseño
+    5. Solución propuesta con tecnologías recomendadas
+    6. Equipamiento sugerido con capacidades y dimensiones
+    7. Costos detallados (CAPEX y OPEX)
+    8. Análisis de retorno de inversión
+    9. Resumen de puntos clave
 
-    5. Usa este formato para tablas:
-    | Columna 1 | Columna 2 | Columna 3 |
-    |-----------|-----------|-----------|
-    | Valor 1   | Valor 2   | Valor 3   |
+    IMPORTANTE:
+    - Usa únicamente la información proporcionada en la conversación
+    - Genera números específicos para costos, dimensiones, etc.
+    - Usa formato markdown para que se vea profesional
+    - NO uses placeholders tipo [DATOS] ni textos genéricos
+    - El documento debe ser COMPLETO y listo para entregar al cliente
 
-    6. NO USES PLACEHOLDERS ni campos vacíos - proporciona información completa y específica.
+    Este documento se convertirá directamente en un PDF oficial para el cliente.
     """
 
-        # Llamar a la IA con espacio suficiente para respuestas detalladas
+        # Llamar a la IA con temperatura moderada
         from app.services.ai_service import ai_service
 
         try:
             messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=7000, temperature=0.4
+                messages, max_tokens=6000, temperature=0.3
             )
 
             # Añadir marcador para procesamiento posterior

@@ -158,19 +158,23 @@ class PDFService:
             return False
 
     def _format_proposal_text_to_html(self, proposal_text: str) -> str:
-        """Conversión simple de markdown a HTML usando la biblioteca markdown."""
+        """Mejora la conversión de texto/markdown a HTML, especialmente para tablas."""
+
+        # Usar la biblioteca markdown para hacer la conversión básica
         import markdown
 
-        # Quitar marcador final y limpiar
-        clean_text = proposal_text.replace(
+        # Eliminar marcador final
+        proposal_text = proposal_text.replace(
             "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
         ).strip()
 
-        # Convertir markdown a HTML usando la biblioteca
-        html_body = markdown.markdown(clean_text, extensions=["tables", "nl2br"])
+        # Conversión básica de markdown a HTML
+        html_content = markdown.markdown(
+            proposal_text, extensions=["tables", "fenced_code"]
+        )
 
-        # Añadir estilos básicos
-        html_content = f"""
+        # Añadir estilos y estructura HTML
+        complete_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
@@ -179,27 +183,24 @@ class PDFService:
             <style>
                 @page {{ size: A4; margin: 2cm; }}
                 body {{ font-family: Arial, sans-serif; line-height: 1.5; color: #333; }}
-                h1, h2, h3 {{ color: #0056b3; margin-top: 1em; margin-bottom: 0.5em; }}
-                h1 {{ font-size: 18pt; border-bottom: 2px solid #0056b3; padding-bottom: 5px; }}
-                h2 {{ font-size: 16pt; border-bottom: 1px solid #ccc; }}
-                h3 {{ font-size: 14pt; }}
-                p {{ margin: 0.5em 0; }}
-                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; page-break-inside: avoid; }}
+                h1, h2, h3 {{ color: #0056b3; }}
+                h1 {{ font-size: 18pt; border-bottom: 2px solid #0056b3; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
                 th, td {{ padding: 8px; border: 1px solid #ddd; }}
-                th {{ background-color: #f2f2f2; font-weight: bold; text-align: left; }}
-                .footer {{ position: fixed; bottom: 1cm; left: 2cm; right: 2cm; text-align: center; font-size: 9pt; color: #777; }}
+                th {{ background-color: #f2f2f2; }}
+                .footer {{ position: fixed; bottom: 1cm; text-align: center; font-size: 9pt; color: #777; }}
             </style>
         </head>
         <body>
-            {html_body}
+            {html_content}
             <div class="footer">
-                Propuesta generada por Hydrous Management Group | info@hydrous.com
+                Documento generado por Hydrous Management Group
             </div>
         </body>
         </html>
         """
 
-        return html_content
+        return complete_html
 
     async def generate_pdf_from_text(
         self, conversation_id: str, proposal_text: str
