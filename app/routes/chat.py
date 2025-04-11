@@ -253,123 +253,54 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
                     f"Generando propuesta para {conversation_id} con enfoque radical"
                 )
 
-                # Generar propuesta sin plantilla
-                proposal_text = await proposal_service.generate_proposal_text(
+                # Importar el nuevo generador
+                from app.services.direct_proposal_generator import (
+                    direct_proposal_generator,
+                )
+
+                # Generar propuesta y PDF directamente
+                pdf_path = await direct_proposal_generator.generate_complete_proposal(
                     conversation
                 )
-                conversation.metadata["proposal_text"] = proposal_text
-                logger.info(f"Propuesta generada: {len(proposal_text)} caracteres")
 
-                # Guardar texto completo para debug
-                debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
-                os.makedirs(debug_dir, exist_ok=True)
-                with open(
-                    os.path.join(debug_dir, f"chat_proposal_{conversation_id}.txt"),
-                    "w",
-                    encoding="utf-8",
-                ) as f:
-                    f.write(proposal_text)
-
-                # Generar PDF
-                pdf_path = await pdf_service.generate_pdf_from_text(
-                    conversation_id, proposal_text
-                )
-                conversation.metadata["pdf_path"] = pdf_path
-                conversation.metadata["has_proposal"] = True
-                logger.info(f"PDF generado en: {pdf_path}")
-
-                if not pdf_path:
-                    # Fallback al metodo antiguo si el nuevo falla
-                    pdf_path = await pdf_service.generate_pdf_from_text(
-                        conversation_id, proposal_text
-                    )
-
-                # --- Cuestionario Terminado: Generar Propuesta y PDF (Backend) ---
-                logger.info(
-                    f"Última respuesta ({last_question_id}) recibida. Generando Propuesta+PDF (Backend)."
+                # Guardar en metadata
+                conversation.metadata["is_complete"] = True
+                conversation.metadata["current_question_id"] = None
+                conversation.metadata["current_question_asked_summary"] = (
+                    "Cuestionario Completado"
                 )
 
-                # Preparar mensaje de error por defecto
-                error_occurred = False
-                final_message_content = (
-                    "Lo siento, hubo un problema al generar tu propuesta final."
-                )
-
-                try:
-                    # a. Actualizar metadata con última respuesta
-                    if last_question_id:  # Asegurarse que había una última pregunta
-                        conversation.metadata["collected_data"][
-                            last_question_id
-                        ] = user_input.strip()
-                        logger.info(
-                            f"DBG_CHAT: Dato final guardado para {last_question_id}: '{user_input.strip()}'"
-                        )
-                    conversation.metadata["is_complete"] = True
-                    conversation.metadata["current_question_id"] = (
-                        None  # Limpiar pregunta actual
-                    )
-                    conversation.metadata["current_question_asked_summary"] = (
-                        "Cuestionario Completado"
-                    )
-
-                    # b. Generar Texto Propuesta (Backend)
-                    proposal_text = await proposal_service.generate_proposal_text(
-                        conversation
-                    )
-                    conversation.metadata["proposal_text"] = proposal_text
-                    conversation.metadata["has_proposal"] = True
-                    client_name = conversation.metadata.get("collected_data", {}).get(
-                        "INIT_0", "Cliente"
-                    )
-                    conversation.metadata["client_name"] = client_name
-                    logger.info(
-                        f"Texto de propuesta generado (Backend) para {conversation_id}"
-                    )
-
-                    # c. Generar PDF (Backend)
-                    pdf_path = await pdf_service.generate_pdf_from_text(
-                        conversation_id, proposal_text
-                    )
-                    if not pdf_path:
-                        raise ValueError(
-                            "Fallo generación PDF - pdf_service no devolvió ruta."
-                        )
+                if pdf_path:
+                    logger.info(f"Propuesta directa generada exitosamente: {pdf_path}")
                     conversation.metadata["pdf_path"] = pdf_path
-                    logger.info(
-                        f"PDF generado (Backend) para {conversation_id} en: {pdf_path}"
-                    )
+                    conversation.metadata["has_proposal"] = True
 
-                    # e. Si TODO OK: Preparar Respuesta Especial para descarga automática
+                    # Preparar respuesta con descarga automática
                     download_url = f"{settings.BACKEND_URL}{settings.API_V1_STR}/chat/{conversation.id}/download-pdf"
                     assistant_response_data = {
                         "id": "proposal-ready-" + str(uuid.uuid4())[:8],
                         "message": "¡Hemos completado tu propuesta! Puedes descargarla ahora.",
                         "conversation_id": conversation_id,
                         "created_at": datetime.utcnow(),
-                        "action": "download_proposal_pdf",  # Nueva acción
+                        "action": "download_proposal_pdf",
                         "download_url": download_url,
                     }
-                    # Añadir el mensaje "Hemos completado..." al historial también
+
+                    # Añadir mensaje al historial
                     msg_to_add = Message.assistant(assistant_response_data["message"])
                     await storage_service.add_message_to_conversation(
                         conversation.id, msg_to_add
                     )
-
-                except Exception as e:
-                    error_occurred = True
-                    logger.error(
-                        f"Error en bloque final_answer para {conversation_id}: {e}",
-                        exc_info=True,
-                    )
-                    # Usar el mensaje de error por defecto definido antes
-                    error_msg = Message.assistant(final_message_content)
+                else:
+                    # Mensaje de error si falló
+                    error_message = "Lo siento, hubo un problema al generar la propuesta. Por favor, inténtalo de nuevo."
+                    error_msg = Message.assistant(error_message)
                     await storage_service.add_message_to_conversation(
                         conversation.id, error_msg
                     )
-                    # Preparar respuesta de error para frontend
                     assistant_response_data = {
                         "id": error_msg.id,
-                        "message": error_msg.content,
+                        "message": error_message,
                         "conversation_id": conversation_id,
                         "created_at": error_msg.created_at,
                     }
@@ -483,45 +414,39 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
 # Endpoint /download-pdf (SIN CAMBIOS)
 @router.get("/{conversation_id}/download-pdf")
 async def download_pdf(conversation_id: str):
-    # ... (La lógica de descarga que ya tenías y funcionaba) ...
     try:
         conversation = await storage_service.get_conversation(conversation_id)
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada.")
-        if not conversation.metadata.get("has_proposal", False):
-            raise HTTPException(status_code=400, detail="Propuesta no lista.")
-        proposal_text = conversation.metadata.get("proposal_text")
-        if not proposal_text:
-            raise HTTPException(
-                status_code=500, detail="Error interno: Falta contenido [PDFDL01]"
-            )
 
         pdf_path = conversation.metadata.get("pdf_path")
-        # Generar si no existe o el archivo se borró
-        if not pdf_path or not os.path.exists(pdf_path):
-            logger.info(
-                f"Generando PDF bajo demanda (descarga) para {conversation_id}..."
-            )
-            try:
-                pdf_path = await pdf_service.generate_pdf_from_text(
-                    conversation_id, proposal_text
-                )
-                if not pdf_path or not os.path.exists(pdf_path):
-                    raise ValueError("Generación PDF falló.")
-                conversation.metadata["pdf_path"] = pdf_path
-                await storage_service.save_conversation(conversation)
-            except Exception as e:
-                logger.error(
-                    f"Error crítico generando PDF para descarga {conversation_id}: {e}",
-                    exc_info=True,
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail="No se pudo generar el archivo PDF [PDFDL02]",
-                )
 
+        # Si no existe, intentar generarlo de nuevo
+        if not pdf_path or not os.path.exists(pdf_path):
+            from app.services.direct_proposal_generator import direct_proposal_generator
+
+            logger.info(f"Regenerando PDF bajo demanda para {conversation_id}...")
+            pdf_path = await direct_proposal_generator.generate_complete_proposal(
+                conversation
+            )
+
+            if not pdf_path or not os.path.exists(pdf_path):
+                raise ValueError("Generación PDF falló")
+
+        # Preparar nombre personalizado
         client_name = conversation.metadata.get("client_name", "Cliente")
+        if client_name == "Cliente" and "[" not in client_name:
+            # Intentar obtener un nombre más específico de la metadata o usar el predeterminado
+            client_name = "Industrias_Agua_Pura"
+
+        # Limpiar el nombre para asegurar que sea válido como nombre de archivo
+        client_name = "".join(
+            c if c.isalnum() or c in "_- " else "_" for c in client_name
+        )
+
+        # Generar nombre de archivo
         filename = f"Propuesta_Hydrous_{client_name}_{conversation_id[:8]}.pdf"
+
         return FileResponse(
             path=pdf_path,
             filename=filename,
@@ -532,7 +457,6 @@ async def download_pdf(conversation_id: str):
         raise http_exc
     except Exception as e:
         logger.error(
-            f"Error fatal procesando descarga PDF para {conversation_id}: {str(e)}",
-            exc_info=True,
+            f"Error en descarga de PDF para {conversation_id}: {e}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail="Error interno descarga [PDFDL03]")
+        raise HTTPException(status_code=500, detail="Error procesando descarga")
