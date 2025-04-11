@@ -15,6 +15,7 @@ from app.models.message import Message, MessageCreate
 # Servicios
 from app.services.storage_service import storage_service
 from app.services.ai_service import ai_service  # IA para conversación
+from app.services.new_proposal_service import NewProposalService
 from app.services.pdf_service import pdf_service  # Para generar PDF
 from app.services.proposal_service import (
     proposal_service,
@@ -23,11 +24,15 @@ from app.services.questionnaire_service import (
     questionnaire_service,
 )  # Para obtener IDs/detalles preguntas
 from app.config import settings
+from services import new_proposal_service
 
 router = APIRouter()
 logger = logging.getLogger("hydrous")
 
 # --- Funciones Auxiliares (Movidas aquí o importadas si son complejas) ---
+
+# Crear instancia
+new_proposal_service = NewProposalService()
 
 
 def _get_full_questionnaire_path(metadata: Dict[str, Any]) -> List[str]:
@@ -249,16 +254,44 @@ async def send_message(data: MessageCreate, background_tasks: BackgroundTasks):
             )
 
             if is_final_answer:
-                # Generar propuesta
-                proposal_text = await proposal_service.generate_proposal_text(
-                    conversation
-                )
-                conversation.metadata["proposal_text"] = proposal_text
+                try:
+                    # Extraer texto de conversación
+                    conversation_text = "\n".join(
+                        [f"{msg.role}: {msg.content}" for msg in conversation.messages]
+                    )
 
-                # Generar PDF
-                pdf_path = await pdf_service.generate_direct_pdf(
-                    conversation_id, proposal_text
-                )
+                    # Generar PDF directamente con el nuevo servicio
+                    pdf_path = await new_proposal_service.generate_simple_proposal(
+                        conversation_id, conversation_text
+                    )
+
+                    # Actualizar metadata
+                    if pdf_path:
+                        conversation.metadata["pdf_path"] = pdf_path
+                        conversation.metadata["has_proposal"] = True
+                    else:
+                        # Fallback al método original solo si el nuevo falla
+                        proposal_text = await proposal_service.generate_proposal_text(
+                            conversation
+                        )
+                        conversation.metadata["proposal_text"] = proposal_text
+                        pdf_path = await pdf_service.generate_pdf_from_text(
+                            conversation_id, proposal_text
+                        )
+                        conversation.metadata["pdf_path"] = pdf_path
+                        conversation.metadata["has_proposal"] = True
+                except Exception as e:
+                    logger.error(f"Error en nueva generación de propuesta: {e}")
+                    # Fallback a método original
+                    proposal_text = await proposal_service.generate_proposal_text(
+                        conversation
+                    )
+                    conversation.metadata["proposal_text"] = proposal_text
+                    pdf_path = await pdf_service.generate_pdf_from_text(
+                        conversation_id, proposal_text
+                    )
+                    conversation.metadata["pdf_path"] = pdf_path
+                    conversation.metadata["has_proposal"] = True
 
                 if not pdf_path:
                     # Fallback al metodo antiguo si el nuevo falla
