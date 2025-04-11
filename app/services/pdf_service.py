@@ -229,38 +229,80 @@ class PDFService:
         self, conversation_id: str, proposal_text: str
     ) -> Optional[str]:
         """Genera un PDF a partir del texto de la propuesta ya generado."""
-        if not proposal_text:
-            logger.error(
-                f"Intento de generar PDF sin texto de propuesta para {conversation_id}"
-            )
-            return None
-
-        # Convertir el texto (posiblemente markdown) a HTML
         try:
-            html_content = self._format_proposal_text_to_html(proposal_text)
-        except Exception as fmt_err:
-            logger.error(
-                f"Error formateando propuesta a HTML para {conversation_id}: {fmt_err}",
-                exc_info=True,
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib import colors
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+            # Eliminar marcador y texto previo a la propuesta
+            proposal_text = proposal_text.replace(
+                "[PROPOSAL_COMPLETE: Propuesta lista para PDF]", ""
+            ).strip()
+            if "hemos completado todas las preguntas" in proposal_text.lower():
+                parts = proposal_text.split(
+                    "propuesta completa basada en la información"
+                )
+                if len(parts) > 1:
+                    proposal_text = parts[1].strip()
+
+            # Guardar texto crudo para debug
+            debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(
+                os.path.join(debug_dir, f"final_text_{conversation_id}.txt"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(proposal_text)
+
+            # Crear PDF directo
+            pdf_filename = f"propuesta_{conversation_id}.pdf"
+            output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+
+            # Configuración básica
+            doc = SimpleDocTemplate(
+                output_path,
+                pagesize=A4,
+                rightMargin=72,
+                leftMargin=72,
+                topMargin=72,
+                bottomMargin=72,
             )
-            return None  # No se puede continuar si falla el formateo
 
-        # Definir ruta de salida única para evitar colisiones si hay concurrencia
-        # Podríamos usar uuid o timestamp
-        import uuid
+            # Estilos
+            styles = getSampleStyleSheet()
+            styles.add(
+                ParagraphStyle(
+                    name="Heading1",
+                    parent=styles["Heading1"],
+                    fontSize=16,
+                    textColor=colors.blue,
+                )
+            )
 
-        unique_id = str(uuid.uuid4())[:8]
-        pdf_filename = f"propuesta_{conversation_id}_{unique_id}.pdf"
-        output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
+            # Procesar el texto línea por línea
+            elements = []
+            for line in proposal_text.split("\n"):
+                if not line.strip():
+                    elements.append(Spacer(1, 12))
+                    continue
 
-        # Convertir HTML a PDF
-        success = self._html_to_pdf(html_content, output_path)
+                if line.startswith("# "):
+                    elements.append(Paragraph(line[2:], styles["Heading1"]))
+                elif line.startswith("## "):
+                    elements.append(Paragraph(line[3:], styles["Heading2"]))
+                elif line.startswith("- "):
+                    elements.append(Paragraph("• " + line[2:], styles["BodyText"]))
+                else:
+                    elements.append(Paragraph(line, styles["BodyText"]))
 
-        if success:
-            # Opcional: Limpiar PDFs antiguos para esta conversation_id?
+            # Construir PDF
+            doc.build(elements)
+
             return output_path
-        else:
-            logger.error(f"Falló la generación de PDF para {conversation_id}")
+        except Exception as e:
+            logger.error(f"Error generando PDF básico: {e}", exc_info=True)
             return None
 
     async def generate_direct_pdf(

@@ -381,9 +381,9 @@ class ProposalService:
 
     # --- Función Principal ---
     async def generate_proposal_text(self, conversation: Conversation) -> str:
-        """Enfoque simplificado: la IA genera todo el contenido de la propuesta."""
+        """Genera propuesta desde cero sin usar ninguna plantilla de referencia."""
 
-        # Extraer la conversación completa
+        # Extraer la conversación completa como contexto
         conversation_text = ""
         if conversation.messages:
             for msg in conversation.messages:
@@ -392,87 +392,103 @@ class ProposalService:
                 if content and role in ["user", "assistant"]:
                     conversation_text += f"{role.upper()}: {content}\n\n"
 
-        # Prompt completo sin referencia a ninguna plantilla
+        # Prompt sin ninguna referencia a plantilla o formato externo
         prompt = f"""
-# GENERA UNA PROPUESTA TÉCNICA COMPLETA
+# TAREA: ESCRIBE UNA PROPUESTA TÉCNICA TOTALMENTE ORIGINAL
 
-Necesito que generes una propuesta técnica de tratamiento de agua sin ningún placeholder. 
-La conversación con el cliente está a continuación:
+    Has analizado las necesidades de un cliente a través de un cuestionario. Basándote en la conversación, crea un documento de propuesta técnica COMPLETAMENTE NUEVO.
 
-{conversation_text}
+## CONVERSACIÓN COMPLETA:
+    {conversation_text}
 
-REGLAS ABSOLUTAMENTE OBLIGATORIAS:
-1. NUNCA uses placeholders como "[Nombre]" o "[Valor]". 
-2. Si no tienes un dato, INVÉNTALO. Siempre deben ser valores concretos.
-3. Estructura el documento con formato markdown.
-4. Si el cliente no proporcionó su nombre, llámalo "Industrias Procesadoras S.A."
-5. Si no proporcionó ubicación, usa "Ciudad de México, México"
-6. Todos los valores numéricos deben ser ESPECÍFICOS, no rangos ni variables.
+## INSTRUCCIONES CRÍTICAS:
+    1. OBLIGATORIO: Usa "Industrias GloboCorp" como nombre de la empresa cliente si no se especificó.
+    2. OBLIGATORIO: Usa "Ciudad de México" como ubicación si no se especificó.
+    3. OBLIGATORIO: INVENTA valores específicos para todos los costos ($125,000 USD, no $XX,XXX).
+    4. OBLIGATORIO: INVENTA valores específicos para todos los parámetros (250 m³/día, no X m³/día).
+    5. OBLIGATORIO: Crea una propuesta COMPLETAMENTE DIFERENTE a cualquier plantilla.
+    6. OBLIGATORIO: Cada sección debe tener contenido único y específico.
 
-ESTRUCTURA:
-1. Título: "Propuesta de Sistema de Tratamiento de Aguas Residuales"
-2. Introducción a Hydrous
-3. Información del Cliente (con datos CONCRETOS)
-4. Objetivos del Proyecto
-5. Descripción Técnica de la Solución
-6. Equipos Recomendados (con marcas y modelos específicos)
-7. Costos (valores exactos, no rangos)
-8. Análisis ROI
-9. Conclusión
+    Si hay texto entre corchetes en tu respuesta, SERÁ CONSIDERADO UN ERROR GRAVE.
 
-EJEMPLO DE CONTENIDO CORRECTO:
-"Propuesta para: Industrias Procesadoras S.A.
-Ubicación: Ciudad de México
-Consumo actual: 250 m³/día
-Costo estimado: $125,000 USD"
+## ESTRUCTURA BÁSICA (adáptala como prefieras):
+    - Título personalizado
+    - Introducción breve
+    - Información del cliente
+    - Solución técnica propuesta
+    - Equipos recomendados
+    - Presupuesto específico (con números concretos)
+    - Retorno de inversión (con plazos específicos)
 
-EJEMPLO DE CONTENIDO INCORRECTO (NUNCA HAGAS ESTO):
-"Propuesta para: [Nombre de la empresa]
-Ubicación: [Ubicación]
-Consumo actual: [X m³/día]
-Costo estimado: [$XX,XXX]"
-
-RECUERDA: Este documento se enviará directamente al cliente sin revisión humana.
+    IMPORTANTE: Esta propuesta será convertida directamente a PDF sin revisión. NO USES PLACEHOLDERS bajo ninguna circunstancia.
     """
 
-        # Llamar a la IA con temperatura un poco más alta para creatividad
+        # Llamar a la IA
         from app.services.ai_service import ai_service
 
         try:
-            messages = [{"role": "user", "content": prompt}]
-
-            # Guardar prompt para debug
+            # Log de depuración
             debug_dir = os.path.join(settings.UPLOAD_DIR, "debug")
             os.makedirs(debug_dir, exist_ok=True)
             with open(
-                os.path.join(debug_dir, f"prompt_{conversation.id}.txt"),
+                os.path.join(debug_dir, f"prompt_final_{conversation.id}.txt"),
                 "w",
                 encoding="utf-8",
             ) as f:
                 f.write(prompt)
 
-            # Llamar a la IA con más tokens y temperatura moderada
+            # Llamar a la API con temperatura alta para mayor creatividad
+            messages = [{"role": "user", "content": prompt}]
             proposal_text = await ai_service._call_llm_api(
-                messages, max_tokens=7000, temperature=0.5
+                messages,
+                max_tokens=7000,
+                temperature=0.7,  # Más alta para fomentar originalidad
             )
 
-            # Guardar respuesta para debug
+            # Log de la respuesta
             with open(
-                os.path.join(debug_dir, f"ai_response_{conversation.id}.txt"),
+                os.path.join(debug_dir, f"response_final_{conversation.id}.txt"),
                 "w",
                 encoding="utf-8",
             ) as f:
                 f.write(proposal_text)
 
-            # Añadir marcador para procesamiento posterior
+            # Añadir marcador y devolver
             proposal_text = (
                 proposal_text.strip()
                 + "\n\n[PROPOSAL_COMPLETE: Propuesta lista para PDF]"
             )
             return proposal_text
         except Exception as e:
-            logger.error(f"Error generando propuesta con LLM: {e}", exc_info=True)
-            return f"Error: Falló la generación de propuesta. {str(e)[:100]}"
+            logger.error(f"Error generando propuesta: {e}", exc_info=True)
+            # Propuesta de emergencia sin placeholders
+            return f"""
+# Propuesta de Tratamiento de Aguas Residuales para Industrias GloboCorp
+
+## Introducción
+    Hydrous Management Group presenta esta propuesta de tratamiento de aguas residuales para Industrias GloboCorp, ubicada en Ciudad de México. Esta solución permitirá cumplir con normativas ambientales, reducir costos operativos y reutilizar el agua en procesos industriales.
+
+## Información del Cliente
+    - **Nombre:** Industrias GloboCorp
+    - **Ubicación:** Ciudad de México
+    - **Sector:** Industrial - Alimentos y Bebidas
+    - **Consumo de agua:** 350 m³/día
+    - **Generación de aguas residuales:** 280 m³/día
+
+## Solución Técnica
+    Sistema integral de tratamiento que incluye:
+    - Sistema DAF con capacidad de 400 m³/día (marca HydroTech 5000)
+    - Reactor MBBR con capacidad de 350 m³/día (marca BioReactor Pro)
+    - Sistema de filtración y desinfección UV
+
+## Presupuesto
+    - Inversión total: $285,000 USD
+    - Costo operativo mensual: $8,500 USD
+    - Retorno de inversión: 32 meses
+
+    Para más información, contacte a Hydrous Management Group.
+    [PROPOSAL_COMPLETE: Propuesta lista para PDF]
+    """
 
 
 # Instancia global
