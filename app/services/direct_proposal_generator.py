@@ -71,37 +71,82 @@ class DirectProposalGenerator:
         from app.services.ai_service import ai_service
 
         prompt = f"""
-# CREA UNA PROPUESTA TÉCNICA 100% ORIGINAL SIN PLACEHOLDERS
+# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EL FORMATO ESPECÍFICO
 
-Necesito una propuesta de tratamiento de agua COMPLETAMENTE DETALLADA para un cliente basada en esta conversación:
+Basándote en la siguiente conversación con el cliente:
 
 {conversation_text}
 
-## REGLAS ESTRICTAS:
-1. NUNCA uses texto como [Nombre] o [Valor]. Esto es crucial.
-2. Si falta información, INVENTA datos realistas:
-   - Nombre: "Industrias Agua Pura"
-   - Ubicación: "Ciudad de México"
-   - Consumo: "350 m³/día"
-   - Costos: "$45,000 USD"
+## INSTRUCCIONES IMPORTANTES:
+1. Crea una propuesta DETALLADA y PROFESIONAL siguiendo EXACTAMENTE la estructura indicada a continuación.
+2. Usa DATOS ESPECÍFICOS del cliente - NUNCA uses placeholders. Si falta información, INVENTA datos realistas.
+3. Para cada sección, incluye información TÉCNICAMENTE PRECISA y COMPLETA.
+4. Usa un lenguaje profesional, técnico y persuasivo propio de ingeniería ambiental.
 
-3. Cada sección debe tener INFORMACIÓN ESPECÍFICA, no genérica.
-4. Usa datos técnicos precisos para equipos, dimensiones y costos.
-5. NO uses frases como "basado en la industria" o "recomendaciones específicas".
+## ESTRUCTURA OBLIGATORIA (respeta fielmente todos los títulos y secciones):
 
-## ESTRUCTURA OBLIGATORIA:
-1. Título profesional
-2. Introducción a Hydrous Management (2-3 párrafos)
-3. Información del cliente con datos concretos
-4. Objetivos del proyecto (4 puntos específicos)
-5. Tecnologías recomendadas (nombra marcas y modelos específicos)
-6. Presupuesto detallado con cifras exactas
-7. Análisis ROI con periodo exacto de recuperación
-8. Conclusión
+1. **Hydrous Management Group – AI-Generated Wastewater Treatment Proposal**
+   - Incluye un disclaimer profesional sobre la generación con IA.
 
-IMPORTANTE: Esto se convertirá directamente en un PDF oficial sin revisión humana.
+2. **Introduction to Hydrous Management Group**
+   - Describe la especialización en soluciones de tratamiento de aguas residuales.
+   - Menciona la experiencia en gestión del agua, cumplimiento normativo, etc.
+   - Resalta el uso de tecnologías avanzadas y diseño asistido por IA.
+
+3. **Project Background**
+   - Crea una tabla con "Client Information" que incluya:
+     - Client Name (específico, sin placeholders)
+     - Location (específico, sin placeholders)
+     - Industry (basado en la conversación)
+     - Water Source, Consumption, Wastewater Generation
+     - Existing Treatment System (si existe o "No existing treatment")
+
+4. **Objective of the Project**
+   - Lista con viñetas (✅) para cada objetivo:
+     - Regulatory Compliance
+     - Cost Optimization
+     - Water Reuse
+     - Sustainability
+   - Incluye una descripción específica para cada objetivo.
+
+5. **Key Design Assumptions & Comparison to Industry Standards**
+   - Crea una tabla comparativa con parámetros como TSS, TDS, COD, BOD, pH.
+   - Incluye columnas para valores actuales, estándares de la industria, y objetivos.
+   - Usa valores numéricos específicos basados en el sector industrial.
+
+6. **Process Design & Treatment Alternatives**
+   - Crea una tabla detallando cada etapa de tratamiento:
+     - Primary Treatment (e.g., DAF)
+     - pH Adjustment
+     - Secondary Treatment (e.g., MBBR)
+     - Tertiary Treatment
+     - Disinfection
+     - Water Reuse System (if applicable)
+   - Para cada tecnología, incluye una descripción técnica y una alternativa.
+
+7. **Suggested Equipment & Sizing**
+   - Tabla detallada con:
+     - Equipos específicos (nombres y modelos)
+     - Capacidades (valores numéricos específicos)
+     - Dimensiones (valores concretos)
+     - Marcas/modelos recomendados
+
+8. **Estimated CAPEX & OPEX**
+   - Desglose detallado de CAPEX por categoría (valores específicos en USD)
+   - Desglose mensual de OPEX (químicos, energía, mano de obra, disposición de lodos)
+   - Incluye notas y justificaciones para cada costo.
+
+9. **Return on Investment (ROI) Analysis**
+   - Tabla comparativa de costos actuales vs. proyectados
+   - Cálculo específico del ROI en años
+   - Justificación de los ahorros y beneficios
+
+10. **Q&A Exhibit**
+    - Resumen de las preguntas más importantes de la consulta
+    - Incluye datos de contacto de Hydrous Management Group
+
+Asegúrate de que el contenido sea técnicamente sólido, específico al cliente, y con valores realistas para el sector industrial correspondiente.
 """
-
         try:
             messages = [{"role": "user", "content": prompt}]
             # Usar parámetros más agresivos para forzar creatividad y especificidad
@@ -161,66 +206,179 @@ Para más información, contacte a Hydrous Management Group.
                 bottomMargin=2 * cm,
             )
 
-            # Estilos
+            # Estilos mejorados
             styles = getSampleStyleSheet()
+
+            # Título principal
             title_style = ParagraphStyle(
                 name="TitleStyle",
                 parent=styles["Heading1"],
                 fontSize=18,
                 textColor=colors.HexColor("#0056b3"),
                 spaceAfter=12,
+                alignment=1,  # Centrado
             )
+
+            # Encabezados de sección
             heading2_style = ParagraphStyle(
                 name="Heading2Style",
                 parent=styles["Heading2"],
                 fontSize=16,
                 textColor=colors.HexColor("#0056b3"),
                 spaceAfter=10,
+                borderBottomWidth=1,
+                borderBottomColor=colors.HexColor("#0056b3"),
             )
+
+            # Texto normal
             normal_style = ParagraphStyle(
-                name="NormalStyle", parent=styles["Normal"], fontSize=11, spaceAfter=8
+                name="NormalStyle",
+                parent=styles["Normal"],
+                fontSize=11,
+                spaceAfter=8,
+                leading=14,  # Mejor espaciado entre líneas
             )
+
+            # Estilo para listas con viñetas
             list_style = ParagraphStyle(
                 name="ListStyle",
                 parent=styles["Normal"],
                 fontSize=11,
                 leftIndent=20,
                 spaceAfter=3,
+                bulletIndent=10,
+                bulletFontName="Helvetica",
+                leading=14,
+            )
+
+            # Estilo para la información del disclaimer
+            disclaimer_style = ParagraphStyle(
+                name="DisclaimerStyle",
+                parent=styles["Normal"],
+                fontSize=9,
+                textColor=colors.HexColor("#555555"),
+                alignment=1,  # Centrado
             )
 
             # Elementos para el PDF
             elements = []
 
+            # Logo o encabezado (opcional)
+            # elements.append(Image('path/to/logo.png', width=8*cm, height=2*cm))
+            # elements.append(Spacer(1, 0.5*cm))
+
             # Procesamiento de texto
             lines = proposal_text.split("\n")
+            in_list = False
+            in_table = False
+            table_data = []
+
             for line in lines:
                 line = line.strip()
                 if not line:
-                    elements.append(Spacer(1, 0.2 * cm))
+                    if not in_table:  # No añadir espacios dentro de tablas
+                        elements.append(Spacer(1, 0.2 * cm))
                     continue
 
                 # Encabezados
                 if line.startswith("# "):
+                    if in_table:  # Finalizar tabla si estábamos en una
+                        elements.append(self._create_table(table_data))
+                        in_table = False
+                        table_data = []
+
                     elements.append(Paragraph(line[2:], title_style))
                 elif line.startswith("## "):
+                    if in_table:  # Finalizar tabla si estábamos en una
+                        elements.append(self._create_table(table_data))
+                        in_table = False
+                        table_data = []
+
                     elements.append(Paragraph(line[3:], heading2_style))
-                elif line.startswith("### "):
-                    elements.append(Paragraph(line[4:], heading2_style))
+                # Tablas (detectar inicio de tabla)
+                elif "|" in line and line.count("|") >= 2:
+                    if not in_table:
+                        in_table = True
+                        table_data = []
+
+                    cells = [
+                        cell.strip() for cell in line.split("|")[1:-1]
+                    ]  # Quitar primero y último
+                    if cells:
+                        table_data.append(cells)
+                # Terminar tabla si ya no hay más pipes
+                elif in_table and "|" not in line:
+                    elements.append(self._create_table(table_data))
+                    in_table = False
+                    table_data = []
+                    # Procesar esta línea como normal
+                    elements.append(Paragraph(line, normal_style))
                 # Listas
-                elif line.startswith("- "):
+                elif line.startswith("- ") or line.startswith("* "):
                     elements.append(Paragraph(f"• {line[2:]}", list_style))
+                elif line.startswith("✅ "):
+                    elements.append(Paragraph(f"✓ {line[2:]}", list_style))
                 # Texto normal
                 else:
-                    elements.append(Paragraph(line, normal_style))
+                    if not in_table:  # No procesar como párrafo si estamos en una tabla
+                        elements.append(Paragraph(line, normal_style))
 
-            # Construir PDF
-            doc.build(elements)
+            # Finalizar tabla si terminamos dentro de una
+            if in_table and table_data:
+                elements.append(self._create_table(table_data))
+
+            # Pie de página
+            elements.append(Spacer(1, 1 * cm))
+            elements.append(
+                Paragraph(
+                    "Documento generado por Hydrous Management Group", disclaimer_style
+                )
+            )
+
+            # Construir PDF con números de página
+            doc.build(
+                elements,
+                onFirstPage=self._add_page_number,
+                onLaterPages=self._add_page_number,
+            )
 
             logger.info(f"PDF generado exitosamente en: {output_path}")
             return output_path
         except Exception as e:
             logger.error(f"Error generando PDF directo: {e}", exc_info=True)
             return None
+
+    def _create_table(self, data):
+        """Crea una tabla formateada profesionalmente."""
+        if not data:
+            return Spacer(1, 0.2 * cm)
+
+        table = Table(data, repeatRows=1)
+        table_style = TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0056b3")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 11),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("PADDING", (0, 0), (-1, -1), 6),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ]
+        )
+        table.setStyle(table_style)
+        return table
+
+    def _add_page_number(self, canvas, doc):
+        """Añade número de página al pie de página."""
+        canvas.saveState()
+        canvas.setFont("Helvetica", 9)
+        canvas.setFillColor(colors.HexColor("#555555"))
+        footer_text = f"Página {canvas.getPageNumber()} | Hydrous Management Group"
+        canvas.drawCentredString(doc.width / 2 + doc.leftMargin, 1 * cm, footer_text)
+        canvas.restoreState()
 
 
 # Instancia global
