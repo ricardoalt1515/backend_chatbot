@@ -394,38 +394,45 @@ class ProposalService:
 
         # Prompt completo sin referencia a ninguna plantilla
         prompt = f"""
-# GENERA UNA PROPUESTA PROFESIONAL COMPLETA DE TRATAMIENTO DE AGUA
+# GENERA UNA PROPUESTA TÉCNICA COMPLETA
 
-    Has mantenido una conversación con un cliente sobre sus necesidades de tratamiento de agua.
-    A continuación está el historial completo:
+Necesito que generes una propuesta técnica de tratamiento de agua sin ningún placeholder. 
+La conversación con el cliente está a continuación:
 
-    {conversation_text}
+{conversation_text}
 
-    Crea una propuesta profesional COMPLETA que incluya:
+REGLAS ABSOLUTAMENTE OBLIGATORIAS:
+1. NUNCA uses placeholders como "[Nombre]" o "[Valor]". 
+2. Si no tienes un dato, INVÉNTALO. Siempre deben ser valores concretos.
+3. Estructura el documento con formato markdown.
+4. Si el cliente no proporcionó su nombre, llámalo "Industrias Procesadoras S.A."
+5. Si no proporcionó ubicación, usa "Ciudad de México, México"
+6. Todos los valores numéricos deben ser ESPECÍFICOS, no rangos ni variables.
 
-    1. Un título claro
-    2. Introducción a Hydrous Management Group (breve descripción de la empresa)
-    3. Antecedentes del proyecto con TODOS LOS DATOS ESPECÍFICOS del cliente
-    - Nombre exacto del cliente
-    - Ubicación exacta
-    - Industria y subsector
-    - Detalles de consumo de agua y generación de aguas residuales
-    4. Objetivos claros del proyecto
-    5. Parámetros técnicos y de diseño con VALORES NUMÉRICOS ESPECÍFICOS
-    6. Descripción de la solución propuesta con tecnologías específicas
-    7. Lista de equipos recomendados con marcas, modelos y capacidades
-    8. Presupuesto detallado con costos ESPECÍFICOS (no rangos)
-    9. Análisis del retorno de inversión con plazos y ahorros calculados
-    10. Un resumen de la propuesta
+ESTRUCTURA:
+1. Título: "Propuesta de Sistema de Tratamiento de Aguas Residuales"
+2. Introducción a Hydrous
+3. Información del Cliente (con datos CONCRETOS)
+4. Objetivos del Proyecto
+5. Descripción Técnica de la Solución
+6. Equipos Recomendados (con marcas y modelos específicos)
+7. Costos (valores exactos, no rangos)
+8. Análisis ROI
+9. Conclusión
 
-    REGLAS OBLIGATORIAS:
-    - NO utilices la frase "[Nombre de la Empresa]" o cualquier placeholder
-    - TODO el contenido debe ser específico y concreto
-    - Incluye NÚMEROS REALES para todos los valores (no escribas "X m³/día")
-    - Usa formato markdown para que se vea profesional
-    - Escribe el documento como si fueras un ingeniero experto preparando una propuesta real
+EJEMPLO DE CONTENIDO CORRECTO:
+"Propuesta para: Industrias Procesadoras S.A.
+Ubicación: Ciudad de México
+Consumo actual: 250 m³/día
+Costo estimado: $125,000 USD"
 
-    Este documento se convertirá en un PDF oficial, sin revisión humana.
+EJEMPLO DE CONTENIDO INCORRECTO (NUNCA HAGAS ESTO):
+"Propuesta para: [Nombre de la empresa]
+Ubicación: [Ubicación]
+Consumo actual: [X m³/día]
+Costo estimado: [$XX,XXX]"
+
+RECUERDA: Este documento se enviará directamente al cliente sin revisión humana.
     """
 
         # Llamar a la IA con temperatura un poco más alta para creatividad
