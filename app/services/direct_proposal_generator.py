@@ -385,8 +385,7 @@ Para más información, contacte a Hydrous Management Group.
 
         # calcular ancho de columnas distribuido equivalentemente
         num_cols = len(data[0]) if data else 0
-        col_widths = [doc.with / num_cols] * num_cols
-
+        col_widths = [doc.width / num_cols] * num_cols
 
         table = Table(data, repeatRows=1, colWidths=col_widths)
         table_style = TableStyle(
@@ -401,7 +400,7 @@ Para más información, contacte a Hydrous Management Group.
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("PADDING", (0, 0), (-1, -1), 6),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("WORDWRAP", (0, 0), (-1, -1), True),   # Permiete wrappign de texto
+                ("WORDWRAP", (0, 0), (-1, -1), True),  # Permiete wrappign de texto
                 ("FONTSIZE", (0, 1), (-1, -1), 9),  # Texto mas pequeño para datos
             ]
         )
