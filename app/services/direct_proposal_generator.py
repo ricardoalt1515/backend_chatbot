@@ -383,11 +383,18 @@ Para más información, contacte a Hydrous Management Group.
         if not data:
             return Spacer(1, 0.2 * cm)
 
-        # calcular ancho de columnas distribuido equivalentemente
-        num_cols = len(data[0]) if data else 0
-        col_widths = [doc.width / num_cols] * num_cols
+        # Definir un ancho fijo para la tabla en lugar de usar doc.width
+        available_width = 16 * cm  # Ancho aproximado para página A4 con márgenes
 
-        table = Table(data, repeatRows=1, colWidths=col_widths)
+        # Calcular ancho de columnas si hay datos
+        if data and len(data) > 0 and len(data[0]) > 0:
+            num_cols = len(data[0])
+            col_widths = [available_width / num_cols] * num_cols
+            table = Table(data, repeatRows=1, colWidths=col_widths)
+        else:
+            # Sin cálculo de anchos si no hay datos suficientes
+            table = Table(data, repeatRows=1)
+
         table_style = TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
@@ -400,8 +407,7 @@ Para más información, contacte a Hydrous Management Group.
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("PADDING", (0, 0), (-1, -1), 6),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("WORDWRAP", (0, 0), (-1, -1), True),  # Permiete wrappign de texto
-                ("FONTSIZE", (0, 1), (-1, -1), 9),  # Texto mas pequeño para datos
+                ("WORDWRAP", (0, 0), (-1, -1), True),  # Permite que el texto se ajuste
             ]
         )
         table.setStyle(table_style)
