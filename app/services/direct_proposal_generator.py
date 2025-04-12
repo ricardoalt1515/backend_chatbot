@@ -71,81 +71,111 @@ class DirectProposalGenerator:
         from app.services.ai_service import ai_service
 
         prompt = f"""
-# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EL FORMATO ESPECÍFICO
+# GENERA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EXACTAMENTE EL FORMATO ESTABLECIDO
 
 Basándote en la siguiente conversación con el cliente:
 
 {conversation_text}
 
-## INSTRUCCIONES IMPORTANTES:
-1. Crea una propuesta DETALLADA y PROFESIONAL siguiendo EXACTAMENTE la estructura indicada a continuación.
-2. Usa DATOS ESPECÍFICOS del cliente - NUNCA uses placeholders. Si falta información, INVENTA datos realistas.
-3. Para cada sección, incluye información TÉCNICAMENTE PRECISA y COMPLETA.
-4. Usa un lenguaje profesional, técnico y persuasivo propio de ingeniería ambiental.
+## INSTRUCCIONES DETALLADAS:
+1. Debes generar una propuesta altamente profesional siguiendo EXACTAMENTE el formato de Hydrous Management Group.
+2. Cada sección DEBE contener información técnicamente precisa y específica, NUNCA uses información genérica.
+3. Usa siempre datos numéricos específicos, dimensiones reales y parámetros técnicos concretos.
+4. La propuesta debe ser COMPLETA incluyendo TODAS las secciones obligatorias sin excepciones.
 
-## ESTRUCTURA OBLIGATORIA (respeta fielmente todos los títulos y secciones):
+## FORMATO OBLIGATORIO (sigue exactamente esta estructura):
 
-1. **Hydrous Management Group – AI-Generated Wastewater Treatment Proposal**
-   - Incluye un disclaimer profesional sobre la generación con IA.
+**Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal**
 
-2. **Introduction to Hydrous Management Group**
-   - Describe la especialización en soluciones de tratamiento de aguas residuales.
-   - Menciona la experiencia en gestión del agua, cumplimiento normativo, etc.
-   - Resalta el uso de tecnologías avanzadas y diseño asistido por IA.
+**📌 Important Disclaimer**
+[Proporciona un breve disclaimer sobre la generación por IA y necesidad de revisión profesional]
 
-3. **Project Background**
-   - Crea una tabla con "Client Information" que incluya:
-     - Client Name (específico, sin placeholders)
-     - Location (específico, sin placeholders)
-     - Industry (basado en la conversación)
-     - Water Source, Consumption, Wastewater Generation
-     - Existing Treatment System (si existe o "No existing treatment")
+**1. Introduction to Hydrous Management Group**
+[Breve descripción de Hydrous como empresa especializada en soluciones de agua personalizadas, incluye experiencia en reducción de costos, cumplimiento normativo y tecnologías avanzadas - máximo 3 párrafos]
 
-4. **Objective of the Project**
-   - Lista con viñetas (✅) para cada objetivo:
-     - Regulatory Compliance
-     - Cost Optimization
-     - Water Reuse
-     - Sustainability
-   - Incluye una descripción específica para cada objetivo.
+**2. Project Background**
+[Crea una tabla con formato markdown con exactamente estos campos]
+  | **Client Information** | **Details** |
+  | ------------------- | ---------------- |
+  | **Client Name** | [Nombre específico del cliente] |
+  | **Location** | [Ubicación exacta] |
+  | **Industry** | [Sector industrial específico] |
+  | **Water Source** | [Fuente de agua] |
+  | **Current Water Consumption** | [X m³/día] |
+  | **Current Wastewater Generation** | [Y m³/día] |
+  | **Existing Treatment System (if any)** | [Descripción del sistema actual o "No existing treatment"] |
 
-5. **Key Design Assumptions & Comparison to Industry Standards**
-   - Crea una tabla comparativa con parámetros como TSS, TDS, COD, BOD, pH.
-   - Incluye columnas para valores actuales, estándares de la industria, y objetivos.
-   - Usa valores numéricos específicos basados en el sector industrial.
+**3. Objective of the Project**
+[Lista con viñetas de TODOS estos objetivos, explicando cada uno con detalle relevante al cliente]
+✅ **Regulatory Compliance** -- [Explicación específica]
+✅ **Cost Optimization** -- [Explicación específica]
+✅ **Water Reuse** -- [Explicación específica]
+✅ **Sustainability** -- [Explicación específica]
 
-6. **Process Design & Treatment Alternatives**
-   - Crea una tabla detallando cada etapa de tratamiento:
-     - Primary Treatment (e.g., DAF)
-     - pH Adjustment
-     - Secondary Treatment (e.g., MBBR)
-     - Tertiary Treatment
-     - Disinfection
-     - Water Reuse System (if applicable)
-   - Para cada tecnología, incluye una descripción técnica y una alternativa.
+**4. Key Design Assumptions & Comparison to Industry Standards**
+[Tabla comparativa con estos parámetros exactos. Usa valores numéricos específicos para cada sector]
+  | **Parameter** | **Raw Wastewater (Provided by Client)** | **Industry Standard for Similar Industry** | **Effluent Goal (Regulatory/Reuse Requirement)** | **Industry Standard Effluent (Benchmark)** |
+  | ------------- | ------------- | ------------- | ------------- | ------------- |
+  | **TSS (mg/L)** | [valor] | [rango] | [valor] | [rango] |
+  | **TDS (mg/L)** | [valor] | [rango] | [valor] | [rango] |
+  | **COD (mg/L)** | [valor] | [rango] | [valor] | [rango] |
+  | **BOD (mg/L)** | [valor] | [rango] | [valor] | [rango] |
+  | **pH** | [valor] | [rango] | [valor] | [rango] |
 
-7. **Suggested Equipment & Sizing**
-   - Tabla detallada con:
-     - Equipos específicos (nombres y modelos)
-     - Capacidades (valores numéricos específicos)
-     - Dimensiones (valores concretos)
-     - Marcas/modelos recomendados
+**5. Process Design & Treatment Alternatives**
+[Tabla con tecnologías recomendadas y alternativas. INCLUYE TODAS ESTAS ETAPAS:]
+  | **Treatment Stage** | **Recommended Technology** | **Alternative Option** |
+  | ------------------ | -------------------------- | ---------------------- |
+  | **Primary Treatment (Pre-Treatment)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
+  | **pH Adjustment** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
+  | **Secondary Treatment (Biological Treatment)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
+  | **Tertiary Treatment (Final Polishing)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
+  | **Disinfection** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
+  | **Water Reuse System (Optional)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
 
-8. **Estimated CAPEX & OPEX**
-   - Desglose detallado de CAPEX por categoría (valores específicos en USD)
-   - Desglose mensual de OPEX (químicos, energía, mano de obra, disposición de lodos)
-   - Incluye notas y justificaciones para cada costo.
+**6. Suggested Equipment & Sizing**
+[Tabla con equipos recomendados]
+  | **Equipment** | **Capacity** | **Dimensions** | **Brand/Model (If Available)** |
+  | ------------- | ------------ | -------------- | ----------------------------- |
+  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
+  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
+  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
+  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
 
-9. **Return on Investment (ROI) Analysis**
-   - Tabla comparativa de costos actuales vs. proyectados
-   - Cálculo específico del ROI en años
-   - Justificación de los ahorros y beneficios
+**7. Estimated CAPEX & OPEX**
 
-10. **Q&A Exhibit**
-    - Resumen de las preguntas más importantes de la consulta
-    - Incluye datos de contacto de Hydrous Management Group
+**CAPEX Breakdown**
+  | **Category** | **Estimated Cost (USD)** | **Notes** |
+  | ------------ | ---------------------- | --------- |
+  | [Categoría de equipo] | [$XX,XXX] | [Breve justificación] |
+  | [Categoría de equipo] | [$XX,XXX] | [Breve justificación] |
+  | [Categoría de equipo] | [$XX,XXX] | [Breve justificación] |
+  | **Total CAPEX** | **$XXX,XXX** | [Rango estimado si hay incertidumbre] |
 
-Asegúrate de que el contenido sea técnicamente sólido, específico al cliente, y con valores realistas para el sector industrial correspondiente.
+**OPEX Breakdown**
+  | **Operational Expense** | **Estimated Monthly Cost (USD)** | **Notes** |
+  | ----------------------- | ------------------------------- | --------- |
+  | **Chemical Costs** | [$X,XXX] | [Descripción de químicos principales] |
+  | **Energy Costs** | [$X,XXX] | [Consumo energético principal] |
+  | **Labor Costs** | [$X,XXX] | [Personal necesario] |
+  | **Sludge Disposal** | [$X,XXX] | [Método de disposición] |
+  | **Total OPEX** | **$XX,XXX/month** | [Rango estimado] |
+
+**8. Return on Investment (ROI) Analysis**
+[Tabla comparativa de costos actuales vs. proyectados]
+  | **Parameter** | **Current Cost (MXN/m³)** | **Projected Cost After Treatment** | **Annual Savings** |
+  | ------------- | ------------------------- | -------------------------------- | ----------------- |
+  | **Water Purchase Cost** | [Costo actual] | [Costo con reúso] | [$X,XXX] |
+  | **Discharge Fees** | [$X,XXX/month] | [$X,XXX/month (reducido)] | [$X,XXX] |
+
+**Estimated ROI:** **[X] years** basado en ahorro de costos.
+
+**9. Q&A Exhibit**
+[Resumen de las preguntas clave y respuestas de la consulta, 3-5 preguntas máximo]
+
+📩 **Para consultas o validación de esta propuesta, contacte a Hydrous Management Group en:** **info@hydrous.com**.
+
+IMPORTANTE: Sigue EXACTAMENTE este formato, incluye TODAS las secciones, utiliza SOLO datos técnicos precisos y específicos. No omitas ninguna de las secciones especificadas.
 """
         try:
             messages = [{"role": "user", "content": prompt}]
@@ -353,7 +383,12 @@ Para más información, contacte a Hydrous Management Group.
         if not data:
             return Spacer(1, 0.2 * cm)
 
-        table = Table(data, repeatRows=1)
+        # calcular ancho de columnas distribuido equivalentemente
+        num_cols = len(data[0]) if data else 0
+        col_widths = [doc.with / num_cols] * num_cols
+
+
+        table = Table(data, repeatRows=1, colWidths=col_widths)
         table_style = TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
@@ -366,6 +401,8 @@ Para más información, contacte a Hydrous Management Group.
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("PADDING", (0, 0), (-1, -1), 6),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("WORDWRAP", (0, 0), (-1, -1), True),   # Permiete wrappign de texto
+                ("FONTSIZE", (0, 1), (-1, -1), 9),  # Texto mas pequeño para datos
             ]
         )
         table.setStyle(table_style)
