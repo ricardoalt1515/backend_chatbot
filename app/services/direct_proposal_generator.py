@@ -71,81 +71,132 @@ class DirectProposalGenerator:
         from app.services.ai_service import ai_service
 
         prompt = f"""
-# CREA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EL FORMATO ESPECÍFICO
+# INSTRUCCIONES PARA PROPUESTA DE TRATAMIENTO DE AGUA HYDROUS
 
-Basándote en la siguiente conversación con el cliente:
+Tu tarea es generar una propuesta profesional detallada para tratamiento de aguas residuales siguiendo EXACTAMENTE el formato y contenido descritos a continuación. Esta propuesta debe verse como si fuera creada por expertos en ingeniería hídrica con un nivel técnico elevado.
 
+## CONVERSACIÓN CON EL CLIENTE:
 {conversation_text}
 
-## INSTRUCCIONES IMPORTANTES:
-1. Crea una propuesta DETALLADA y PROFESIONAL siguiendo EXACTAMENTE la estructura indicada a continuación.
-2. Usa DATOS ESPECÍFICOS del cliente - NUNCA uses placeholders. Si falta información, INVENTA datos realistas.
-3. Para cada sección, incluye información TÉCNICAMENTE PRECISA y COMPLETA.
-4. Usa un lenguaje profesional, técnico y persuasivo propio de ingeniería ambiental.
+## FORMATO REQUERIDO - SEGUIR AL PIE DE LA LETRA:
 
-## ESTRUCTURA OBLIGATORIA (respeta fielmente todos los títulos y secciones):
+**Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal**
 
-1. **Hydrous Management Group – AI-Generated Wastewater Treatment Proposal**
-   - Incluye un disclaimer profesional sobre la generación con IA.
+**📌 Important Disclaimer**
+Esta propuesta fue generada utilizando IA basada en la información proporcionada por el cliente y estándares industriales de referencia. Se han tomado medidas para garantizar la exactitud, pero los datos, estimaciones de costos y recomendaciones técnicas podrían contener errores y no son legalmente vinculantes. Se recomienda que todos los detalles sean validados por Hydrous Management Group antes de la implementación.
 
-2. **Introduction to Hydrous Management Group**
-   - Describe la especialización en soluciones de tratamiento de aguas residuales.
-   - Menciona la experiencia en gestión del agua, cumplimiento normativo, etc.
-   - Resalta el uso de tecnologías avanzadas y diseño asistido por IA.
+**1. Introduction to Hydrous Management Group**
+[Párrafo detallado sobre Hydrous y su especialización en soluciones personalizadas de tratamiento de aguas residuales para clientes industriales y comerciales. Mencionar experiencia, capacidades técnicas, y compromiso con sustentabilidad]
 
-3. **Project Background**
-   - Crea una tabla con "Client Information" que incluya:
-     - Client Name (específico, sin placeholders)
-     - Location (específico, sin placeholders)
-     - Industry (basado en la conversación)
-     - Water Source, Consumption, Wastewater Generation
-     - Existing Treatment System (si existe o "No existing treatment")
+**2. Project Background**
+[Tabla profesional con la siguiente estructura exacta:]
 
-4. **Objective of the Project**
-   - Lista con viñetas (✅) para cada objetivo:
-     - Regulatory Compliance
-     - Cost Optimization
-     - Water Reuse
-     - Sustainability
-   - Incluye una descripción específica para cada objetivo.
+| **Client Information** | **Details** |
+| --- | --- |
+| **Client Name** | [Nombre del cliente] |
+| **Location** | [Dirección/Ciudad, País] |
+| **Industry** | [Tipo de industria exacta] |
+| **Water Source** | [Tipo de fuente de agua] |
+| **Current Water Consumption** | [X m³/día - usar valor específico] |
+| **Current Wastewater Generation** | [Y m³/día - usar valor específico] |
+| **Existing Treatment System (if any)** | [Describir sistema actual o indicar "No existing treatment"] |
 
-5. **Key Design Assumptions & Comparison to Industry Standards**
-   - Crea una tabla comparativa con parámetros como TSS, TDS, COD, BOD, pH.
-   - Incluye columnas para valores actuales, estándares de la industria, y objetivos.
-   - Usa valores numéricos específicos basados en el sector industrial.
+**3. Objective of the Project**
+[Lista con viñetas de los objetivos principales, usando el símbolo ✅]
 
-6. **Process Design & Treatment Alternatives**
-   - Crea una tabla detallando cada etapa de tratamiento:
-     - Primary Treatment (e.g., DAF)
-     - pH Adjustment
-     - Secondary Treatment (e.g., MBBR)
-     - Tertiary Treatment
-     - Disinfection
-     - Water Reuse System (if applicable)
-   - Para cada tecnología, incluye una descripción técnica y una alternativa.
+✅ **Regulatory Compliance** -- [Descripción detallada de cumplimiento normativo]  
+✅ **Cost Optimization** -- [Explicación de reducción de costos operativos]  
+✅ **Water Reuse** -- [Descripción de reutilización de agua tratada]  
+✅ **Sustainability** -- [Explicación de beneficios ambientales]  
 
-7. **Suggested Equipment & Sizing**
-   - Tabla detallada con:
-     - Equipos específicos (nombres y modelos)
-     - Capacidades (valores numéricos específicos)
-     - Dimensiones (valores concretos)
-     - Marcas/modelos recomendados
+**4. Key Design Assumptions & Comparison to Industry Standards**
+[Tabla comparativa con la siguiente estructura exacta:]
 
-8. **Estimated CAPEX & OPEX**
-   - Desglose detallado de CAPEX por categoría (valores específicos en USD)
-   - Desglose mensual de OPEX (químicos, energía, mano de obra, disposición de lodos)
-   - Incluye notas y justificaciones para cada costo.
+| **Parameter** | **Raw Wastewater (Client)** | **Industry Standard** | **Effluent Goal** | **Industry Standard Effluent** |
+| --- | --- | --- | --- | --- |
+| **TSS (mg/L)** | [Valor] | [Rango] | [Valor] | [Rango] |
+| **TDS (mg/L)** | [Valor] | [Rango] | [Valor] | [Rango] |
+| **COD (mg/L)** | [Valor] | [Rango] | [Valor] | [Rango] |
+| **BOD (mg/L)** | [Valor] | [Rango] | [Valor] | [Rango] |
+| **pH** | [Valor] | [Rango] | [Valor] | [Rango] |
 
-9. **Return on Investment (ROI) Analysis**
-   - Tabla comparativa de costos actuales vs. proyectados
-   - Cálculo específico del ROI en años
-   - Justificación de los ahorros y beneficios
+**5. Process Design & Treatment Alternatives**
+[Tabla detallada con la siguiente estructura exacta:]
 
-10. **Q&A Exhibit**
-    - Resumen de las preguntas más importantes de la consulta
-    - Incluye datos de contacto de Hydrous Management Group
+| **Treatment Stage** | **Recommended Technology** | **Alternative Option** |
+| --- | --- | --- |
+| **Primary Treatment** | **[Tecnología]** -- [Descripción breve de función] | **[Alternativa]** -- [Ventajas/desventajas] |
+| **pH Adjustment** | **[Tecnología]** -- [Descripción breve] | **[Alternativa]** -- [Comparación] |
+| **Secondary Treatment** | **[Tecnología]** -- [Descripción breve] | **[Alternativa]** -- [Comparación] |
+| **Tertiary Treatment** | **[Tecnología]** -- [Descripción breve] | **[Alternativa]** -- [Comparación] |
+| **Disinfection** | **[Tecnología]** -- [Descripción breve] | **[Alternativa]** -- [Comparación] |
+| **Water Reuse System** | **[Tecnología]** -- [Descripción breve] | **[Alternativa]** -- [Comparación] |
 
-Asegúrate de que el contenido sea técnicamente sólido, específico al cliente, y con valores realistas para el sector industrial correspondiente.
+**6. Suggested Equipment & Sizing**
+[Tabla detallada con la siguiente estructura exacta:]
+
+| **Equipment** | **Capacity** | **Dimensions** | **Brand/Model** |
+| --- | --- | --- | --- |
+| **[Equipo 1]** | [Capacidad] | [Dimensiones] | [Marca/Modelo] |
+| **[Equipo 2]** | [Capacidad] | [Dimensiones] | [Marca/Modelo] |
+| **[Equipo 3]** | [Capacidad] | [Dimensiones] | [Marca/Modelo] |
+| **[Equipo 4]** | [Capacidad] | [Dimensiones] | [Marca/Modelo] |
+
+**7. Estimated CAPEX & OPEX**
+
+**CAPEX Breakdown**
+
+| **Category** | **Estimated Cost (USD)** | **Notes** |
+| --- | --- | --- |
+| **[Componente 1]** | $[Valor] | [Justificación breve] |
+| **[Componente 2]** | $[Valor] | [Justificación breve] |
+| **[Componente 3]** | $[Valor] | [Justificación breve] |
+| **Total CAPEX** | **$[Suma]** | [Rango estimado] |
+
+**OPEX Breakdown**
+
+| **Operational Expense** | **Estimated Monthly Cost (USD)** | **Notes** |
+| --- | --- | --- |
+| **Chemical Costs** | $[Valor] | [Detalle de químicos] |
+| **Energy Costs** | $[Valor] | [Consumo energético] |
+| **Labor Costs** | $[Valor] | [Personal requerido] |
+| **Sludge Disposal** | $[Valor] | [Método de disposición] |
+| **Total OPEX** | **$[Suma]/month** | [Rango estimado] |
+
+**8. Return on Investment (ROI) Analysis**
+
+| **Parameter** | **Current Cost** | **Projected Cost After Treatment** | **Annual Savings** |
+| --- | --- | --- | --- |
+| **Water Purchase Cost** | $[Valor]/m³ | $[Valor]/m³ (con reúso) | $[Valor] |
+| **Discharge Fees** | $[Valor]/month | $[Valor]/month | $[Valor] |
+| **[Otro beneficio]** | $[Valor] | $[Valor] | $[Valor] |
+
+**Estimated ROI:** **[X] years** basado en ahorros totales anuales de $[Valor].
+
+**Beneficios adicionales:** [Lista de 2-3 beneficios intangibles como imagen corporativa, cumplimiento a largo plazo, etc.]
+
+**9. Q&A Exhibit**
+[Incluir 3-5 preguntas clave del cliente con respuestas breves pero informativas]
+
+📩 **Para consultas o validación de esta propuesta, contactar a Hydrous Management Group en: info@hydrous.com**
+
+## INSTRUCCIONES CRÍTICAS:
+
+1. UTILIZA DATOS REALES/ESPECÍFICOS extraídos de la conversación. Si algún dato falta, usa valores típicos para la industria específica mencionada.
+
+2. FORMATO DE TABLAS: Usa exactamente el formato de tablas mostrado arriba. Cada tabla debe tener encabezados claros y valores correctamente alineados.
+
+3. VALORES NUMÉRICOS: Proporciona valores numéricos específicos, no rangos vagos. Para costos, usa cifras realistas basadas en el tamaño/tipo de operación.
+
+4. ANÁLISIS ROI: Debe ser detallado, convincente y basado en ahorros reales esperados.
+
+5. LENGUAJE: Profesional, técnicamente preciso, evitando jerga innecesaria.
+
+6. CLARIDAD VISUAL: Asegura que cada sección esté claramente separada y formateada para facilitar la lectura.
+
+7. DISCLAIMER: Mantén el disclaimer exactamente como está indicado arriba.
+
+Genera ahora la propuesta completa, siguiendo exactamente este formato.
 """
         try:
             messages = [{"role": "user", "content": prompt}]
@@ -353,82 +404,38 @@ Para más información, contacte a Hydrous Management Group.
         if not data:
             return Spacer(1, 0.2 * cm)
 
-        # Ajustar ancho de columnas basado en contenido
-        col_widths = self._calculate_column_widths(data)
+        # Normalizar numero de columnas (algunas filas podrian tener mas columnas que otras)
+        max_cols = max(len(row) for row in data)
+        normalized_data = [row + [""] * (max_cols - len(row)) for row in data]
+
+        # Calcular anchos de columna proporcionales
+        col_widths = [None] * max_cols  # None = distribuir automaticamente
 
         table = Table(data, repeatRows=1, colWidths=col_widths)
 
         # Estilo mejorado con gradientes y mejor formato
         table_style = TableStyle(
             [
-                # Encabezados con gradiente azul
+                # Encabezados
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0056b3")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 11),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                ("TOPPADDING", (0, 0), (-1, 0), 8),
-                # Filas con colores alternados
+                # Filas alternas (mejora legibilidad)
                 ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-                ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#f7f7f7")),
-                ("BACKGROUND", (0, 4), (-1, 4), colors.HexColor("#f7f7f7")),
-                ("BACKGROUND", (0, 6), (-1, 6), colors.HexColor("#f7f7f7")),
+                ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#f5f5f5")),
+                ("BACKGROUND", (0, 4), (-1, 4), colors.HexColor("#f5f5f5")),
+                ("BACKGROUND", (0, 6), (-1, 6), colors.HexColor("#f5f5f5")),
                 # Bordes y alineación
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 8),
+                ("PADDING", (0, 0), (-1, -1), 6),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                # Valores numéricos alineados a derecha
-                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
             ]
         )
         table.setStyle(table_style)
         return table
-
-    def _calculate_column_widths(self, data):
-        """Calcula anchos optimos de columna basado en contenido"""
-        if not data or len(data) == 0:
-            return None
-
-        # Ancho disponible (pagina A4 menos margenes)
-        available_width = A4[0] - 4 * cm
-
-        # Obtener número de columnas
-        num_cols = len(data[0])
-
-        # Determinar el ancho máximo de texto en cada columna
-        max_widths = [0] * num_cols
-        for row in data:
-            for i, cell in enumerate(row):
-                if i < num_cols:  # Protección contra filas irregulares
-                    cell_text = str(cell)
-                    # Estimar ancho aproximado basado en longitud del texto
-                    text_width = (
-                        len(cell_text) * 7
-                    )  # ~7 puntos por carácter como estimación
-                    max_widths[i] = max(max_widths[i], text_width)
-
-        # Normalizar anchos de columna para que sumen el ancho disponible
-        total_content_width = sum(max_widths)
-        if total_content_width == 0:
-            # Si no hay contenido, columnas iguales
-            return [available_width / num_cols] * num_cols
-
-        # Calcular anchos proporcionales con mínimos y máximos
-        col_widths = []
-        for width in max_widths:
-            # Al menos 100pt, máximo 60% del ancho disponible
-            norm_width = max(
-                100,
-                min(
-                    width * available_width / total_content_width, available_width * 0.6
-                ),
-            )
-            col_widths.append(norm_width)
-
-        # Ajustar para que sumen el ancho disponible
-        adjustment_factor = available_width / sum(col_widths)
-        return [width * adjustment_factor for width in col_widths]
 
     def _add_page_number(self, canvas, doc):
         """Añade número de página al pie de página."""
