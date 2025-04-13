@@ -71,111 +71,94 @@ class DirectProposalGenerator:
         from app.services.ai_service import ai_service
 
         prompt = f"""
-# GENERA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EXACTAMENTE EL FORMATO ESTABLECIDO
+# GENERA UNA PROPUESTA PROFESIONAL DE TRATAMIENTO DE AGUA SIGUIENDO EXACTAMENTE ESTE FORMATO
 
-Basándote en la siguiente conversación con el cliente:
-
+Basándote en la conversación:
 {conversation_text}
 
-## INSTRUCCIONES DETALLADAS:
-1. Debes generar una propuesta altamente profesional siguiendo EXACTAMENTE el formato de Hydrous Management Group.
-2. Cada sección DEBE contener información técnicamente precisa y específica, NUNCA uses información genérica.
-3. Usa siempre datos numéricos específicos, dimensiones reales y parámetros técnicos concretos.
-4. La propuesta debe ser COMPLETA incluyendo TODAS las secciones obligatorias sin excepciones.
+## INSTRUCCIONES CRÍTICAS:
+1. Sé CONCISO y DIRECTO en todas las secciones - menos texto, más información concreta.
+2. NUNCA uses marcadores de posición como "$X,XXX" - INVENTA cifras realistas específicas.
+3. Genera tablas SIMPLES de máximo 3-4 columnas para evitar problemas de formato.
+4. CALCULA valores reales para toda información financiera, especialmente ROI y ahorros.
 
-## FORMATO OBLIGATORIO (sigue exactamente esta estructura):
+## FORMATO EXACTO A SEGUIR:
 
 **Hydrous Management Group -- AI-Generated Wastewater Treatment Proposal**
 
-**📌 Important Disclaimer**
-[Proporciona un breve disclaimer sobre la generación por IA y necesidad de revisión profesional]
+**Important Disclaimer**
+[Breve disclaimer de 2 líneas máximo]
 
 **1. Introduction to Hydrous Management Group**
-[Breve descripción de Hydrous como empresa especializada en soluciones de agua personalizadas, incluye experiencia en reducción de costos, cumplimiento normativo y tecnologías avanzadas - máximo 3 párrafos]
+[Máximo 3 párrafos cortos sobre la empresa]
 
 **2. Project Background**
-[Crea una tabla con formato markdown con exactamente estos campos]
-  | **Client Information** | **Details** |
-  | ------------------- | ---------------- |
-  | **Client Name** | [Nombre específico del cliente] |
-  | **Location** | [Ubicación exacta] |
-  | **Industry** | [Sector industrial específico] |
-  | **Water Source** | [Fuente de agua] |
-  | **Current Water Consumption** | [X m³/día] |
-  | **Current Wastewater Generation** | [Y m³/día] |
-  | **Existing Treatment System (if any)** | [Descripción del sistema actual o "No existing treatment"] |
+| **Client Information** | **Details** |
+| ------------------ | --------------- |
+| **Client Name** | [Nombre específico] |
+| **Location** | [Ubicación] |
+| **Industry** | [Sector] |
+| **Water Source** | [Fuente] |
+| **Current Water Consumption** | [X m³/día] |
+| **Current Wastewater Generation** | [Y m³/día] |
+| **Existing Treatment System** | [Sistema o "No existing treatment"] |
 
 **3. Objective of the Project**
-[Lista con viñetas de TODOS estos objetivos, explicando cada uno con detalle relevante al cliente]
-✅ **Regulatory Compliance** -- [Explicación específica]
-✅ **Cost Optimization** -- [Explicación específica]
-✅ **Water Reuse** -- [Explicación específica]
-✅ **Sustainability** -- [Explicación específica]
+✓ **Regulatory Compliance** -- [1 frase específica]
+✓ **Cost Optimization** -- [1 frase específica]
+✓ **Water Reuse** -- [1 frase específica]
+✓ **Sustainability** -- [1 frase específica]
 
-**4. Key Design Assumptions & Comparison to Industry Standards**
-[Tabla comparativa con estos parámetros exactos. Usa valores numéricos específicos para cada sector]
-  | **Parameter** | **Raw Wastewater (Provided by Client)** | **Industry Standard for Similar Industry** | **Effluent Goal (Regulatory/Reuse Requirement)** | **Industry Standard Effluent (Benchmark)** |
-  | ------------- | ------------- | ------------- | ------------- | ------------- |
-  | **TSS (mg/L)** | [valor] | [rango] | [valor] | [rango] |
-  | **TDS (mg/L)** | [valor] | [rango] | [valor] | [rango] |
-  | **COD (mg/L)** | [valor] | [rango] | [valor] | [rango] |
-  | **BOD (mg/L)** | [valor] | [rango] | [valor] | [rango] |
-  | **pH** | [valor] | [rango] | [valor] | [rango] |
+**4. Key Design Parameters**
+| **Parameter** | **Current Value** | **Target Value** |
+| ------------- | --------------- | ---------------- |
+| **TSS (mg/L)** | [valor] | [valor] |
+| **COD (mg/L)** | [valor] | [valor] |
+| **BOD (mg/L)** | [valor] | [valor] |
+| **pH** | [valor] | [valor] |
 
-**5. Process Design & Treatment Alternatives**
-[Tabla con tecnologías recomendadas y alternativas. INCLUYE TODAS ESTAS ETAPAS:]
-  | **Treatment Stage** | **Recommended Technology** | **Alternative Option** |
-  | ------------------ | -------------------------- | ---------------------- |
-  | **Primary Treatment (Pre-Treatment)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
-  | **pH Adjustment** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
-  | **Secondary Treatment (Biological Treatment)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
-  | **Tertiary Treatment (Final Polishing)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
-  | **Disinfection** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
-  | **Water Reuse System (Optional)** | [Tecnología específica] -- [Breve descripción] | [Alternativa] -- [Ventajas/desventajas] |
+**5. Recommended Treatment Process**
+| **Treatment Stage** | **Technology** | **Function** |
+| ------------------ | ------------- | ------------ |
+| **Primary** | [tecnología específica] | [función principal] |
+| **Secondary** | [tecnología específica] | [función principal] |
+| **Tertiary** | [tecnología específica] | [función principal] |
+| **Final** | [tecnología específica] | [función principal] |
 
-**6. Suggested Equipment & Sizing**
-[Tabla con equipos recomendados]
-  | **Equipment** | **Capacity** | **Dimensions** | **Brand/Model (If Available)** |
-  | ------------- | ------------ | -------------- | ----------------------------- |
-  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
-  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
-  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
-  | [Equipo específico] | [Capacidad exacta] | [Dimensiones en metros] | [Marca/Modelo] |
+**6. Equipment Specifications**
+| **Equipment** | **Capacity** | **Est. Cost (USD)** |
+| ------------- | ------------ | ------------------ |
+| [Equipo 1] | [capacidad] | [costo] |
+| [Equipo 2] | [capacidad] | [costo] |
+| [Equipo 3] | [capacidad] | [costo] |
+| [Equipo 4] | [capacidad] | [costo] |
 
-**7. Estimated CAPEX & OPEX**
+**7. Financial Summary**
 
-**CAPEX Breakdown**
-  | **Category** | **Estimated Cost (USD)** | **Notes** |
-  | ------------ | ---------------------- | --------- |
-  | [Categoría de equipo] | [$XX,XXX] | [Breve justificación] |
-  | [Categoría de equipo] | [$XX,XXX] | [Breve justificación] |
-  | [Categoría de equipo] | [$XX,XXX] | [Breve justificación] |
-  | **Total CAPEX** | **$XXX,XXX** | [Rango estimado si hay incertidumbre] |
+**CAPEX: $[valor total] USD**
+- Equipment: $[valor] USD
+- Installation: $[valor] USD
+- Engineering: $[valor] USD
 
-**OPEX Breakdown**
-  | **Operational Expense** | **Estimated Monthly Cost (USD)** | **Notes** |
-  | ----------------------- | ------------------------------- | --------- |
-  | **Chemical Costs** | [$X,XXX] | [Descripción de químicos principales] |
-  | **Energy Costs** | [$X,XXX] | [Consumo energético principal] |
-  | **Labor Costs** | [$X,XXX] | [Personal necesario] |
-  | **Sludge Disposal** | [$X,XXX] | [Método de disposición] |
-  | **Total OPEX** | **$XX,XXX/month** | [Rango estimado] |
+**Monthly OPEX: $[valor total] USD**
+- Chemicals: $[valor] USD
+- Energy: $[valor] USD
+- Labor: $[valor] USD
+- Maintenance: $[valor] USD
 
-**8. Return on Investment (ROI) Analysis**
-[Tabla comparativa de costos actuales vs. proyectados]
-  | **Parameter** | **Current Cost (MXN/m³)** | **Projected Cost After Treatment** | **Annual Savings** |
-  | ------------- | ------------------------- | -------------------------------- | ----------------- |
-  | **Water Purchase Cost** | [Costo actual] | [Costo con reúso] | [$X,XXX] |
-  | **Discharge Fees** | [$X,XXX/month] | [$X,XXX/month (reducido)] | [$X,XXX] |
+**8. Return on Investment Analysis**
+- Current water cost: $[valor] USD/month
+- Projected water cost: $[valor] USD/month
+- Monthly savings: $[valor] USD
+- ROI period: [X] years
 
-**Estimated ROI:** **[X] years** basado en ahorro de costos.
+**9. Next Steps**
+1. Technical validation meeting
+2. Site assessment
+3. Detailed engineering proposal
+4. Implementation schedule
 
-**9. Q&A Exhibit**
-[Resumen de las preguntas clave y respuestas de la consulta, 3-5 preguntas máximo]
-
-📩 **Para consultas o validación de esta propuesta, contacte a Hydrous Management Group en:** **info@hydrous.com**.
-
-IMPORTANTE: Sigue EXACTAMENTE este formato, incluye TODAS las secciones, utiliza SOLO datos técnicos precisos y específicos. No omitas ninguna de las secciones especificadas.
+Contact: info@hydrous.com | www.hydrous.com | +52 55 1234 5678
 """
         try:
             messages = [{"role": "user", "content": prompt}]
@@ -230,8 +213,8 @@ Para más información, contacte a Hydrous Management Group.
             doc = SimpleDocTemplate(
                 output_path,
                 pagesize=A4,
-                rightMargin=2 * cm,
-                leftMargin=2 * cm,
+                rightMargin=1.5 * cm,
+                leftMargin=1.5 * cm,
                 topMargin=2 * cm,
                 bottomMargin=2 * cm,
             )
@@ -243,127 +226,177 @@ Para más información, contacte a Hydrous Management Group.
             title_style = ParagraphStyle(
                 name="TitleStyle",
                 parent=styles["Heading1"],
-                fontSize=18,
-                textColor=colors.HexColor("#0056b3"),
-                spaceAfter=12,
-                alignment=1,  # Centrado
-            )
-
-            # Encabezados de sección
-            heading2_style = ParagraphStyle(
-                name="Heading2Style",
-                parent=styles["Heading2"],
                 fontSize=16,
                 textColor=colors.HexColor("#0056b3"),
                 spaceAfter=10,
-                borderBottomWidth=1,
-                borderBottomColor=colors.HexColor("#0056b3"),
-            )
-
-            # Texto normal
-            normal_style = ParagraphStyle(
-                name="NormalStyle",
-                parent=styles["Normal"],
-                fontSize=11,
-                spaceAfter=8,
-                leading=14,  # Mejor espaciado entre líneas
-            )
-
-            # Estilo para listas con viñetas
-            list_style = ParagraphStyle(
-                name="ListStyle",
-                parent=styles["Normal"],
-                fontSize=11,
-                leftIndent=20,
-                spaceAfter=3,
-                bulletIndent=10,
-                bulletFontName="Helvetica",
-                leading=14,
-            )
-
-            # Estilo para la información del disclaimer
-            disclaimer_style = ParagraphStyle(
-                name="DisclaimerStyle",
-                parent=styles["Normal"],
-                fontSize=9,
-                textColor=colors.HexColor("#555555"),
                 alignment=1,  # Centrado
             )
 
-            # Elementos para el PDF
+            # Encabezados de sección - más compactos
+            heading2_style = ParagraphStyle(
+                name="Heading2Style",
+                parent=styles["Heading2"],
+                fontSize=14,
+                textColor=colors.HexColor("#0056b3"),
+                spaceAfter=8,
+                spaceBefore=12,
+            )
+
+            # Texto normal - más compacto
+            normal_style = ParagraphStyle(
+                name="NormalStyle",
+                parent=styles["Normal"],
+                fontSize=10,
+                spaceAfter=6,
+                leading=12,
+            )
+
+            # Estilo para listas con viñetas - más compacto
+            list_style = ParagraphStyle(
+                name="ListStyle",
+                parent=styles["Normal"],
+                fontSize=10,
+                leftIndent=15,
+                spaceAfter=3,
+                bulletIndent=8,
+                leading=12,
+            )
+
+            # Logo y elementos
             elements = []
 
-            # Logo o encabezado (opcional)
-            # elements.append(Image('path/to/logo.png', width=8*cm, height=2*cm))
-            # elements.append(Spacer(1, 0.5*cm))
-
-            # Procesamiento de texto
-            lines = proposal_text.split("\n")
-            in_list = False
+            # Procesar el texto, eliminando los separadores "---"
+            lines = proposal_text.replace("---", "").split("\n")
             in_table = False
             table_data = []
 
             for line in lines:
                 line = line.strip()
                 if not line:
-                    if not in_table:  # No añadir espacios dentro de tablas
-                        elements.append(Spacer(1, 0.2 * cm))
                     continue
 
-                # Encabezados
-                if line.startswith("# "):
-                    if in_table:  # Finalizar tabla si estábamos en una
-                        elements.append(self._create_table(table_data))
-                        in_table = False
-                        table_data = []
-
-                    elements.append(Paragraph(line[2:], title_style))
-                elif line.startswith("## "):
-                    if in_table:  # Finalizar tabla si estábamos en una
-                        elements.append(self._create_table(table_data))
-                        in_table = False
-                        table_data = []
-
-                    elements.append(Paragraph(line[3:], heading2_style))
-                # Tablas (detectar inicio de tabla)
-                elif "|" in line and line.count("|") >= 2:
+                # Detectar tablas basadas en pipes
+                if "|" in line and line.count("|") >= 2:
                     if not in_table:
                         in_table = True
                         table_data = []
 
-                    cells = [
-                        cell.strip() for cell in line.split("|")[1:-1]
-                    ]  # Quitar primero y último
+                    # Procesar la línea de tabla
+                    cells = [cell.strip() for cell in line.split("|")]
+                    cells = [c for c in cells if c]  # Eliminar celdas vacías
                     if cells:
                         table_data.append(cells)
-                # Terminar tabla si ya no hay más pipes
-                elif in_table and "|" not in line:
-                    elements.append(self._create_table(table_data))
+                # Finalizar tabla
+                elif in_table:
                     in_table = False
-                    table_data = []
-                    # Procesar esta línea como normal
-                    elements.append(Paragraph(line, normal_style))
+                    if table_data:
+                        # Crear tabla con ancho fijo de 16cm distribuido entre columnas
+                        num_cols = (
+                            len(table_data[0]) if table_data and table_data[0] else 0
+                        )
+                        if num_cols > 0:
+                            col_width = 16 * cm / num_cols
+                            col_widths = [col_width] * num_cols
+                            table = Table(table_data, colWidths=col_widths)
+
+                            # Estilo mejorado para tablas
+                            table_style = TableStyle(
+                                [
+                                    # Encabezado
+                                    (
+                                        "BACKGROUND",
+                                        (0, 0),
+                                        (-1, 0),
+                                        colors.HexColor("#f2f2f2"),
+                                    ),
+                                    (
+                                        "TEXTCOLOR",
+                                        (0, 0),
+                                        (-1, 0),
+                                        colors.HexColor("#0056b3"),
+                                    ),
+                                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                                    ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                                    # Cuerpo
+                                    ("FONTSIZE", (0, 1), (-1, -1), 9),
+                                    (
+                                        "GRID",
+                                        (0, 0),
+                                        (-1, -1),
+                                        0.25,
+                                        colors.HexColor("#cccccc"),
+                                    ),
+                                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                    ("PADDING", (0, 0), (-1, -1), 4),
+                                    # Ajuste de texto crucial
+                                    ("WORDWRAP", (0, 0), (-1, -1), True),
+                                ]
+                            )
+                            table.setStyle(table_style)
+                            elements.append(table)
+                            elements.append(Spacer(1, 0.2 * cm))
+
+                    # Procesar la línea actual como texto normal
+                    if line.startswith("**") and line.endswith("**"):
+                        # Es un encabezado
+                        if line.startswith("** "):
+                            elements.append(Paragraph(line[3:-2], title_style))
+                        else:
+                            elements.append(Paragraph(line[2:-2], heading2_style))
+                    elif line.startswith("✓ "):
+                        # Es un elemento de lista con checkmark
+                        elements.append(Paragraph(line, list_style))
+                    else:
+                        # Texto normal
+                        elements.append(Paragraph(line, normal_style))
+                # Encabezados
+                elif line.startswith("**") and line.endswith("**"):
+                    if line.startswith("** "):
+                        elements.append(Paragraph(line[3:-2], title_style))
+                    else:
+                        elements.append(Paragraph(line[2:-2], heading2_style))
                 # Listas
+                elif line.startswith("✓ "):
+                    elements.append(Paragraph(line, list_style))
                 elif line.startswith("- ") or line.startswith("* "):
                     elements.append(Paragraph(f"• {line[2:]}", list_style))
-                elif line.startswith("✅ "):
-                    elements.append(Paragraph(f"✓ {line[2:]}", list_style))
                 # Texto normal
                 else:
-                    if not in_table:  # No procesar como párrafo si estamos en una tabla
-                        elements.append(Paragraph(line, normal_style))
+                    elements.append(Paragraph(line, normal_style))
 
-            # Finalizar tabla si terminamos dentro de una
+            # Si terminamos dentro de una tabla, procesarla
             if in_table and table_data:
-                elements.append(self._create_table(table_data))
+                num_cols = len(table_data[0]) if table_data and table_data[0] else 0
+                if num_cols > 0:
+                    col_width = 16 * cm / num_cols
+                    col_widths = [col_width] * num_cols
+                    table = Table(table_data, colWidths=col_widths)
+                    table_style = TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0056b3")),
+                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                            ("FONTSIZE", (0, 0), (-1, 0), 10),
+                            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                            ("FONTSIZE", (0, 1), (-1, -1), 9),
+                            (
+                                "GRID",
+                                (0, 0),
+                                (-1, -1),
+                                0.25,
+                                colors.HexColor("#cccccc"),
+                            ),
+                            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                            ("PADDING", (0, 0), (-1, -1), 4),
+                            ("WORDWRAP", (0, 0), (-1, -1), True),
+                        ]
+                    )
+                    table.setStyle(table_style)
+                    elements.append(table)
 
             # Pie de página
             elements.append(Spacer(1, 1 * cm))
-            elements.append(
-                Paragraph(
-                    "Documento generado por Hydrous Management Group", disclaimer_style
-                )
-            )
 
             # Construir PDF con números de página
             doc.build(
@@ -372,42 +405,57 @@ Para más información, contacte a Hydrous Management Group.
                 onLaterPages=self._add_page_number,
             )
 
-            logger.info(f"PDF generado exitosamente en: {output_path}")
+            logger.info(f"PDF mejorado generado en: {output_path}")
             return output_path
         except Exception as e:
-            logger.error(f"Error generando PDF directo: {e}", exc_info=True)
+            logger.error(f"Error generando PDF mejorado: {e}", exc_info=True)
             return None
 
     def _create_table(self, data):
         """Crea una tabla formateada profesionalmente."""
-        if not data:
+        if not data or len(data) == 0:
             return Spacer(1, 0.2 * cm)
 
-        # Definir un ancho fijo para la tabla en lugar de usar doc.width
-        available_width = 16 * cm  # Ancho aproximado para página A4 con márgenes
+        # Ancho disponible fijo para tablas
+        available_width = 16 * cm
 
-        # Calcular ancho de columnas si hay datos
-        if data and len(data) > 0 and len(data[0]) > 0:
-            num_cols = len(data[0])
-            col_widths = [available_width / num_cols] * num_cols
-            table = Table(data, repeatRows=1, colWidths=col_widths)
-        else:
-            # Sin cálculo de anchos si no hay datos suficientes
-            table = Table(data, repeatRows=1)
+        # Calcular número de columnas y distribuir el ancho
+        num_cols = len(data[0]) if data and len(data) > 0 else 0
+        if num_cols == 0:
+            return Spacer(1, 0.2 * cm)
 
+        # Limitar a máximo 4 columnas para legibilidad
+        if num_cols > 4:
+            logger.warning(
+                f"Tabla con {num_cols} columnas detectada - limitando a 4 columnas"
+            )
+            for i in range(len(data)):
+                if len(data[i]) > 4:
+                    data[i] = data[i][:4]
+            num_cols = 4
+
+        # Distribuir ancho equitativamente
+        col_widths = [available_width / num_cols] * num_cols
+
+        # Crear tabla con anchos fijos
+        table = Table(data, repeatRows=1, colWidths=col_widths)
+
+        # Estilo mejorado
         table_style = TableStyle(
             [
+                # Encabezado
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f2f2")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0056b3")),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 0), 11),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                ("BACKGROUND", (0, 1), (-1, -1), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ("FONTSIZE", (0, 0), (-1, 0), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+                # Cuerpo
+                ("FONTSIZE", (0, 1), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cccccc")),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 6),
-                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("WORDWRAP", (0, 0), (-1, -1), True),  # Permite que el texto se ajuste
+                ("PADDING", (0, 0), (-1, -1), 4),
+                # Crucial para evitar truncamiento
+                ("WORDWRAP", (0, 0), (-1, -1), True),
             ]
         )
         table.setStyle(table_style)
