@@ -40,13 +40,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -160,13 +160,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -278,13 +278,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 7. Volúmenes de agua promedios, picos de generación de agua residual 
@@ -394,13 +394,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -514,13 +514,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -630,13 +630,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -762,13 +762,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -892,13 +892,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1005,13 +1005,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1122,13 +1122,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1233,13 +1233,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1345,13 +1345,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1457,13 +1457,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1570,13 +1570,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
@@ -1657,13 +1657,13 @@ Cantidad de agua consumida (Unidad de medición/unidad tiempo)
 Cantidad de aguas residuales generadas (unidad de medición/unidad de tiempo
 Aproximadamente cuantas personas (empleados, clientes, visitantes) atiende tus instalaciones por día o por semana
 Menos de 20 
->=20, <50
->50, < 200
->= 200, < 500
->=500<1000
->=1000<2000
->=2000<5000
->=5000
+20 a 50
+50 a 200
+200 a 500
+500 a 1000
+1000 a 2000
+2000 a 5000
+5000
 De preferencia puedes proveer un número exacto o cercano a la realidad.
 “Ahora vamos a hablar un poco más sobre la calidad del agua y los requerimientos técnicos. Esta información es crucial porque cada fuente de agua y cada proceso industrial tienen características únicas. Saber más sobre los contaminantes o parámetros normativos nos permite diseñar una solución eficiente y adaptada a tus necesidades. ¡Hablemos más sobre esto!"
 Volúmenes de agua promedios, picos de generación de agua residual 
