@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import re
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -203,13 +204,12 @@ Para más información, contacte a Hydrous Management Group.
 """
 
     def _generate_pdf(self, proposal_text: str, conversation_id: str) -> str:
-        """Genera un PDF directamente desde el texto usando ReportLab."""
+        """Genera un PDF con formato a partir del texto de la propuesta."""
         try:
             # Preparar ruta
             pdf_filename = f"propuesta_{conversation_id}.pdf"
             output_path = os.path.join(settings.UPLOAD_DIR, pdf_filename)
 
-            # Configurar documento
             doc = SimpleDocTemplate(
                 output_path,
                 pagesize=A4,
@@ -219,7 +219,7 @@ Para más información, contacte a Hydrous Management Group.
                 bottomMargin=2 * cm,
             )
 
-            # Estilos mejorados
+            # Definir estilos
             styles = getSampleStyleSheet()
 
             # Título principal
@@ -229,10 +229,10 @@ Para más información, contacte a Hydrous Management Group.
                 fontSize=16,
                 textColor=colors.HexColor("#0056b3"),
                 spaceAfter=10,
-                alignment=1,  # Centrado
+                alignment=1,
             )
 
-            # Encabezados de sección - más compactos
+            # Encabezados de sección
             heading2_style = ParagraphStyle(
                 name="Heading2Style",
                 parent=styles["Heading2"],
@@ -242,7 +242,7 @@ Para más información, contacte a Hydrous Management Group.
                 spaceBefore=12,
             )
 
-            # Texto normal - más compacto
+            # Texto normal
             normal_style = ParagraphStyle(
                 name="NormalStyle",
                 parent=styles["Normal"],
@@ -251,7 +251,14 @@ Para más información, contacte a Hydrous Management Group.
                 leading=12,
             )
 
-            # Estilo para listas con viñetas - más compacto
+            # Texto en negrita (para usar dentro de párrafos)
+            bold_style = ParagraphStyle(
+                name="BoldStyle",
+                parent=normal_style,
+                fontName="Helvetica-Bold",
+            )
+
+            # Estilo para listas
             list_style = ParagraphStyle(
                 name="ListStyle",
                 parent=styles["Normal"],
@@ -262,10 +269,10 @@ Para más información, contacte a Hydrous Management Group.
                 leading=12,
             )
 
-            # Logo y elementos
+            # Elementos del PDF
             elements = []
 
-            # Procesar el texto, eliminando los separadores "---"
+            # Procesar líneas del texto, eliminar separadores
             lines = proposal_text.replace("---", "").split("\n")
             in_table = False
             table_data = []
@@ -275,22 +282,35 @@ Para más información, contacte a Hydrous Management Group.
                 if not line:
                     continue
 
-                # Detectar tablas basadas en pipes
+                # Detectar tablas con pipe
                 if "|" in line and line.count("|") >= 2:
                     if not in_table:
                         in_table = True
                         table_data = []
 
-                    # Procesar la línea de tabla
+                    # Procesar celdas eliminando marcadores Markdown
                     cells = [cell.strip() for cell in line.split("|")]
                     cells = [c for c in cells if c]  # Eliminar celdas vacías
-                    if cells:
-                        table_data.append(cells)
-                # Finalizar tabla
+
+                    # Limpiar marcadores Markdown en celdas
+                    processed_cells = []
+                    for cell in cells:
+                        # Eliminar guiones solitarios que son solo separadores
+                        if cell.strip() == "-":
+                            cell = " "
+                        # Eliminar marcadores de negrita pero mantener el texto
+                        if cell.startswith("**") and cell.endswith("**"):
+                            cell = cell[2:-2]
+                        processed_cells.append(cell)
+
+                    if processed_cells:
+                        table_data.append(processed_cells)
+
+                # Finalizar tabla si ya no hay pipes
                 elif in_table:
                     in_table = False
                     if table_data:
-                        # Crear tabla con ancho fijo de 16cm distribuido entre columnas
+                        # Crear tabla con formato mejorado
                         num_cols = (
                             len(table_data[0]) if table_data and table_data[0] else 0
                         )
@@ -299,10 +319,9 @@ Para más información, contacte a Hydrous Management Group.
                             col_widths = [col_width] * num_cols
                             table = Table(table_data, colWidths=col_widths)
 
-                            # Estilo mejorado para tablas
+                            # Estilo para la tabla
                             table_style = TableStyle(
                                 [
-                                    # Encabezado
                                     (
                                         "BACKGROUND",
                                         (0, 0),
@@ -318,7 +337,6 @@ Para más información, contacte a Hydrous Management Group.
                                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                                     ("FONTSIZE", (0, 0), (-1, 0), 10),
                                     ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-                                    # Cuerpo
                                     ("FONTSIZE", (0, 1), (-1, -1), 9),
                                     (
                                         "GRID",
@@ -329,7 +347,6 @@ Para más información, contacte a Hydrous Management Group.
                                     ),
                                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                     ("PADDING", (0, 0), (-1, -1), 4),
-                                    # Ajuste de texto crucial
                                     ("WORDWRAP", (0, 0), (-1, -1), True),
                                 ]
                             )
@@ -337,33 +354,26 @@ Para más información, contacte a Hydrous Management Group.
                             elements.append(table)
                             elements.append(Spacer(1, 0.2 * cm))
 
-                    # Procesar la línea actual como texto normal
-                    if line.startswith("**") and line.endswith("**"):
-                        # Es un encabezado
-                        if line.startswith("** "):
-                            elements.append(Paragraph(line[3:-2], title_style))
-                        else:
-                            elements.append(Paragraph(line[2:-2], heading2_style))
-                    elif line.startswith("✓ "):
-                        # Es un elemento de lista con checkmark
-                        elements.append(Paragraph(line, list_style))
-                    else:
-                        # Texto normal
-                        elements.append(Paragraph(line, normal_style))
-                # Encabezados
-                elif line.startswith("**") and line.endswith("**"):
-                    if line.startswith("** "):
-                        elements.append(Paragraph(line[3:-2], title_style))
-                    else:
-                        elements.append(Paragraph(line[2:-2], heading2_style))
-                # Listas
-                elif line.startswith("✓ "):
-                    elements.append(Paragraph(line, list_style))
-                elif line.startswith("- ") or line.startswith("* "):
-                    elements.append(Paragraph(f"• {line[2:]}", list_style))
-                # Texto normal
+                    # Procesar la línea actual según formato Markdown
+                    self._process_markdown_line(
+                        line,
+                        elements,
+                        title_style,
+                        heading2_style,
+                        normal_style,
+                        list_style,
+                    )
+
+                # Procesar líneas normales con formato Markdown
                 else:
-                    elements.append(Paragraph(line, normal_style))
+                    self._process_markdown_line(
+                        line,
+                        elements,
+                        title_style,
+                        heading2_style,
+                        normal_style,
+                        list_style,
+                    )
 
             # Si terminamos dentro de una tabla, procesarla
             if in_table and table_data:
@@ -395,9 +405,6 @@ Para más información, contacte a Hydrous Management Group.
                     table.setStyle(table_style)
                     elements.append(table)
 
-            # Pie de página
-            elements.append(Spacer(1, 1 * cm))
-
             # Construir PDF con números de página
             doc.build(
                 elements,
@@ -405,14 +412,59 @@ Para más información, contacte a Hydrous Management Group.
                 onLaterPages=self._add_page_number,
             )
 
-            logger.info(f"PDF mejorado generado en: {output_path}")
+            logger.info(f"PDF generado exitosamente en: {output_path}")
             return output_path
         except Exception as e:
-            logger.error(f"Error generando PDF mejorado: {e}", exc_info=True)
+            logger.error(f"Error generando PDF: {e}", exc_info=True)
             return None
 
+    def _process_markdown_line(
+        self, line, elements, title_style, heading2_style, normal_style, list_style
+    ):
+        """Procesa una línea con formato Markdown y añade el elemento correspondiente."""
+
+        # 1. Procesar títulos/encabezados
+        if line.startswith("# "):
+            # Título principal
+            elements.append(Paragraph(line[2:], title_style))
+            return
+        elif line.startswith("## "):
+            # Subtítulo
+            elements.append(Paragraph(line[3:], heading2_style))
+            return
+
+        # 2. Procesar encabezados con formato "**Título**"
+        elif line.startswith("**") and line.endswith("**") and " " not in line[:5]:
+            # Es un encabezado en formato Markdown
+            title_text = line[2:-2]
+            elements.append(Paragraph(title_text, heading2_style))
+            return
+
+        # 3. Procesar elementos de lista con checkmarks
+        elif line.startswith("✓ "):
+            # Extraer y formatear el texto de la lista
+            list_text = line[2:]
+            # Eliminar marcadores de negrita en el texto de la lista
+            list_text = re.sub(r"\*\*(.*?)\*\*", r"\1", list_text)
+            elements.append(Paragraph(f"✓ {list_text}", list_style))
+            return
+        elif line.startswith("- ") or line.startswith("* "):
+            # Lista normal con viñetas
+            bullet_text = line[2:]
+            # Eliminar marcadores de negrita
+            bullet_text = re.sub(r"\*\*(.*?)\*\*", r"\1", bullet_text)
+            elements.append(Paragraph(f"• {bullet_text}", list_style))
+            return
+
+        # 4. Procesar texto normal con posible formato interno
+        # Reemplazar marcadores de negrita con etiquetas <b> para ReportLab
+        text = line
+        # Buscar patrones **texto** y reemplazarlos con <b>texto</b>
+        text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+        elements.append(Paragraph(text, normal_style))
+
     def _create_table(self, data):
-        """Crea una tabla formateada profesionalmente."""
+        """Versión simplificada y robusta para crear tablas."""
         if not data or len(data) == 0:
             return Spacer(1, 0.2 * cm)
 
