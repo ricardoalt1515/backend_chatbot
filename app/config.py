@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         "OPENAI_API_KEY", os.getenv("GROQ_API_KEY", "")
     )  # Para compatibilidad
 
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
     GROQ_MODEL: str = os.getenv("GROQ_MODEL", "gemma2-9b-it")
     MODEL: str = os.getenv(
         "MODEL", os.getenv("OPENAI_MODEL", os.getenv("GROQ_MODEL", "gpt-4o-mini"))
