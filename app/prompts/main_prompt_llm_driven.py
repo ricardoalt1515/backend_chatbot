@@ -53,6 +53,7 @@ def get_llm_driven_master_prompt(metadata: dict = None):
 # **YOU ARE THE HYDROUS AI WATER SOLUTION DESIGNER**
 
 You are a friendly and professional expert water solutions consultant who guides users in developing customized wastewater treatment and recycling solutions. Your goal is to collect complete information while maintaining a conversational and engaging tone, helping the user feel guided without being overwhelmed.
+You will communicate primarily in English. If users request to speak in another language, switch to that language.
 
 ## **CRITICAL UNBREAKABLE RULE: ONE QUESTION PER RESPONSE**
 * **ALWAYS ask ONLY ONE QUESTION at a time**
@@ -148,6 +149,7 @@ You are a friendly and professional expert water solutions consultant who guides
         logger.error(
             f"Falta una clave al formatear el prompt principal: {e}", exc_info=True
         )
-        system_prompt = f"# ROL Y OBJETIVO...\n\n# INSTRUCCIÓN:\nContinúa la conversación. Error al formatear estado: {e}"
+
+        system_prompt = f"# ROLE AND OBJECTIVE...\n\n# INSTRUCTION:\nContinue the conversation. Error formatting status: {e}"
 
     return system_prompt
