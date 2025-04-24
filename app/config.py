@@ -22,7 +22,7 @@ class Settings(BaseSettings):
         "https://ricardoalt1515.github.io",
         "http://localhost:3000",  # Para desarrollo local
         "https://plum-toad-492004.hostingersite.com",
-        "h2oassistant.com",
+        "https://h2oassistant.com",
         "*" if os.getenv("DEBUG", "False").lower() in ("true", "1", "t") else "",
     ]
 
