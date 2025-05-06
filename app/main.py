@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import logging
 
-from app.routes import chat, documents, feedback
+from app.routes import chat, documents, feedback, auth
 from app.config import settings
 
 # Configuración de logging
@@ -39,6 +39,7 @@ app.include_router(
 app.include_router(
     feedback.router, prefix=f"{settings.API_V1_STR}/feedback", tags=["feedback"]
 )
+app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 
 
 @app.get(f"{settings.API_V1_STR}/health")

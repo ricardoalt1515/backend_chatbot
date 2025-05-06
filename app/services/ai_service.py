@@ -1,5 +1,6 @@
 # app/services/ai_service.py
 import logging
+from threading import current_thread
 import httpx
 import os
 import json  # Importar json
@@ -149,8 +150,11 @@ class AIServiceLLMDriven:
         logger.debug("DBG_AI_PREP: Iniciando preparación de mensajes...")
         try:
             # Generar el prompt maestro con el estado actual y el cuestionario
-            # Usar metadata directamente, asegurarse que no sea None
             current_metadata = conversation.metadata if conversation.metadata else {}
+            logger.info(
+                f"Metadata para IA: client_name={current_metadata.get('client_name')}, sector={current_metadata.get('selected_sector')}, subsector={current_metadata.get('selected_subsector')}"
+            )
+
             system_prompt = get_llm_driven_master_prompt(current_metadata)
 
             if "[ERROR" in system_prompt:

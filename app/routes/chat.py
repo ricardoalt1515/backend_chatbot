@@ -7,6 +7,7 @@ import uuid  # Importar uuid
 import re
 from datetime import datetime  # Importar datetime
 from typing import Any, Optional, Dict, List  # Añadir Optional y Dict
+from pydantic import BaseModel
 
 # Modelos
 from app.models.conversation import ConversationResponse, Conversation
@@ -120,20 +121,47 @@ def _is_pdf_request(message: str) -> bool:
 # --- Endpoints ---
 
 
+class ConversationStartRequest(BaseModel):
+    customContext: Optional[Dict[str, Any]] = None
+
+
 @router.post("/start", response_model=ConversationResponse)
-async def start_conversation():
-    """Inicia conversación, devuelve saludo/pregunta inicial de la IA."""
+async def start_conversation(request_data: Optional[ConversationStartRequest] = None):
+    """Inicia conversación, Recibiendo contexto del usuario si existe."""
     try:
         conversation = await storage_service.create_conversation()
-        logger.info(f"Nueva conversación iniciada (Usuario inicia): {conversation.id}")
+        logger.info(f"Nueva conversacion iniciada (ID: {conversation.id})")
 
-        # 2. NO llamar a IA aquí. Guardar estado vacío.
+        # Procesar contexto del usuario si existe
+        if request_data and request_data.customContext:
+            context = request_data.customContext
+            logger.info(f"Contexto recibido: {context}")
+
+            # Actualizar metadata con datos del usuario
+            if "client_name" in context:
+                conversation.metadata["client_name"] = context["client_name"]
+
+            if "selected_sector" in context:
+                conversation.metadata["selected_sector"] = context["selected_sector"]
+
+            if "selected_subsector" in context:
+                conversation.metadata["selected_subsector"] = context[
+                    "selected_subsector"
+                ]
+
+            if "user_location" in context:
+                conversation.metadata["user_location"] = context["user_location"]
+
+            logger.info(f"Metadata actualizada con contexto: {conversation.metadata}")
+
+        # Guardar conversación con la metadata actualizada
         await storage_service.save_conversation(conversation)
-        # 3. Devolver solo ID y metadata vacía
+
+        # Devolver respuesta
         return ConversationResponse(
             id=conversation.id,
             created_at=conversation.created_at,
-            messages=[],  # Sin mensajes iniciales
+            messages=[],
             metadata=conversation.metadata,
         )
     except Exception as e:

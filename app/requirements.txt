@@ -22,6 +22,11 @@ reportlab
 # Utilidades
 httpx==0.26.0
 
+# Base de datos
+sqlalchemy
+alembic
+psycopg2-binary
+
 # Procesamiento de texto y analisis
 nltk==3.8.1
 tiktoken==0.5.2
